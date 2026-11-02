@@ -2407,6 +2407,7 @@ async function createCustomerAnalysisV3Completion<T>(input: {
   system: string;
   user: string;
   model?: string;
+  onCompletedField?: (key: string, value: unknown) => Promise<void>;
 }) {
   return runStructuredJsonResponse<T>({
     ...input,
@@ -2431,6 +2432,7 @@ type AnalyzeCustomerDocumentsInput = {
   supportingDocuments: ProjectDocumentDetail[];
   serviceCandidates?: ProjectServiceDescription[];
   model?: string;
+  onCompletedField?: (key: string, value: unknown) => Promise<void>;
 };
 
 async function analyzeCustomerDocumentsLegacy(
@@ -2642,6 +2644,7 @@ export async function analyzeCustomerDocuments(
       system: buildCustomerAnalysisV3SystemPrompt(),
       user: userPrompt,
       model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+      onCompletedField: input.onCompletedField,
     });
 
   void recordDocumentIntelligenceEvent({
@@ -3143,6 +3146,8 @@ export async function evaluateSolutionDocument(input: {
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
   normalizedEvaluation.criterion_coverage = normalizeCriterionCoverage(result.criterion_coverage, {
     criteria: input.customerAnalysis.likely_evaluation_criteria,
+    analysisRevision: input.customerAnalysis.revision,
+    sourceRevision: input.sourceRevision,
     coverage: normalizedEvaluation.requirement_coverage!,
     customerDocuments: [input.customerDocument, ...requirementSourceDocuments],
     solutionDocument: input.solutionDocument,
@@ -3181,7 +3186,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
     const before = reviewed.result.criterion_coverage;
     const next = reconcileCriterionCoverage(before.map((item, index) => ({ ...item,
       review_required: item.review_required || (reviewed.evidence.issues ?? []).some(issue => issue.path.startsWith(`result.criterion_coverage.${index}.`)),
-    })), coverage);
+    })), coverage, input.documents.map(item => item.document).filter((document): document is ProjectDocumentDetail => "project_id" in document));
     next.forEach((item, index) => {
       if (item.review_required) downgraded = true;
       if (item.rationale !== before[index].rationale) changedPaths.add(`result.criterion_coverage.${index}.rationale`);

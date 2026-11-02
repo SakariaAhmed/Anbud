@@ -1,4 +1,5 @@
 "use client";
+import { CustomerAnalysisPartialPreview } from "@/components/projects/customer-analysis-partial-preview";
 import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 
 import { useEffect, useState } from "react";
@@ -1612,6 +1613,11 @@ export function ProjectAnalysisTab({
 
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
+      <CustomerAnalysisPartialPreview
+        key={`${projectId}:${latestCustomerAnalysis?.revision ?? ""}:${sourceChanged}:${documents.map((document) => `${document.id}:${document.updated_at}`).join(",")}`}
+        projectId={projectId}
+        busy={busy}
+      />
       {sectionBusy && busyMessage ? (
         <div className="mb-4">
           <GenerationProgress message={busyMessage} progress={busyProgress} />

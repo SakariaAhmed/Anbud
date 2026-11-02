@@ -1,13 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { systemTestStatusPath } from './system-test-runtime.mjs';
+import { assertOwnedSystemTestStack, systemTestStatusPath } from './system-test-runtime.mjs';
 // Explicit synthetic database-state injection; this never invokes parsing or models.
 if (!process.argv.includes('--injected-fixtures')) throw new Error('Explicit --injected-fixtures is required.');
 const status=JSON.parse(fs.readFileSync(systemTestStatusPath()));
-assert.equal(status.baseUrl,'http://127.0.0.1:4338');
 const runtime=JSON.parse(fs.readFileSync(path.join(status.directory,'environment.json')));
-assert.equal(runtime.env.DATA_API_URL,'http://127.0.0.1:55449');
+assertOwnedSystemTestStack(status,runtime);
 async function api(route,body){
  const response=await fetch(status.baseUrl+route,{method:body?'POST':'GET',headers:{cookie:runtime.sessions.adminCookie,origin:status.baseUrl,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  assert.ok(response.ok,`App route ${route}: ${response.status}`);return response.json();

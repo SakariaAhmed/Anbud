@@ -1,0 +1,119 @@
+{
+  "notice": "Synthetic fixture only. This records a parser failure observed on an image-only PDF generated for this repository; it is not tender evidence and says nothing about real customer documents or OCR quality.",
+  "observed_failure": "At a03b7a8a the stored register for this actual OCR output had no rows, although the labelled requirements below are present in raw_text.",
+  "captured": {
+    "date": "2026-11-02",
+    "route": "POST multipart /api/projects/[id]/documents through the local owned stack",
+    "source_commit": "a03b7a8a"
+  },
+  "source_pdf": {
+    "path": "test-data/ocr/norwegian-holdout.pdf",
+    "sha256": "f7131c32726cadf2a4e9c7041cf3388d3798541f63cd750e97143ff24253bcb2"
+  },
+  "parser": {
+    "parser_used": "docling",
+    "image": "anbud-ocr-norwegian:production-cached-models",
+    "image_id": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+    "docling_slim": "2.99.0",
+    "docling_core": "2.95.0",
+    "docling_parse": "6.2.0",
+    "ocr": "tesseract nor,eng",
+    "version_gap": "Older than the Docling version pinned in the current Dockerfile; this output is not proof for that version."
+  },
+  "document": {
+    "file_name": "norwegian-holdout.pdf",
+    "file_format": "pdf",
+    "page_count": 2,
+    "raw_text": "FIKTIV NORSK SPRÅKPRØVE Ærlig vurdering av Østfold og Ålesund. Før oppstart må løsningen støtte særnorske tegn. Leverandøren skal tilby opplæring og døgnvakt. Sikkerhetslogger lagres i 14 måneder. Krav K-42: Fire kurs før overgang til drift. Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter.\n\n## NORSK OG ENGELSK KONTROLL\n\nBærum kommune ønsker å fornye løsningen.\n\nÅrlig møte med Øyvind og Ægir.\n\nFar får svar. Bare bære. For før.\n\nSupplier must preserve 14 months of security logs.\n\nOriginal code:\n\nABC-42. Reference:\n\nXYZ-73.",
+    "structure_map": [
+      {
+        "reference": "Støttedokument – Docling text 1, side 1",
+        "text": "FIKTIV NORSK SPRÅKPRØVE Ærlig vurdering av Østfold og Ålesund. Før oppstart må løsningen støtte særnorske tegn. Leverandøren skal tilby opplæring og døgnvakt. Sikkerhetslogger lagres i 14 måneder. Krav K-42: Fire kurs før overgang til drift. Pris 1 250 000 NOK. RTO 60 minutter. RPO 15 minutter.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 1,
+        "docling_ref": "#/texts/0"
+      },
+      {
+        "reference": "Støttedokument – Docling section_header 2, side 2",
+        "text": "NORSK OG ENGELSK KONTROLL",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/1"
+      },
+      {
+        "reference": "Støttedokument – Docling text 3, side 2",
+        "text": "Bærum kommune ønsker å fornye løsningen.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/2"
+      },
+      {
+        "reference": "Støttedokument – Docling text 4, side 2",
+        "text": "Årlig møte med Øyvind og Ægir.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/3"
+      },
+      {
+        "reference": "Støttedokument – Docling text 5, side 2",
+        "text": "Far får svar. Bare bære. For før.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/4"
+      },
+      {
+        "reference": "Støttedokument – Docling text 6, side 2",
+        "text": "Supplier must preserve 14 months of security logs.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/5"
+      },
+      {
+        "reference": "Støttedokument – Docling text 7, side 2",
+        "text": "Original code:",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/6"
+      },
+      {
+        "reference": "Støttedokument – Docling text 8, side 2",
+        "text": "ABC-42. Reference:",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/7"
+      },
+      {
+        "reference": "Støttedokument – Docling text 9, side 2",
+        "text": "XYZ-73.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 2,
+        "docling_ref": "#/texts/8"
+      }
+    ]
+  },
+  "expected_rows": [
+    {
+      "id": "K-42",
+      "text": "Fire kurs før overgang til drift.",
+      "original_span": {
+        "start": 208,
+        "end": 241,
+        "text": "Fire kurs før overgang til drift."
+      },
+      "locator": {
+        "page": 1,
+        "docling_ref": "#/texts/0",
+        "reference": "Støttedokument – Docling text 1, side 1"
+      }
+    }
+  ]
+}

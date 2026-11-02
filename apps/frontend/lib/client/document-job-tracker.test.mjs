@@ -18,16 +18,19 @@ test.after(() => { delete globalThis.__documentJobTrackerTest; rmSync(directory,
 
 const document = { id: "document", processing_status: "enhanced_ready" };
 const completed = { id: "ingestion", status: "completed", result: { document } };
-function harness(watch, refresh = async () => ({ id: "project", documents: [document] })) {
-  const statuses = [], projects = [], enhancements = [], watched = [], refreshed = [];
+function harness(watch, refresh = async () => ({ id: "project", documents: [document] }), job = { id: "ingestion", kind: "document_ingestion" }) {
+  const statuses = [], projects = [], enhancements = [], watched = [], refreshed = [], outcomes = [];
   globalThis.__documentJobTrackerTest = {
     watch: input => { watched.push(input.jobId); return watch(input); },
     refresh: (...args) => { refreshed.push(args); return refresh(...args); },
   };
   const controller = new AbortController();
-  return { controller, statuses, projects, enhancements, watched, refreshed,
+  return { controller, statuses, projects, enhancements, watched, refreshed, outcomes,
     run: (signal = controller.signal) => trackDocumentProcessing({
-      projectId: "project", job: { id: "ingestion", kind: "document_ingestion" }, signal,
+      projectId: "project", job, signal,
+      onDocumentReady: ready => outcomes.push(["ready", ready.id, projects.length]),
+      onIngestionFailed: () => outcomes.push(["ingestion_failed"]),
+      onEnhancementFailed: () => outcomes.push(["enhancement_failed"]),
       onStatus: status => statuses.push(status), onEnhancement: () => enhancements.push(true),
       onProject: project => projects.push(project),
     }),
@@ -120,4 +123,46 @@ test("cancelling one document tracker does not cancel another subscriber", async
   watchers[1].resolve(completed);
   assert.deepEqual(await second, document);
   assert.equal(h.projects.length, 1);
+});
+
+test("ready is reported once for the published basic version, before enhancement finishes", async () => {
+  const h = harness(async ({ jobId }) => jobId === "ingestion"
+    ? { ...completed, result: { document: { id: "document", processing_status: "basic_ready" }, docling_enhancement_job_id: "enhancement" } }
+    : (assert.deepEqual(h.outcomes, [["ready", "document", 1]]), completed));
+  await h.run();
+  assert.deepEqual(h.outcomes, [["ready", "document", 1]]);
+});
+
+test("ingestion without enhancement reports ready only after the refreshed state is applied", async () => {
+  const h = harness(async () => completed);
+  await h.run();
+  assert.deepEqual(h.outcomes, [["ready", "document", 1]]);
+});
+
+test("a recorded enhancement failure keeps the usable document and does not raise", async () => {
+  const failedEnhancement = { id: "document", processing_status: "basic_ready", processing_error: "feilet" };
+  const h = harness(async ({ jobId }) => jobId === "ingestion"
+    ? { ...completed, result: { document: { id: "document", processing_status: "basic_ready" }, docling_enhancement_job_id: "enhancement" } }
+    : { id: jobId, status: "completed", result: { document: failedEnhancement } });
+  assert.deepEqual(await h.run(), failedEnhancement);
+  assert.deepEqual(h.outcomes, [["ready", "document", 1], ["enhancement_failed"]]);
+});
+
+test("an explicit retry tracks enhancement only and never reports a new upload as ready", async () => {
+  const h = harness(async () => ({ id: "retry", status: "completed", result: { document: { id: "document", processing_status: "enhanced_ready", processing_error: null } } }), undefined, { id: "retry", kind: "document_docling_enhancement" });
+  await h.run();
+  assert.deepEqual(h.watched, ["retry"]);
+  assert.deepEqual(h.outcomes, []);
+  const failing = harness(async () => ({ id: "retry", status: "failed" }), undefined, { id: "retry", kind: "document_docling_enhancement" });
+  await assert.rejects(failing.run(), error => error instanceof DocumentProcessingFailure && error.phase === "enhancement");
+  assert.deepEqual(failing.outcomes, [], "A failed retry is not an ingestion failure.");
+});
+
+test("a failed ingestion is reported once and an aborted view reports nothing", async () => {
+  const h = harness(async () => ({ id: "ingestion", status: "failed" }));
+  await assert.rejects(h.run(), DocumentProcessingFailure);
+  assert.deepEqual(h.outcomes, [["ingestion_failed"]]);
+  const aborted = harness(async () => { aborted.controller.abort(); return completed; });
+  await assert.rejects(aborted.run());
+  assert.deepEqual(aborted.outcomes, []);
 });

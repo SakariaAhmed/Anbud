@@ -432,7 +432,7 @@ test("the chat route selects each fallback document once before building the rea
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-route-scope-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
   process.env.RAG_QUERY_REWRITE = "off";
-  const state = { documents: [], prompts: [], retrieval: [], saved: [], abortOnEnd: null };
+  const state = { documents: [], prompts: [], retrieval: [], saved: [], abortOnEnd: null, chunks: ["Lokalt testsvar."] };
   globalThis.__projectChatRouteScopeTest = state;
   try {
     const dependencies = path.join(directory, "dependencies.cjs");
@@ -447,7 +447,7 @@ test("the chat route selects each fallback document once before building the rea
       for (const name of ["upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
       exports.createTextCompletionStream = async input => {
         globalThis.__projectChatRouteScopeTest.prompts.push(input);
-        return (async function* () { yield "Lokalt testsvar."; globalThis.__projectChatRouteScopeTest.abortOnEnd?.abort(); })();
+        return (async function* () { for (const chunk of globalThis.__projectChatRouteScopeTest.chunks) yield chunk; globalThis.__projectChatRouteScopeTest.abortOnEnd?.abort(); })();
       };
       exports.retrieveDocumentSnippetsWithMetadata = async input => {
         globalThis.__projectChatRouteScopeTest.retrieval.push(input);
@@ -476,6 +476,13 @@ test("the chat route selects each fallback document once before building the rea
       assert.equal(state.prompts[0].user.split(marker).length - 1, 1, "the complete source is sent once");
       assert.deepEqual(state.retrieval[0].documents.map((item) => item.id), [source.id]);
     }
+    state.chunks=["  \n", "Lokalt testsvar.", "\n\n", "Andre avsnitt.", "\n\n \t"];
+    state.saved=[];
+    const whitespaceResponse=await POST(new Request("http://localhost/api/projects/fictional/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:"Hei!"})}),{params:Promise.resolve({id:"fictional"})});
+    const visible=await whitespaceResponse.text();
+    assert.equal(visible,"Lokalt testsvar.\n\nAndre avsnitt.","Keep paragraph spacing, discard only outer whitespace.");
+    assert.equal(state.saved.find(args=>args[1]==="assistant")[2],visible,"Published stream and persisted transcript are identical.");
+    state.chunks=["Lokalt testsvar."];
     const cancellation = new AbortController(); state.abortOnEnd = cancellation; state.saved = [];
     const canceled = await POST(new Request("http://localhost/api/projects/fictional/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hei!" }), signal: cancellation.signal }), { params: Promise.resolve({ id: "fictional" }) });
     assert.equal(canceled.status, 200);

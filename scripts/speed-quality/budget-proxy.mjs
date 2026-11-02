@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { openBudgetLedger, prepareRequest } from "./budget.mjs";
+import { evaluationRequestPurpose, openBudgetLedger, prepareRequest } from "./budget.mjs";
 import { forwardStream, writeProxyStreamChunk } from "./stream-response.mjs";
 
 const args = new Map(process.argv.slice(2).reduce((pairs, value, index, all) => index % 2 ? pairs : [...pairs, [value, all[index + 1]]], []));
@@ -27,7 +27,7 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/budget") {
       response.setHeader("content-type", "application/json");
-      response.end(JSON.stringify({ ...ledger.snapshot(), proxyServiceTier: serviceTier, proxyPhase: phase, proxyPhaseBudgetUsd: phaseBudgetUsd }));
+      response.end(JSON.stringify({ ...ledger.snapshot(), proxyServiceTier: serviceTier, proxyPhase: phase, proxyPhaseBudgetUsd: phaseBudgetUsd, proxyRequestPurposeVersion: 1 }));
       return;
     }
     if (request.method !== "POST") throw new Error("Only POST is supported.");
@@ -45,7 +45,7 @@ const server = createServer(async (request, response) => {
     // the failed earlier run and its charge rather than calling it a speed win.
     const evaluationLimit = /solution-evaluation-holistic|requirement-response-batch/.test(String(original.prompt_cache_key ?? "")) ? 16000 : outputLimit;
     const prepared = prepareRequest(endpoint, original, evaluationLimit, serviceTier);
-    reservation = ledger.reserve({ ...prepared, endpoint, model: prepared.request.model, phase, phaseBudgetUsd });
+    reservation = ledger.reserve({ ...prepared, endpoint, model: prepared.request.model, phase, phaseBudgetUsd, requestPurpose: evaluationRequestPurpose(endpoint, prepared.request) });
     const upstream = await fetch(`https://api.openai.com${endpoint}`, {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },

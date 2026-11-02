@@ -251,6 +251,7 @@ export type ProjectWorkspaceTabContentProps = {
   onFileChange: (file: File | null) => void;
   onUploadDocument: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onDeleteDocument: (document: ProjectDocument) => Promise<void>;
+  onRetryDocumentEnhancement: (document: ProjectDocument) => Promise<void>;
   onGenerateCustomerAnalysis: () => Promise<void>;
   onSaveAnalysis: (
     section: CustomerAnalysisSection,
@@ -670,6 +671,7 @@ export function ProjectWorkspaceTabContent({
   onFileChange,
   onUploadDocument,
   onDeleteDocument,
+  onRetryDocumentEnhancement,
   onGenerateCustomerAnalysis,
   onSaveAnalysis,
   onGenerateSolutionEvaluation,
@@ -720,6 +722,10 @@ export function ProjectWorkspaceTabContent({
             busy?.startsWith("delete-") ? busy.slice("delete-".length) : null
           }
           onDeleteDocument={onDeleteDocument}
+          retryingEnhancementDocumentId={
+            busy?.startsWith("enhance-") ? busy.slice("enhance-".length) : null
+          }
+          onRetryDocumentEnhancement={onRetryDocumentEnhancement}
         />
       ) : null}
 

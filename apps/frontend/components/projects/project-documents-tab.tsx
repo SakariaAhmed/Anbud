@@ -1,7 +1,7 @@
 "use client";
 
-import type { FormEvent } from "react";
-import { Download, FileText, Trash2, Upload } from "lucide-react";
+import { useLayoutEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { Download, FileText, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { DeleteConfirmDialog } from "@/components/projects/delete-confirm-dialog";
 import { Input } from "@/components/projects/primitives";
@@ -12,6 +12,7 @@ import type {
   ProjectDocumentRole,
   ProjectServiceDescription,
 } from "@/lib/types";
+import { canRetryDocumentEnhancement } from "@/lib/document-processing";
 import { listSelectedServiceDocuments } from "@/lib/service-description";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +33,30 @@ type ProjectDocumentsTabProps = {
   uploadBusy: boolean;
   deletingDocumentId: string | null;
   onDeleteDocument: (document: ProjectDocument) => Promise<void>;
+  retryingEnhancementDocumentId: string | null;
+  onRetryDocumentEnhancement: (document: ProjectDocument) => Promise<void>;
 };
+
+const DOCUMENT_REGION_ATTRIBUTE = "data-document-region";
+
+/** An accepted retry removes this control. Focus that was on it moves to the
+ * document it acted on; focus the user moved elsewhere stays where it is. */
+function DocumentEnhancementRetryButton({ busy, disabled, title, onRetry, children }: { busy: boolean; disabled: boolean; title?: string; onRetry: () => void; children: ReactNode }) {
+  const button = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const control = button.current;
+    return () => {
+      if (control && control === control.ownerDocument.activeElement) {
+        control.closest<HTMLElement>(`[${DOCUMENT_REGION_ATTRIBUTE}]`)?.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+  return (
+    <Button ref={button} type="button" variant="outline" size="sm" disabled={disabled} aria-busy={busy} title={title} onClick={() => { if (!busy) onRetry(); }}>
+      {children}
+    </Button>
+  );
+}
 
 function formatFileSize(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -115,6 +139,8 @@ export function ProjectDocumentsTab({
   uploadBusy,
   deletingDocumentId,
   onDeleteDocument,
+  retryingEnhancementDocumentId,
+  onRetryDocumentEnhancement,
 }: ProjectDocumentsTabProps) {
   const serviceDocuments = listSelectedServiceDocuments(services);
 
@@ -209,7 +235,11 @@ export function ProjectDocumentsTab({
               {documents.map((document) => (
                 <div
                   key={document.id}
-                  className="border-t border-slate-200 py-3"
+                  role="group"
+                  aria-label={`Dokument ${document.title}`}
+                  tabIndex={-1}
+                  {...{ [DOCUMENT_REGION_ATTRIBUTE]: "" }}
+                  className="border-t border-slate-200 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -272,7 +302,23 @@ export function ProjectDocumentsTab({
                     <span>·</span>
                     <span>{pageCountLabel(document.page_count)}</span>
                   </div>
-                  {document.processing_message || document.processing_error ? (
+                  {canRetryDocumentEnhancement(document) ? (
+                    <div role="status" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <p className="min-w-0 flex-1 basis-56 break-words text-xs leading-5 text-amber-800">
+                        {document.processing_error}
+                      </p>
+                      <DocumentEnhancementRetryButton
+                        busy={retryingEnhancementDocumentId === document.id}
+                        // Stays enabled while its own request runs so keyboard focus is not lost.
+                        disabled={uploadBusy && retryingEnhancementDocumentId !== document.id}
+                        title={uploadBusy ? "Vent til pågående handling er ferdig." : undefined}
+                        onRetry={() => void onRetryDocumentEnhancement(document)}
+                      >
+                        {retryingEnhancementDocumentId === document.id ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+                        Prøv forbedring på nytt
+                      </DocumentEnhancementRetryButton>
+                    </div>
+                  ) : document.processing_message || document.processing_error ? (
                     <p className="mt-2 break-words text-xs leading-5 text-slate-500">
                       {document.processing_error ??
                         document.processing_message}

@@ -39,3 +39,10 @@ export function lastHeadingSegment(heading: string) {
 export function meetsSmallRequirementTextMinimum(value: string) {
   return value.replace(/\s+/gu, " ").trim().length >= 20;
 }
+
+/** Parsing normalizes dashes and whitespace to match wording. Once a span binds a
+ * row to its source, the row shows the source's own characters on one line. */
+export function observedRequirementWording(text: string, originalText: string) {
+  const comparable = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\s+/gu, " ").trim();
+  return comparable(originalText) === comparable(text) ? originalText.replace(/\s+/gu, " ").trim() : text;
+}

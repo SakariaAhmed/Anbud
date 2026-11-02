@@ -491,3 +491,67 @@ test("GPT-6 Chat and file-input Responses use the supported cache lifetime and o
     else process.env.OPENAI_PROMPT_CACHE_RETENTION = originalRetention;
   }
 });
+
+function streamRuntime(events, observed = {}) {
+  return {...jsonRuntime(""),async getClient(){return {responses:{async create(body,options){
+    observed.body=body;observed.options=options;
+    return (async function*(){for(const event of events){if(event instanceof Error)throw event;observed.yieldedType=event.type;yield event;}})();
+  }}};}};
+}
+const streamInput={system:"Return JSON",user:"Analyze",schemaName:"partial_test",schema:{type:"object"}};
+function textDelta(delta){return {type:"response.output_text.delta",delta,output_index:0,content_index:0,item_id:"one"};}
+function streamDone(text){return {type:"response.completed",response:{status:"completed",output:[{content:[{type:"output_text",text}]}]}};}
+
+test("structured stream publishes complete nested and escaped fields exactly once with arbitrary chunk boundaries",async()=>{
+  const text=JSON.stringify({summary:'Norsk æøå "},"',items:[{text:"one\\two"}]});
+  for(let width=1;width<9;width++){
+    const events=[];for(let i=0;i<text.length;i+=width)events.push(textDelta(text.slice(i,i+width)));events.push(streamDone(text));
+    const fields=[],observed={};
+    const result=await runStructuredJsonResponse({...streamRuntime(events,observed),...streamInput,maxRetries:2,onCompletedField:async(k,v)=>{assert.equal(observed.yieldedType,"response.output_text.delta");fields.push([k,v]);}});
+    assert.deepEqual(Object.fromEntries(fields),JSON.parse(text));assert.deepEqual(result,JSON.parse(text));
+    assert.equal(observed.body.stream,true);assert.equal(observed.options.maxRetries,0);
+  }
+});
+
+test("truncation and later provider failure preserve only completed fields",async()=>{
+  for(const suffix of [[],[new Error("provider failed")],[{type:"response.incomplete"}]]){
+    const fields=[];
+    await assert.rejects(runStructuredJsonResponse({...streamRuntime([textDelta('{"ready":"first","unfinished":["half'),...suffix]),...streamInput,onCompletedField:async(k,v)=>{fields.push([k,v]);}}));
+    assert.deepEqual(fields,[["ready","first"]]);
+  }
+});
+
+test("stream rejects duplicate keys, malformed JSON, changed final text and multiple outputs without exposing content",async()=>{
+  for(const events of [
+    [textDelta('{"a":1,"a":2}'),streamDone('{"a":1,"a":2}')],
+    [textDelta('{"secret":private customer text}')],
+    [textDelta('{"a":1,'),{...textDelta('"b":2}'),item_id:"two"}],
+    [textDelta('{"a":1}'),streamDone('{"a":2}')],
+    [textDelta('{"a":1,}'),streamDone('{"a":1,}')],
+    [textDelta('{"a":1} trailing'),streamDone('{"a":1} trailing')],
+  ])await assert.rejects(runStructuredJsonResponse({...streamRuntime(events),...streamInput,onCompletedField:async()=>{}}),error=>{assert.doesNotMatch(error.message,/private customer text/);return true;});
+});
+
+test("partial write failure and workflow cancellation stop before publishing another field",async()=>{
+  const controller=new AbortController(),fields=[],observed={};
+  await assert.rejects(runWithProjectWorkflowContext({signal:controller.signal},()=>runStructuredJsonResponse({...streamRuntime([textDelta('{"a":1,"b":2}'),streamDone('{"a":1,"b":2}')],observed),...streamInput,onCompletedField:async key=>{fields.push(key);controller.abort(new Error("cancelled"));}})),/cancelled/);
+  assert.deepEqual(fields,["a"]);assert.equal(observed.options.signal.aborted,true);
+  const writes=[];
+  await assert.rejects(runStructuredJsonResponse({...streamRuntime([textDelta('{"a":1,"b":2}')]),...streamInput,onCompletedField:async key=>{writes.push(key);throw new Error("fence lost");}}),/fence lost/);
+  assert.deepEqual(writes,["a"]);
+});
+
+test("stream timeout aborts a stalled body after response headers",async()=>{
+  let signal;
+  const runtime={...jsonRuntime(""),async getClient(){return {responses:{async create(_body,options){signal=options.signal;return(async function*(){yield textDelta('{"a":1,');await new Promise(resolve=>signal.addEventListener("abort",resolve,{once:true}));signal.throwIfAborted();})();}}};}};
+  const fields=[];
+  await assert.rejects(runStructuredJsonResponse({...runtime,...streamInput,timeoutMs:25,onCompletedField:async key=>{fields.push(key);}}),/timeout/i);
+  assert.equal(signal.aborted,true);assert.deepEqual(fields,["a"]);
+});
+
+
+test("a completed stream missing a schema-required field never becomes a complete result",async()=>{
+  const fields=[];
+  await assert.rejects(runStructuredJsonResponse({...streamRuntime([textDelta('{"ready":1}'),streamDone('{"ready":1}')]),...streamInput,schema:{type:"object",required:["ready","missing"]},onCompletedField:async(k,v)=>{fields.push([k,v]);}}),/missing required fields/);
+  assert.deepEqual(fields,[["ready",1]]);
+});

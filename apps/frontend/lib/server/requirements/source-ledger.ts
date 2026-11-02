@@ -23,6 +23,7 @@ import {
   buildExplicitIdPdfNarrativeRequirementLedger,
   buildExplicitIdTableRequirementLedger,
   buildGeneratedPdfRequirementLedger,
+  buildLabelledLineRequirementLedger,
   buildMixedTextRequirementLedger,
   buildPrefixedLineRequirementLedger,
   buildTrustedStructureMapRequirementLedger,
@@ -2162,7 +2163,10 @@ export async function buildRequirementSourceLedgerWithFiles(
     ? []
     : await buildPdfLayoutTableRequirementLedger(document);
   const declaredHeadingLedger = buildDeclaredHeadingRequirementLedger(document);
-  const doclingTextAnchors = buildExplicitIdDoclingTextRequirementLedger(document, corpusParserContext);
+  const doclingTextAnchors = [
+    ...buildExplicitIdDoclingTextRequirementLedger(document, corpusParserContext),
+    ...buildLabelledLineRequirementLedger(document, corpusParserContext),
+  ];
   // Only replace prose projections of the same local ID/page. Table rows and
   // repeated anchored units remain independent source requirements.
   const preferDoclingTextAnchors = (entry: RequirementLedgerEntry) => !doclingTextAnchors.some((anchor) =>

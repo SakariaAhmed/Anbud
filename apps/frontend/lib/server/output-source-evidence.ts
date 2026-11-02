@@ -124,7 +124,7 @@ export function outputEvidenceFields(value: unknown, prefix = "result"): Array<{
 }
 
 const outputProvenanceFields = new Set([
-  "source_evidence", "source_references", "evaluation_context", "evaluation_provenance_mode", "evidence_review", "criterion_source", "criterion_id", "requirement_references",
+  "source_evidence", "source_references", "evaluation_context", "evaluation_provenance_mode", "evidence_review", "criterion_source", "answer_source", "criterion_scope", "criterion_id", "requirement_references",
   "customer_document_id", "solution_document_id", "evaluated_generated_artifact_id",
   "source_document_id", "source_document_title", "answer_document_id", "answer_document_title",
   "heading_path", "page_range", "table_id", "source_reference", "full_reference",

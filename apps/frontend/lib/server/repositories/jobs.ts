@@ -205,6 +205,31 @@ export async function updatePersistedProjectJob(
   return Boolean(updated.data);
 }
 
+/**
+ * A deadline abandons the enhancement workflow, which may no longer write. The
+ * job's own terminal transition therefore records the failure on the document it
+ * read, in one transaction. Returns false when the lease is no longer authoritative.
+ */
+export async function failDocumentEnhancementJobAtDeadline(input: {
+  jobId: string; leaseToken: string; projectId: string; documentId: string; sourceRevision: number;
+  jobMessage: string; jobError: string; documentMessage: string; documentError: string;
+  terminalMetadata: Record<string, unknown>;
+}, runtime: ProjectJobRepositoryRuntime = {}) {
+  assertLeaseToken(input.leaseToken);
+  const terminalMetadata = sanitizeProjectJobTerminalMetadata(input.terminalMetadata);
+  if (!terminalMetadata) throw new Error("Prosjektjobben har ugyldig terminalmetadata.");
+  const { error } = await serviceClient(runtime).rpc("fail_document_enhancement_job", {
+    p_job_id: input.jobId, p_lease_token: input.leaseToken, p_project_id: input.projectId,
+    p_document_id: input.documentId, p_source_revision: input.sourceRevision,
+    p_job_message: input.jobMessage, p_job_error: input.jobError,
+    p_document_message: input.documentMessage, p_document_error: input.documentError,
+    p_terminal_metadata: terminalMetadata,
+  });
+  if (error?.message?.includes("PROJECT_JOB_LEASE_LOST")) return false;
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 export async function heartbeatProjectJob(
   jobId: string,
   leaseToken: string,

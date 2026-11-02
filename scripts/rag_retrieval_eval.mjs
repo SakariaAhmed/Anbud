@@ -128,6 +128,9 @@ const app = load({
   ? path.join(repositoryRoot, "scripts/rag_retrieval_eval_store.cjs")
   : unavailableDataApi });
 const { retrieveDocumentSnippetsWithMetadata, buildKeywordSearchQuery, replaceProjectDocumentChunks } = app(path.join(frontendRoot, "lib/server/document-chunks.ts"));
+const { matchCenteredExcerpt } = app(path.join(frontendRoot, "lib/server/ai/requirement-coverage.ts"));
+const retrievalRerankExcerpt = app(path.join(frontendRoot, "lib/server/ai/retrieval-rerank.ts")).retrievalRerankExcerpt
+  ?? ((text, query) => matchCenteredExcerpt(text, query, 700));
 const { extractTextFromBuffer } = app(path.join(frontendRoot, "lib/server/documents.ts"));
 const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/ai/retrieval-query.ts"));
 // Chat's own request (query plan, exact terms, broader retry, sections and
@@ -209,9 +212,20 @@ async function runCase(item) {
   const startedAt = Date.now();
   const request = await retrievalRequest(item.question, item.previous_question);
   const diagnostics = [];
-  const retrieval = await retrieveDocumentSnippetsWithMetadata({ ...request, ...(args.includes("--diagnostics") ? { onCandidateRanking: ({ stage, candidates }) => {
-    const score = scoreRetrievalCases([{ ...item, retrieved: candidates.map(snippet => ({ source_id: snippet.sourceId, reference: snippet.reference, text: snippet.text, page_start: snippet.pageStart, page_end: snippet.pageEnd, heading_path: snippet.headingPath })) }]);
-    diagnostics.push({ stage, candidates: candidates.length, expected_rank: score.mrr ? Math.round(1 / score.mrr) : null });
+  const retrieval = await retrieveDocumentSnippetsWithMetadata({ ...request, ...(args.includes("--diagnostics") ? { onCandidateRanking: ({ stage, query, candidates }) => {
+    const matches = (snippets) => scoreRetrievalCases([{ ...item, retrieved: snippets.map(snippet => ({ source_id: snippet.sourceId, reference: snippet.reference, text: snippet.text, page_start: snippet.pageStart, page_end: snippet.pageEnd, heading_path: snippet.headingPath })) }]);
+    const score = matches(candidates);
+    diagnostics.push({ stage, candidates: candidates.length, expected_rank: score.mrr ? Math.round(1 / score.mrr) : null,
+      ranking_metadata: candidates.map(snippet => ({ source_id: snippet.sourceId, chunk_index: snippet.chunkIndex, semantic_rank: snippet.semanticRank, keyword_rank: snippet.keywordRank, rrf_score: snippet.rrfScore })),
+      expected_passages: candidates.flatMap((snippet, index) => matches([snippet]).mrr ? [{ rank: index + 1,
+        source_id: snippet.sourceId, chunk_index: snippet.chunkIndex, similarity: snippet.similarity,
+        semantic_rank: snippet.semanticRank, keyword_rank: snippet.keywordRank, rrf_score: snippet.rrfScore,
+        lexical_score: snippet.lexicalScore, score: snippet.score, passage_chars: snippet.text.length,
+        excerpt_chars: retrievalRerankExcerpt(snippet.text, query).length,
+        expected_text_survives_excerpt: Boolean(matches([{ ...snippet, text: retrievalRerankExcerpt(snippet.text, query) }]).mrr),
+      }] : []),
+      ...(stage === "rerank_pool" ? { excerpt_chars_total: candidates.reduce((total, snippet) => total + retrievalRerankExcerpt(snippet.text, query).length, 0) } : {}),
+    });
   } } : {}) });
   results.push({
     ...item,

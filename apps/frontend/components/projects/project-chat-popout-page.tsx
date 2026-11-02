@@ -1,5 +1,5 @@
 "use client";
-import { recordWorkflowRenderAfterPaint } from "@/lib/client/workflow-render-metric";
+import { recordWorkflowRenderAfterPaint, workflowCacheState } from "@/lib/client/workflow-render-metric";
 
 import {
   type FormEvent,
@@ -487,7 +487,7 @@ export function ProjectChatPopoutPage({
           setStreamingMessage(assistantText);
           if (!firstRenderRecorded && assistantText.trim() && traceId) {
             firstRenderRecorded = true;
-            recordWorkflowRenderAfterPaint(projectId, { phase: "chat_first_render", traceId }, renderStartedAt, controller.signal);
+            recordWorkflowRenderAfterPaint(projectId, { phase: "chat_first_render", traceId, cacheState: workflowCacheState(`chat:${projectId}`) }, renderStartedAt, controller.signal);
           }
         }
         assistantText += decoder.decode();

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { recordWorkflowRenderAfterPaint } from "@/lib/client/workflow-render-metric";
+import { recordWorkflowRenderAfterPaint, workflowCacheState } from "@/lib/client/workflow-render-metric";
 import { Input } from "@/components/projects/primitives";
 import { Button } from "@/components/ui/button";
 import { parseProjectRequirementRegister } from "@/lib/project-requirement-register";
@@ -14,7 +14,7 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
   useEffect(() => {
     const abort = new AbortController();
     const startedAt = performance.now();
-    const reported = new Set<string>();
+    let firstRead = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRegister(null);
     const load = async () => {
@@ -24,20 +24,23 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
         const next = parseProjectRequirementRegister(await response.json());
         if (!abort.signal.aborted) {
           setRegister(next); setError("");
-          for (const document of next.documents.filter(document => document.rows.length)) {
-            if (reported.has(document.id)) continue;
-            reported.add(document.id);
-            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id }, startedAt, abort.signal);
+          // Only this view's first read measures rendering. Rows that appear
+          // while polling measure ingestion, which upload_to_ready already owns.
+          if (firstRead) for (const document of next.documents.filter(document => document.rows.length)) {
+            recordWorkflowRenderAfterPaint(projectId, { phase: "requirement_register_render", traceId: document.id, documentId: document.id, sourceRevision: document.source_revision, cacheState: workflowCacheState(`register:${document.id}:${document.source_revision}`) }, startedAt, abort.signal);
           }
+          firstRead = false;
         }
-      } catch { if (!abort.signal.aborted) setError("Kunne ikke hente kravregisteret. Prøv igjen."); }
+      } catch { if (!abort.signal.aborted) { firstRead = false; setError("Kunne ikke hente kravregisteret. Prøv igjen."); } }
       finally { if (processing && !abort.signal.aborted) timer = setTimeout(() => void load(), 2500); }
     };
     void load();
     return () => { abort.abort(); if (timer) clearTimeout(timer); };
   }, [projectId, refreshKey, processing, retry]);
   const rows = useMemo(() => register?.documents.flatMap(document => document.rows.map(row => ({ ...row, documentId: document.id, documentTitle: document.title }))) ?? [], [register]);
-  const filtered = rows.filter(row => `${row.id} ${row.text} ${row.heading} ${row.documentTitle}`.toLocaleLowerCase("nb").includes(query.toLocaleLowerCase("nb")));
+  // Rows show the source's own dashes; a typed hyphen still finds them.
+  const searchable = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").toLocaleLowerCase("nb");
+  const filtered = rows.filter(row => searchable(`${row.id} ${row.text} ${row.heading} ${row.documentTitle}`).includes(searchable(query)));
   if (!register && !error) return <p role="status" className="py-3 text-sm text-muted-foreground">Henter dokumentets kravregister …</p>;
   if (!rows.length && !error) return processing ? <p role="status" className="py-3 text-sm text-muted-foreground">Kravregisteret vises så snart dokumentet er lest og lagret. Dokumentbehandlingen pågår.</p> : null;
   return <section aria-label="Kravregister" className="min-w-0 space-y-3">
@@ -50,7 +53,7 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><h4 className="font-semibold">{row.id}</h4>{row.id_origin !== "source" ? <span className="text-xs text-muted-foreground">{row.id_origin === "inferred" ? "Utledet ID – må kontrolleres" : "Lokal ID – mangler ID i kilden"}</span> : null}</div>
         <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{row.text}</p>
         <p className="mt-1 text-xs text-muted-foreground">{row.text_origin === "observed" ? "Ordlyden er funnet i originalteksten." : row.text_origin === "reconstructed" ? "Sammenstilt ordlyd – kontroller originaldokumentet." : "Ordlydens opprinnelse er ikke kontrollert for dette eldre registeret."}</p>
-        {row.original_text && row.original_text !== row.text ? <details className="mt-1 text-xs"><summary>Vis original ordlyd</summary><blockquote className="mt-1 whitespace-pre-wrap">{row.original_text}</blockquote></details> : null}
+        {row.original_text && row.original_text.replace(/\s+/gu, " ").trim() !== row.text ? <details className="mt-1 text-xs"><summary>Vis original ordlyd</summary><blockquote className="mt-1 whitespace-pre-wrap">{row.original_text}</blockquote></details> : null}
         <p className="mt-2 text-xs leading-5 text-muted-foreground">{[row.documentTitle, row.heading, row.pages.length ? `Side ${row.pages.join(", ")}` : "Side ikke oppgitt"].filter(Boolean).join(" · ")}</p>
       </article>) : <p className="p-3 text-sm text-muted-foreground">Ingen krav samsvarer med søket. Prøv en annen formulering.</p>}
     </div>

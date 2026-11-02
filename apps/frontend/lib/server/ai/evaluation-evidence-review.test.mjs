@@ -163,3 +163,39 @@ test("ambiguous and unmatched findings lose stale advice even without a coverage
     assert.equal(reviewed.evidence_review, undefined);
   }
 });
+
+function criterionFixture() {
+  const { result, input } = fixture();
+  result.requirement_coverage.items[0].evidence = "Rammen er 1 500 kr.";
+  const customer = { id: "criterion-source", project_id: "project", title: "Kriterier", role: "primary_customer_document", chunk_source_revision: 1, raw_text: "[[SIDE:2]]\nTildelingskriterium: Kvalitet på overgangsplan", structure_map: [{ reference: "Tildeling · side 2", text: "Tildelingskriterium: Kvalitet på overgangsplan", page: 2 }] };
+  const solution = { ...customer, id: "criterion-answer", role: "primary_solution_document", raw_text: "Overgangen har tre milepæler med godkjenning fra kunden.", structure_map: [] };
+  input.documents.push({ document: customer, sourceType: "project_document" }, { document: solution, sourceType: "project_document" });
+  const { normalizeCriterionCoverage } = load("./criterion-coverage.ts");
+  result.criterion_coverage = normalizeCriterionCoverage([{ criterion_index: 0, criterion: "Kvalitet på overgangsplan", assessment: "Godt", rationale: "Planen er konkret.", evidence: solution.raw_text, requirement_references: ["A · K-1"] }], { criteria: ["Kvalitet på overgangsplan"], coverage: result.requirement_coverage, customerDocuments: [customer], solutionDocument: solution });
+  return { result, input, customer, solution };
+}
+
+test("criterion source/answer metadata is immutable evidence while rejected answer/rationale and linked downgrades withhold positive conclusions", () => {
+  const initial = criterionFixture();
+  const checked = reviewSolutionEvaluationEvidence(initial.result, initial.input);
+  assert.equal(checked.criterion_coverage[0].assessment, "Godt");
+  assert.equal(checked.criterion_coverage[0].origin, "observed");
+  assert.deepEqual(checked.criterion_coverage[0].criterion_source, initial.result.criterion_coverage[0].criterion_source);
+  assert.deepEqual(checked.criterion_coverage[0].answer_source, initial.result.criterion_coverage[0].answer_source);
+  assert.deepEqual(checked.criterion_coverage[0].criterion_scope, initial.result.criterion_coverage[0].criterion_scope);
+  for (const target of ["evidence", "rationale", "linked_requirement", "source_changed", "label_changed"]) {
+    const { result, input, customer } = criterionFixture();
+    if (target === "linked_requirement") result.requirement_coverage.items[0].evidence = "«Dette finnes ikke i originalen.»";
+    else if (target === "source_changed") customer.chunk_source_revision = 2;
+    else if (target === "label_changed") { result.criterion_coverage[0].criterion = "«Oppdiktet kriterium»"; result.criterion_coverage[0].assessment = "Mangler"; }
+    else result.criterion_coverage[0][target] = "«Dette finnes ikke i originalen.»";
+    const reviewed = reviewSolutionEvaluationEvidence(result, input);
+    assert.equal(reviewed.criterion_coverage[0].assessment, "Uklart", target);
+    assert.equal(reviewed.criterion_coverage[0].review_required, true, target);
+    assert.doesNotMatch(reviewed.criterion_coverage[0].rationale, /Planen er konkret/u);
+    assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
+    assert.deepEqual(reviewed.strengths, []);
+    assert.match(reviewed.executive_summary, /holdt tilbake/u);
+    assert.equal(result.criterion_coverage[0].assessment, target === "label_changed" ? "Mangler" : "Godt", "The captured input is not mutated.");
+  }
+});

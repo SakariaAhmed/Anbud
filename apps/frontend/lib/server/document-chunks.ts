@@ -487,6 +487,8 @@ export function documentSourceKeysForMemoryFallback(
 
 const MAX_RETRIEVAL_LIMIT = 16;
 const MODEL_RERANK_CANDIDATES = 32;
+const MODEL_RERANK_MAX_CANDIDATES = 48;
+const MODEL_RERANK_SEMANTIC_CANDIDATES = 8;
 
 /** Occurrences of `needle` in `haystack` that stand as a whole value: not
  * preceded or followed by a letter or digit. */
@@ -1930,6 +1932,46 @@ function rerankSnippets(input: {
     .sort((left, right) => right.score - left.score);
 }
 
+function retrievalCandidateKey(candidate: RetrievedDocumentSnippet) {
+  return `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
+}
+
+/** Keep SQL fusion and semantic hits from being erased by lexical boosts.
+ * Channel votes are fused across queries before applying their quotas. The
+ * model still sees heuristic order, and failure still returns that order.
+ * The union grows only when channels disagree, with a hard ceiling of 48. */
+export function buildRetrievalRerankPool(input: {
+  ranked: RetrievedDocumentSnippet[];
+  retrievalRankings: RetrievedDocumentSnippet[][];
+}) {
+  const ranked = input.ranked;
+  if (ranked.length <= MODEL_RERANK_CANDIDATES) return ranked;
+  const storedRankings = input.retrievalRankings.map(candidates => candidates.filter(candidate =>
+    candidate.retrievalSource === "hybrid" || candidate.retrievalSource === "vector",
+  ));
+  const hybrid = reciprocalRankFusion(storedRankings.map(candidates => [...candidates].sort((a, b) =>
+    (b.rrfScore ?? 0) - (a.rrfScore ?? 0) || (b.similarity ?? 0) - (a.similarity ?? 0),
+  )), retrievalCandidateKey);
+  const semantic = reciprocalRankFusion(storedRankings.map(candidates => candidates.filter(candidate =>
+    candidate.similarity != null && Number.isFinite(candidate.similarity),
+  ).sort((a, b) =>
+    (a.semanticRank ?? Number.POSITIVE_INFINITY) - (b.semanticRank ?? Number.POSITIVE_INFINITY) ||
+    (b.similarity ?? 0) - (a.similarity ?? 0),
+  )), retrievalCandidateKey);
+  const available = new Set(ranked.map(retrievalCandidateKey));
+  const selected = new Set<string>();
+  const add = (candidates: RetrievedDocumentSnippet[], count: number) => {
+    for (const candidate of candidates.slice(0, count)) {
+      const key = retrievalCandidateKey(candidate);
+      if (available.has(key) && selected.size < MODEL_RERANK_MAX_CANDIDATES) selected.add(key);
+    }
+  };
+  add(hybrid, MODEL_RERANK_CANDIDATES);
+  add(semantic, MODEL_RERANK_SEMANTIC_CANDIDATES);
+  add(ranked, MODEL_RERANK_CANDIDATES);
+  return ranked.filter(candidate => selected.has(retrievalCandidateKey(candidate)));
+}
+
 function assessRetrievalQuality(input: {
   snippets: RetrievedDocumentSnippet[];
   exactTerms: string[];
@@ -2102,7 +2144,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   /** Orders the best candidates by relevance; null keeps the heuristic order. */
   rerank?: RetrievalReranker;
   /** Explicit diagnostic sink for offline evaluation; never logs source text. */
-  onCandidateRanking?: (value: { stage: "subquery" | "fused" | "rerank_pool"; query: string; candidates: RetrievedDocumentSnippet[] }) => void;
+  onCandidateRanking?: (value: { stage: "retrieved" | "subquery" | "fused" | "rerank_pool"; query: string; candidates: RetrievedDocumentSnippet[] }) => void;
   /**
    * Returns each matched part with up to 4 800 characters of its section. Only
    * for callers that send whole snippets: a caller that cuts snippets to their
@@ -2201,7 +2243,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     query: string;
     queryTokens: string[];
     exactTerms: string[];
-  }) => {
+  }): Promise<RetrievedDocumentSnippet[]> => {
     let hybridCandidates: RetrievedDocumentSnippet[] = [];
     let vectorCandidates: RetrievedDocumentSnippet[] = [];
     let queryEmbeddingFailed = false;
@@ -2276,14 +2318,18 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     return [...hybridCandidates, ...vectorCandidates, ...fallbackCandidates];
   };
 
+  const retrievalRankings: RetrievedDocumentSnippet[][] = [];
   const queries = Array.from(new Set([query, ...(input.subqueries ?? []).map(normalizeChunkText).filter(Boolean)])).slice(0, 4);
-  const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async passQuery => {
+  const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async (passQuery, queryIndex) => {
     const tokens = tokenizeForRetrieval(passQuery);
-    const candidates = rerankSnippets({ candidates: await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms }), queryTokens: tokens, exactTerms });
+    const gathered = await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms });
+    retrievalRankings[queryIndex] = gathered;
+    input.onCandidateRanking?.({ stage: "retrieved", query: passQuery, candidates: [...gathered].sort((a, b) => (b.rrfScore ?? 0) - (a.rrfScore ?? 0)) });
+    const candidates = rerankSnippets({ candidates: gathered, queryTokens: tokens, exactTerms });
     input.onCandidateRanking?.({ stage: "subquery", query: passQuery, candidates });
     return candidates;
   })), lookup]);
-  const candidateKey = (candidate: RetrievedDocumentSnippet) => `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
+  const candidateKey = retrievalCandidateKey;
   let rankingQuery = query;
   let rankingTokens = queryTokens;
   let rankingExactTerms = exactTerms;
@@ -2311,6 +2357,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
         queryTokens: broaderTokens,
         exactTerms: rankingExactTerms,
       });
+    retrievalRankings.push(broaderCandidates);
+    input.onCandidateRanking?.({ stage: "retrieved", query: broaderQuery, candidates: [...broaderCandidates].sort((a, b) => (b.rrfScore ?? 0) - (a.rrfScore ?? 0)) });
     rankings.push(rerankSnippets({
       candidates: broaderCandidates,
       queryTokens: rankingTokens,
@@ -2322,9 +2370,11 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
 
   let usedModelRerank = false;
   input.onCandidateRanking?.({ stage: "fused", query: rankingQuery, candidates: ranked });
-  input.onCandidateRanking?.({ stage: "rerank_pool", query: rankingQuery, candidates: ranked.slice(0, MODEL_RERANK_CANDIDATES) });
+  const pool = input.rerank || input.onCandidateRanking
+    ? buildRetrievalRerankPool({ ranked, retrievalRankings })
+    : [];
+  input.onCandidateRanking?.({ stage: "rerank_pool", query: rankingQuery, candidates: pool });
   if (input.rerank && ranked.length > 1) {
-    const pool = ranked.slice(0, MODEL_RERANK_CANDIDATES);
     const response = await input.rerank({ query: rankingQuery, candidates: pool });
     if (response && response.every(index => Number.isInteger(index) && index >= 0 && index < pool.length)) {
       ranked = [...new Set(response)].map(index => pool[index]);

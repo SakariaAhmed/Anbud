@@ -45,6 +45,7 @@ create or replace function public.dispatch_ready_customer_analyses(integer) retu
 create or replace function public.finish_automatic_customer_analysis() returns trigger language plpgsql as 'begin return new; end';
 create or replace function public.automatic_customer_analysis_preflight() returns text language sql as 'select';
 create or replace function public.scheduled_worker_capacity_preflight() returns text language sql as 'select';
+create or replace function public.fail_document_enhancement_job() returns boolean language sql as 'select';
 `;
 
 const versions = new Map([
@@ -98,6 +99,9 @@ test("canonical migration requires every durable column and index", () => {
       ),
     /function:insert_vacant_primary_project_document/u,
   );
+  assert.throws(() => validateCanonicalProjectJobMigration(
+    completeMigration.replace(/^.*function public\.fail_document_enhancement_job.*$/mu, ""),
+  ), /function:fail_document_enhancement_job/u);
 });
 
 test("remote preflight checks only the internal PostgREST contract", async () => {

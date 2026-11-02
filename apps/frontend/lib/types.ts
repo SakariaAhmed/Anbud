@@ -329,6 +329,16 @@ export type CustomerAnalysisSectionHistories = Partial<
   Record<CustomerAnalysisSection, CustomerAnalysisSectionHistoryEntry[]>
 >;
 
+/** Preview only: never a CustomerAnalysisResult or a workflow input. */
+export interface CustomerAnalysisPartial {
+  status: "incomplete";
+  job_id: string;
+  source_revision: number;
+  job_status: "running" | "failed";
+  updated_at: string;
+  fields: Partial<Omit<CustomerAnalysisResult, "revision" | "section_histories" | "signal_word_counts">>;
+}
+
 export interface CustomerAnalysisResult {
   revision?: string;
   customer_profile_summary: string;
@@ -374,12 +384,23 @@ export interface SolutionEvaluationResult {
   criterion_coverage?: Array<{
     criterion_id: string;
     criterion: string;
-    origin: "suggested";
+    criterion_index?: number;
+    origin: "observed" | "suggested" | "unknown";
+    /** Captured inputs, never refreshed when reading historical results. */
+    criterion_scope?: {
+      version: 1;
+      analysis_revision: string | null;
+      analysis_criteria: string[];
+      project_source_revision: number | null;
+      documents: Array<{ id: string; revision: number; fingerprint: string }>;
+      solution: { id: string; revision: number; fingerprint: string } | null;
+    };
     assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
     rationale: string;
     evidence: string;
     requirement_references: string[];
     criterion_source?: ChatSourceReference;
+    answer_source?: ChatSourceReference;
     review_required: boolean;
   }>;
   evidence_review?: {

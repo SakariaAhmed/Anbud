@@ -2,6 +2,7 @@ import "server-only";
 
 import { decryptJson, decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
 import { isRecord } from "@/lib/unknown-values";
+import { observedRequirementWording } from "@/lib/server/requirements/normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type {
   DocumentEvidenceKind,
@@ -39,7 +40,9 @@ export function parsePersistedRequirementRegister(value: unknown, expected: { do
       !Number.isSafeInteger(textEvidence.start) || Number(textEvidence.start) < 0 || !Number.isSafeInteger(textEvidence.end) || Number(textEvidence.end) - Number(textEvidence.start) !== textEvidence.originalText.length))) throw new Error("Kravtekstens opprinnelse kunne ikke valideres.");
     if (correction !== undefined && (!isRecord(correction) || correction.documentId !== expected.documentId || typeof correction.documentTitle !== "string" || typeof correction.excerpt !== "string" ||
       !Array.isArray(correction.pages) || correction.pages.some(page => !Number.isSafeInteger(page) || Number(page) <= 0 || Number(page) > 100_000))) throw new Error("Kravrettelsens kilde kunne ikke valideres.");
-    return { id: row.id, text: row.text, heading: row.heading, pages: row.pages as number[],
+    // Registers stored before row text kept source characters read the same way.
+    return { id: row.id, text: textOrigin === "observed" && isRecord(textEvidence) ? observedRequirementWording(row.text, String(textEvidence.originalText)) : row.text,
+      heading: row.heading, pages: row.pages as number[],
       textOrigin: textOrigin as RequirementLedgerEntry["textOrigin"],
       ...(textOrigin === "observed" && isRecord(textEvidence) ? { textEvidence: { originalText: String(textEvidence.originalText), start: Number(textEvidence.start), end: Number(textEvidence.end) } } : {}),
       documentId: expected.documentId, documentTitle: typeof row.documentTitle === "string" ? row.documentTitle : undefined,

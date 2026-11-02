@@ -1,0 +1,99 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { createJiti } from "jiti";
+import { scoreRetrievalCases } from "../../../../../scripts/rag_eval.mjs";
+
+const frontend = path.resolve(import.meta.dirname, "../../..");
+const bytes = readFileSync(new URL("./fixtures/deterministic-contract-v2/contract.json", import.meta.url));
+const fixture = JSON.parse(bytes);
+const support = path.join(frontend, "lib/server/document-chunks.test-support.ts");
+const load = createJiti(import.meta.url, { alias: {
+  "@": frontend, "server-only": "/dev/null", "@/lib/server/data-api": support, openai: support,
+} });
+const { resetDocumentChunksTestRuntime, setDocumentChunksTestRequirementRegister } = load(support);
+const { encryptJson } = load("../crypto.ts");
+const { retrieveDocumentSnippetsWithMetadata } = load("../document-chunks.ts");
+const { lookupRequirementSnippets } = load("./retrieval-lookup.ts");
+const chatLoad = createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
+const { selectProjectChatArtifactSections } = chatLoad("../ai/project-chat.ts");
+process.env.OPENAI_API_KEY = "frozen-contract-test-transport-only";
+process.env.APP_ENCRYPTION_KEY = "frozen-contract-test-encryption-key";
+
+function seed() {
+  resetDocumentChunksTestRuntime();
+  for (const source of fixture.documents) {
+    setDocumentChunksTestRequirementRegister(source.id, encryptJson({
+      documentId: source.id, projectId: source.project_id, sourceRevision: source.chunk_source_revision,
+      requirementRegister: { version: 1, rows: fixture.registers[source.id] },
+    }));
+  }
+}
+function scored(snippets) {
+  return snippets.map(row => ({ source_id: row.sourceId, text: row.text,
+    page_start: row.pageStart, page_end: row.pageEnd, heading_path: row.headingPath }));
+}
+function assertOccurrences(snippets, labels) {
+  assert.equal(snippets.length, labels.length);
+  for (const label of labels) {
+    const matches = snippets.filter(row => label.expected_source_ids.includes(row.sourceId) &&
+      row.text === label.expected_texts[0] && row.pageStart === (label.expected_page ?? null) && row.pageEnd === (label.expected_page ?? null));
+    assert.equal(matches.length, 1, JSON.stringify(label));
+    assert.deepEqual(matches[0].headingPath, label.expected_heading ? [label.expected_heading] : []);
+    assert.ok(fixture.documents.find(source => source.id === matches[0].sourceId).raw_text.includes(matches[0].text));
+  }
+}
+
+test("v2 frozen lookup contract resolves every within-source and across-source occurrence with original or unknown locators", async () => {
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), "eb67671df740f0e8b520a41333b8f833716d688af1ed5e2fcfabcc684aec03ac");
+  seed();
+  const row = fixture.cases[0];
+  const literal = await lookupRequirementSnippets({ ids: [row.expected_requirement_id], documents: fixture.documents,
+    fingerprints: new Map(fixture.documents.map(source => [`project_document:${source.id}`, `frozen-v2:${source.id}`])) });
+  assertOccurrences(literal, row.required_evidence);
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: row.question, exactTerms: [row.expected_requirement_id], documents: fixture.documents, limit: 10 });
+  const authoritative = result.snippets.filter(snippet => snippet.kind === "requirement_row");
+  assertOccurrences(authoritative, row.required_evidence);
+  assert.equal(result.telemetry.requirementLookupTruncated, false);
+  const report = scoreRetrievalCases([{ ...row, retrieved: scored(result.snippets) }]);
+  assert.equal(report.all_evidence_cases, 1, "Frozen labels exercise the real root all-occurrence scorer in CI.");
+  assert.equal(report.all_evidence_recall_at_10, 1);
+  // A correct first occurrence cannot hide a lost second page or second source.
+  for (const omitted of authoritative) {
+    const incomplete = result.snippets.filter(snippet => snippet !== omitted);
+    assert.equal(scoreRetrievalCases([{ ...row, retrieved: scored(incomplete) }]).all_evidence_recall_at_10, 0);
+  }
+});
+
+test("v2 repeated occurrences exceeding the result budget remain explicitly ambiguous", async () => {
+  seed();
+  const row = fixture.cases[1];
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: row.question, exactTerms: [row.expected_requirement_id], documents: fixture.documents, limit: row.limit });
+  assert.equal(result.snippets.length, row.limit);
+  assert.equal(result.telemetry.requirementLookupTruncated, row.expected_truncated);
+  assert.equal(result.telemetry.quality.sufficient, false);
+  assert.equal(scoreRetrievalCases([{ ...row, retrieved: scored(result.snippets) }]).all_evidence_recall_at_10, 0);
+});
+
+for (const row of fixture.artifact_cases) test(`v2 explicit alias ${row.alias} selects the original competing section and denies stale/foreign versions`, () => {
+  const artifact = (id, artifact_type, content_markdown, extra = {}) => ({ id, project_id: "contract-v2", artifact_type,
+    title: `Utkast ${id}`, content_markdown, artifact_version: 2, is_current: true, source_is_current: true, ...extra });
+  const desired = artifact("desired", row.artifact_type, "# Innledning\n\nBakgrunn.\n\n" + "Bakgrunn.\n\n".repeat(100) + `## ${row.expected_heading}\n\n${row.expected_text}`);
+  const competingType = row.artifact_type === "losningsutkast" ? "bilag1_rekonstruksjon" : "losningsutkast";
+  const bad = `## Eksport ved avslutning\n\nFEIL: Eksport ved avslutning tar 9 dager.`;
+  const denied = [artifact("foreign", row.artifact_type, bad, { project_id: "other" }),
+    artifact("stale-source", row.artifact_type, bad, { source_is_current: false }),
+    artifact("historical", row.artifact_type, bad, { is_current: false })];
+  const sections = selectProjectChatArtifactSections({ artifacts: [
+    ...Array.from({ length: 9 }, (_, i) => artifact(`competitor-${i}`, competingType, bad)), ...denied, desired,
+  ], projectId: "contract-v2", question: `Hva sier ${row.alias} om eksport ved avslutning?`, limit: 1, characterBudget: 800 });
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].artifact.id, desired.id);
+  assert.equal(sections[0].explicitlyNamed, true);
+  assert.equal(sections[0].heading, row.expected_heading);
+  assert.equal(sections[0].text.trim(), row.expected_text);
+  assert.ok(desired.content_markdown.includes(sections[0].text));
+  assert.deepEqual(selectProjectChatArtifactSections({ artifacts: denied, projectId: "contract-v2", question: `${row.alias} eksport ved avslutning` }), []);
+});

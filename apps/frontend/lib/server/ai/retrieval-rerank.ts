@@ -12,10 +12,32 @@ import { ProjectJobLeaseLostError } from "@/lib/server/project-job-heartbeat";
 const RERANK_PASSAGE_CHARS = 700;
 const RERANK_TIMEOUT_MS = 8_000;
 
+/** The exact bounded passage shown to the reranker, also used by offline diagnostics. */
+export function retrievalRerankExcerpt(text: string, query: string) {
+  const excerpt = matchCenteredExcerpt(text, query, RERANK_PASSAGE_CHARS);
+  // Sentence selection can insert spaces inside decimal/version numbers
+  // ("2.2" -> "2. 2"). Map the selected characters back to the source so the
+  // model sees the original values, with the same passage budget.
+  const clean = text.replace(/\s+/gu, " ").trim();
+  if (clean.includes(excerpt)) return excerpt;
+  const positions: number[] = [];
+  const characters: string[] = [];
+  for (let index = 0; index < clean.length; index++) {
+    if (!/\s/u.test(clean[index]!)) {
+      characters.push(clean[index]!);
+      positions.push(index);
+    }
+  }
+  const compactExcerpt = excerpt.replace(/\s/gu, "");
+  const start = characters.join("").indexOf(compactExcerpt);
+  if (start < 0 || !compactExcerpt) return excerpt;
+  return clean.slice(positions[start], positions[start + compactExcerpt.length - 1]! + 1);
+}
+
 /**
  * On unless `RAG_MODEL_RERANK=off`. Each chat search adds one fast-model call
- * (about 7 300 input tokens, 1.6 s median); scripts/rag_retrieval_eval.mjs
- * measures what it buys.
+ * over a bounded channel-diverse pool (at most 48 passages of 700 characters).
+ * scripts/rag_retrieval_eval.mjs measures relevance and context size.
  */
 export function modelRetrievalRerankEnabled() {
   return process.env.RAG_MODEL_RERANK?.trim().toLowerCase() !== "off";
@@ -54,7 +76,7 @@ export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, cand
               `Referanse: ${candidate.reference}`,
               // The part that matches the query, not the first characters:
               // the evidence can sit late in a long or older stored chunk.
-              matchCenteredExcerpt(candidate.text, query, RERANK_PASSAGE_CHARS),
+              retrievalRerankExcerpt(candidate.text, query),
             ].join("\n"),
           ),
         ),

@@ -1,5 +1,7 @@
 "use client";
 
+import { currentCriterionCoverage } from "@/lib/project-follow-up";
+
 import { buildArchitectureActions } from "@/lib/evaluation-actions";
 
 import {
@@ -1038,16 +1040,21 @@ export function ProjectEvaluationTab({
             />
           </div>
 
-          {solutionEvaluation.criterion_coverage?.length ? <section aria-label="Dekning av mulige evalueringskriterier" className="space-y-3">
-            <h3 className="font-semibold">Mulige evalueringskriterier</h3>
-            <p className="text-xs text-muted-foreground">Forslag fra kundeanalysen. Kontroller hvilke kriterier kunden faktisk bruker ved tildeling.</p>
-            {solutionEvaluation.criterion_coverage.map((item, index) => <article key={item.criterion_id} className="min-w-0 rounded-md border p-3 text-sm [overflow-wrap:anywhere]">
-              <h4 className="font-medium">{item.criterion}</h4>
-              <p className="mt-1">{item.assessment}: {item.rationale}</p>
-              {item.evidence ? <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{item.evidence}</p> : null}
-              {projectId && item.criterion_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={item.criterion_source}>Kilde til kriterieforslaget</SourceEvidenceButton> : null}
-              {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} path={`result.criterion_coverage.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
-            </article>)}
+          {solutionEvaluation.criterion_coverage?.length ? <section aria-label="Dekning av evalueringskriterier" className="space-y-3">
+            <h3 className="font-semibold">Evalueringskriterier</h3>
+            <p className="text-xs text-muted-foreground">Dokumenterte kriterier er bekreftet i konkurransegrunnlaget. Forslag må avklares med kunden.</p>
+            {solutionEvaluation.criterion_coverage.map((item, index) => {
+              const current = currentCriterionCoverage(item, { documents });
+              return <article key={item.criterion_id} className="min-w-0 rounded-md border p-3 text-sm [overflow-wrap:anywhere]">
+                <h4 className="font-medium">{item.criterion}</h4>
+                <p className="mt-1 text-xs text-muted-foreground">{!current || item.origin === "unknown" ? "Ukjent kriteriegrunnlag" : item.origin === "observed" ? "Dokumentert evalueringskriterium" : "Forslag fra kundeanalysen"}</p>
+                <p className="mt-1">{current ? `${item.assessment}: ${item.rationale}` : "Uklart: Vurderingen mangler bekreftet kildegrunnlag eller gjelder tidligere kilder. Kjør en ny vurdering."}</p>
+                {current && item.evidence ? <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{item.evidence}</p> : null}
+                {projectId && item.criterion_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={item.criterion_source}>Kilde til kriteriet</SourceEvidenceButton> : null}
+                {projectId && current?.answer_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={current.answer_source}>Dokumentert svargrunnlag</SourceEvidenceButton> : null}
+                {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} path={`result.criterion_coverage.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
+              </article>;
+            })}
           </section> : null}
 
           <div className="grid gap-5 lg:grid-cols-2">

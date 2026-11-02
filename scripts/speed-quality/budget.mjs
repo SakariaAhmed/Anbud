@@ -21,6 +21,14 @@ export const ACCOUNTING_POLICY = "verified-cache-usage-or-full-reservation-v5";
 export const ACCOUNTING_POLICY_V4 = "verified-tiered-usage-or-full-reservation-v4";
 export const ACCOUNTING_POLICY_V3 = "verified-bounded-short-usage-or-full-reservation-v3";
 
+/** Record only a fixed operation label, never prompt text, project IDs or keys. */
+export function evaluationRequestPurpose(endpoint, request) {
+  if (endpoint === "/v1/embeddings") return "embedding";
+  if (endpoint === "/v1/responses" && request.stream === true && /^anbud:chat-v1:[a-f0-9]{32}$/u.test(String(request.prompt_cache_key ?? ""))) return "chat_answer";
+  if (endpoint === "/v1/responses" && /^anbud:json-v2:/u.test(String(request.prompt_cache_key ?? ""))) return "structured_json";
+  return "other";
+}
+
 // Reconcile only verifiable text-token usage. Unknown, malformed, failed
 // transport and in-flight requests retain their complete preflight reservation.
 // Keep the historical reservation on disk for every request, including retries.
@@ -191,14 +199,15 @@ export function openBudgetLedger(file, requestedLimitUsd) {
   function accountedTotal() { return ledger.requests.reduce((sum, row) => sum + moneyMicros(accountedCostUpperBound(row)), 0) / 1e6; }
   save();
   return {
-    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, phaseBudgetUsd, requestSha256, inputSha256, priceTier, inputRate, outputRate, requestedServiceTier }) {
+    reserve({ endpoint, model, inputTokens, outputTokens, reservedUsd, phase, phaseBudgetUsd, requestSha256, inputSha256, priceTier, inputRate, outputRate, requestedServiceTier, requestPurpose }) {
+      if (requestPurpose !== undefined && !["embedding", "chat_answer", "structured_json", "other"].includes(requestPurpose)) throw new Error("Invalid evaluation request purpose.");
       if (!(reservedUsd > 0) || !Number.isFinite(reservedUsd) || reservedUsd !== moneyMicros(reservedUsd) / 1e6 || moneyMicros(accountedTotal()) + moneyMicros(reservedUsd) > moneyMicros(ledger.limitUsd)) throw new Error("Evaluation budget exhausted.");
       if (phaseBudgetUsd !== undefined) {
         if (!phase || !(Number.isFinite(phaseBudgetUsd) && phaseBudgetUsd > 0 && phaseBudgetUsd <= 14)) throw new Error("Invalid phase budget.");
         const used = ledger.requests.filter((row) => row.phase === phase).reduce((sum, row) => sum + moneyMicros(accountedCostUpperBound(row)), 0);
         if (used + moneyMicros(reservedUsd) > moneyMicros(phaseBudgetUsd)) throw new Error("Evaluation phase budget exhausted.");
       }
-      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, phaseBudgetUsd, endpoint, model, requestSha256, inputSha256, requestedServiceTier, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
+      const row = { id: randomUUID(), at: new Date().toISOString(), accountingPolicy: ACCOUNTING_POLICY, phase, phaseBudgetUsd, endpoint, model, requestSha256, inputSha256, requestedServiceTier, requestPurpose, priceTier, inputRatePerMillion: inputRate, outputRatePerMillion: outputRate, inputTokensUpperBound: inputTokens, outputTokensLimit: outputTokens, reservedUsd, status: "reserved" };
       ledger.requests.push(row);
       save();
       return row.id;

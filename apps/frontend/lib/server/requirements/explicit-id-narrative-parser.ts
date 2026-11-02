@@ -5,6 +5,9 @@ import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { explicitRequirementIdPattern } from "@/lib/server/requirements/id-detection";
 import type { ProjectDocumentDetail } from "@/lib/types";
 import { findRequirementOrderOffset, normalizedRequirementOrderSearchText } from "@/lib/server/requirements/mixed-corpus-rules";
+import { withoutCorrectionsSection } from "@/lib/server/requirements/corrections";
+import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
+import { meetsSmallRequirementTextMinimum } from "@/lib/server/requirements/normalization";
 
 type DoclingRequirementParserContext = Pick<RequirementCorpusParserContext,
   "detectExplicitRequirementIds" | "stripAnswerTextFromRequirement" | "stripRequirementChrome" |
@@ -35,6 +38,89 @@ function splitDoclingRequirementParagraph(source: string, context: DoclingRequir
     (context.hasRequirementSignal(unit.text) || context.hasStandaloneRequirementLanguage(unit.text))) ? units : [];
 }
 
+// A word before "Krav K-1:" that makes it a citation rather than the start of a requirement.
+const LABEL_REFERENCE_LEAD = /^(?:se|jf|jfr|ref|iht|ifølge|viser|svar|besvarelse|respons|response|answer)$/iu;
+const SENTENCE_ABBREVIATION = /(?:^|[\s(])(?:f\.eks|bl\.a|m\.a|m\.fl|jf|jfr|kl|nr|pkt|ca|dvs|mv|osv|inkl|ekskl|evt|ev|iht|kap|ref|tlf|vedr)\.$/iu;
+
+/** The literal word in `Krav <ID>:` declares a requirement unit, so the unit
+ * needs no modal verb. A bare `<ID>:` stays with the line and table parsers. */
+function labelledRequirementMarkers(source: string, context: Pick<DoclingRequirementParserContext, "detectExplicitRequirementIds">) {
+  const markers: Array<{ id: string; start: number; textStart: number }> = [];
+  for (const match of source.matchAll(explicitRequirementIdPattern())) {
+    const idAt = match.index;
+    const id = context.detectExplicitRequirementIds(match[0])[0];
+    const separator = /^\s*\*{0,2}\s*[:–—-]\s*\*{0,2}\s+/u.exec(source.slice(idAt + match[0].length));
+    if (!id || !separator) continue;
+    const labelWord = /^krav\s/iu.test(match[0]) ? "" : /(?<![\p{L}\p{N}])krav\s+$/iu.exec(source.slice(Math.max(0, idAt - 16), idAt))?.[0];
+    if (labelWord === undefined) continue;
+    const start = idAt - labelWord.length;
+    const lead = source.slice(source.lastIndexOf("\n", start - 1) + 1, start).replace(/\*+/gu, "").trim();
+    if (lead && !/^[-*•]$/u.test(lead)) {
+      // Merged OCR paragraphs hold labels mid-line; a citation stays prose.
+      if (!/^K(?:rav|RAV)/u.test(source.slice(start))) continue;
+      const word = lead.split(/\s+/u).at(-1) ?? "";
+      if (LABEL_REFERENCE_LEAD.test(word.replace(/[.:;]$/u, "")) || (!/[.!?;:]$/u.test(lead) && /^\p{Ll}/u.test(word))) continue;
+    }
+    markers.push({ id, start, textStart: idAt + match[0].length + separator[0].length });
+  }
+  return markers;
+}
+
+/** OCR can merge unrelated lines after a label. Keep the sentence it introduces
+ * and only what structurally or linguistically continues the requirement. */
+function labelledRequirementBody(body: string, context: Pick<DoclingRequirementParserContext, "hasRequirementSignal" | "hasStandaloneRequirementLanguage">) {
+  const paragraph = body.split(/\n\s*\n/u)[0].trimEnd();
+  const boundaries = [...paragraph.matchAll(/(?<=[.!?])\s+(?=[\p{Lu}\d(«"])|\n(?=\s*(?:[-*•]|\d{1,3}[.)])\s)|\n(?=\s*\p{Lu}[\p{L} /-]{0,40}:\s)/gu)]
+    .filter(match => !SENTENCE_ABBREVIATION.test(paragraph.slice(Math.max(0, match.index - 8), match.index)));
+  let end = paragraph.length;
+  for (const [index, boundary] of boundaries.entries()) {
+    const nextStart = boundary.index + boundary[0].length;
+    const next = paragraph.slice(nextStart, boundaries[index + 1]?.index ?? paragraph.length).trim();
+    const continues = /^(?:[-*•]|\d{1,3}[.)])\s/u.test(next) || paragraph.slice(0, boundary.index).trimEnd().endsWith(":") ||
+      context.hasRequirementSignal(next) || context.hasStandaloneRequirementLanguage(next);
+    if (!continues) { end = boundary.index; break; }
+  }
+  return paragraph.slice(0, end).trim();
+}
+
+function labelledRequirementUnits(source: string, context: DoclingRequirementParserContext) {
+  const markers = labelledRequirementMarkers(source, context);
+  return markers.flatMap((marker, index) => {
+    const body = labelledRequirementBody(source.slice(marker.textStart, markers[index + 1]?.start ?? source.length), context);
+    const text = context.stripAnswerTextFromRequirement(context.stripRequirementChrome(body));
+    if (!meetsSmallRequirementTextMinimum(text)) return [];
+    return [{ id: marker.id, text, sourceExcerpt: normalizePageText(source.slice(marker.start, marker.textStart) + body) }];
+  });
+}
+
+function labelledRequirementSegments(document: ProjectDocumentDetail) {
+  const lines = (value: string) => value.replace(/\r\n/gu, "\n").split("\n").map(line => /^\s*(?:\||#)/u.test(line) ? "" : line).join("\n");
+  const original = withoutCorrectionsSection(document.raw_text);
+  const markers = findPdfPageMarkers(original);
+  if (!markers.length) return [{ text: lines(original), pages: [] as number[] }];
+  return markers.map((marker, index) => ({
+    text: lines(original.slice(marker.index + marker.marker.length, markers[index + 1]?.index ?? original.length)),
+    pages: [marker.startPage],
+  }));
+}
+
+/** Labelled lines where no paragraph map exists: text, DOCX and page-marked or unmarked PDF text. */
+export function buildLabelledLineRequirementLedger(
+  document: ProjectDocumentDetail,
+  context: DoclingRequirementParserContext,
+): RequirementLedgerEntry[] {
+  if (document.role === "primary_solution_document" ||
+    document.structure_map.some(entry => entry.kind === "docling_text" && entry.parser === "docling")) return [];
+  const sourceText = normalizedRequirementOrderSearchText(document.raw_text);
+  let sourceCursor = 0;
+  return labelledRequirementSegments(document).flatMap((segment, segmentIndex) =>
+    labelledRequirementUnits(segment.text, context).map((unit, unitIndex) => {
+      const offset = findRequirementOrderOffset(sourceText, unit.sourceExcerpt, sourceCursor);
+      if (offset !== null) sourceCursor = offset + normalizedRequirementOrderSearchText(unit.sourceExcerpt).length;
+      return { ...unit, pages: segment.pages, heading: "", documentEntryOrder: offset ?? 1_000_000 + segmentIndex + unitIndex / 1000 };
+    }));
+}
+
 /** Keep explicit ID/text boundaries in both separate and merged Docling paragraphs. */
 export function buildExplicitIdDoclingTextRequirementLedger(
   document: ProjectDocumentDetail,
@@ -43,6 +129,7 @@ export function buildExplicitIdDoclingTextRequirementLedger(
   if (document.file_format !== "pdf") return [];
   const requirements: RequirementLedgerEntry[] = [];
   const sourceText = normalizedRequirementOrderSearchText(document.raw_text);
+  const originalSource = normalizedRequirementOrderSearchText(withoutCorrectionsSection(document.raw_text));
   let sourceCursor = 0;
   let heading = "";
   for (const [order, entry] of document.structure_map.entries()) {
@@ -52,7 +139,10 @@ export function buildExplicitIdDoclingTextRequirementLedger(
       continue;
     }
     const source = entry.text.trim().replace(/^[•*]\s*/u, "");
-    const units = splitDoclingRequirementParagraph(source, context);
+    const anchored = splitDoclingRequirementParagraph(source, context);
+    // A correction names an ID; applyRequirementCorrections owns its wording.
+    const units = anchored.length || document.role === "primary_solution_document" ? anchored
+      : labelledRequirementUnits(source, context).filter(unit => originalSource.includes(normalizedRequirementOrderSearchText(unit.sourceExcerpt)));
     for (const [unitIndex, unit] of units.entries()) {
       const offset = findRequirementOrderOffset(sourceText, unit.sourceExcerpt, sourceCursor);
       if (offset !== null) sourceCursor = offset + normalizedRequirementOrderSearchText(unit.sourceExcerpt).length;

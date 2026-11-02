@@ -1,5 +1,7 @@
 import "server-only";
 
+import { CompletedJsonFields } from "@/lib/server/ai/completed-json-fields";
+
 import { createHash, randomUUID } from "node:crypto";
 
 import { APIConnectionTimeoutError } from "openai/error";
@@ -24,9 +26,7 @@ type JsonCompletionClient = {
     create: (
       input: Record<string, unknown>,
       options?: Record<string, unknown>,
-    ) => Promise<{
-      output_text?: string;
-    }>;
+    ) => Promise<unknown>;
   };
 };
 
@@ -44,6 +44,7 @@ type ChatCompletionResponse = {
 
 type ResponsesApiResponse = {
   output_text?: string;
+  output?: unknown[];
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
@@ -405,6 +406,7 @@ export async function runStructuredJsonResponse<T>(
     timeoutMs?: number;
     maxRetries?: number;
     promptCacheKey?: string;
+    onCompletedField?: (key: string, value: unknown) => Promise<void>;
   },
 ): Promise<Untrusted<T>> {
   getProjectWorkflowAbortSignal()?.throwIfAborted();
@@ -419,7 +421,7 @@ export async function runStructuredJsonResponse<T>(
   });
   const startedAt = Date.now();
   const requestId = randomUUID();
-  const abortController = input.timeoutMs ? new AbortController() : null;
+  const abortController = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const telemetryFields = {
     request_id: requestId,
@@ -444,6 +446,7 @@ export async function runStructuredJsonResponse<T>(
       {
         model,
         store: false,
+        ...(input.onCompletedField ? { stream: true } : {}),
         prompt_cache_key: cacheKey,
         instructions: input.system,
         reasoning: { effort: reasoningEffort },
@@ -463,10 +466,48 @@ export async function runStructuredJsonResponse<T>(
       },
       requestOptions({
         timeoutMs: input.timeoutMs,
-        maxRetries: input.maxRetries,
+        maxRetries: input.onCompletedField ? 0 : input.maxRetries,
         abortController,
       }),
     );
+    const completionPromise = responsePromise.then(async (raw) => {
+      if (!input.onCompletedField) return raw as ResponsesApiResponse;
+      if (!raw || typeof raw !== "object" || !(Symbol.asyncIterator in raw)) {
+        throw new Error("Expected a streamed structured response.");
+      }
+      const fields = new CompletedJsonFields();
+      let completed: ResponsesApiResponse | undefined;
+      let textIdentity: string | undefined;
+      for await (const event of raw as AsyncIterable<unknown>) {
+        abortController.signal.throwIfAborted();
+        getProjectWorkflowAbortSignal()?.throwIfAborted();
+        if (!isRecord(event)) throw new Error("Invalid response stream event.");
+        if (event.type === "response.output_text.delta") {
+          if (completed || typeof event.delta !== "string") throw new Error("Invalid text delta.");
+          const identity = `${event.output_index}:${event.content_index}:${event.item_id}`;
+          if (textIdentity !== undefined && textIdentity !== identity) throw new Error("Multiple structured response streams.");
+          textIdentity = identity;
+          await fields.push(event.delta, async (key, value) => {
+            abortController.signal.throwIfAborted();
+            getProjectWorkflowAbortSignal()?.throwIfAborted();
+            await input.onCompletedField!(key, value);
+          });
+        } else if (event.type === "response.completed") {
+          if (completed || !isRecord(event.response) || event.response.status !== "completed") throw new Error("Invalid response completion.");
+          completed = event.response as ResponsesApiResponse;
+        } else if (["response.failed", "response.incomplete", "error", "response.refusal.delta", "response.refusal.done"].includes(String(event.type))) {
+          throw new Error("Structured response did not complete.");
+        }
+      }
+      if (!completed) throw new Error("Response stream ended without completion.");
+      const outputText = fields.finish();
+      // The provider's final response must describe the exact stream just published.
+      const finalText = completed.output_text ?? (Array.isArray(completed.output)
+        ? completed.output.flatMap((item) => isRecord(item) && Array.isArray(item.content)
+          ? item.content.flatMap((part: unknown) => isRecord(part) && part.type === "output_text" && typeof part.text === "string" ? [part.text] : []) : []).join("") : "");
+      if (finalText !== outputText) throw new Error("Structured response changed after streaming.");
+      return { ...completed, output_text: outputText };
+    });
     const timeout = timeoutPromise({
       timeoutMs: input.timeoutMs,
       abortController,
@@ -476,14 +517,21 @@ export async function runStructuredJsonResponse<T>(
       },
     });
     response = (await (timeout
-      ? Promise.race([responsePromise, timeout])
-      : responsePromise).finally(() => {
+      ? Promise.race([completionPromise, timeout])
+      : completionPromise).finally(() => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
     })) as ResponsesApiResponse;
 
     const outputText = response.output_text?.trim();
     if (!outputText) throw new Error("AI returnerte tomt svar.");
     const parsed = parseJson<T>(outputText, requestId);
+    if (input.onCompletedField) {
+      const required = Array.isArray(input.schema.required) ? input.schema.required : [];
+      if (required.some((key) => typeof key !== "string" || !Object.hasOwn(parsed, key))) {
+        throw new Error("Structured response is missing required fields.");
+      }
+      getProjectWorkflowAbortSignal()?.throwIfAborted();
+    }
     console.info(
       JSON.stringify({
         event: "ai_structured_response_timing",
@@ -494,6 +542,7 @@ export async function runStructuredJsonResponse<T>(
     );
     return parsed;
   } catch (error) {
+    abortController.abort();
     console.warn(
       JSON.stringify({
         event: "ai_structured_response_failed",

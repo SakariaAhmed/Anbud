@@ -1,0 +1,15 @@
+{
+  "id": "workflow-performance-baseline-v1",
+  "frozen_at": "2026-11-02",
+  "minimum_samples_per_cell": 20,
+  "percentile_method": "nearest-rank over completed samples; failed samples are reported separately",
+  "cells": [
+    { "operation": "browser", "phase": "upload_to_ready", "document_classes": ["pdf", "docx", "txt"], "cache_states": ["n/a"] },
+    { "operation": "browser", "phase": "requirement_register_render", "document_classes": ["pdf", "docx", "txt"], "cache_states": ["cold", "warm"] },
+    { "operation": "browser", "phase": "chat_first_render", "document_classes": ["pdf", "mixed"], "cache_states": ["cold", "warm"] },
+    { "operation": "provider_chat", "phase": "first_token", "document_classes": ["pdf", "mixed"], "cache_states": ["n/a"] },
+    { "operation": "document", "job_kind": "document_ingestion", "phase": "total", "document_classes": ["pdf", "docx", "txt"], "cache_states": ["n/a"] },
+    { "operation": "document", "job_kind": "document_docling_enhancement", "phase": "total", "document_classes": ["pdf", "docx"], "cache_states": ["n/a"] }
+  ],
+  "scope": "One labelled environment and corpus per report. A local synthetic run never establishes production latency."
+}

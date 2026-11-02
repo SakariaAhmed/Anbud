@@ -29,3 +29,14 @@ test("a failed register is isolated and an inline cross-reference does not becom
   const snippets = await lookupRequirementSnippets({ ids: [entry.id], documents: [broken, inline, good], fingerprints: new Map([broken, inline, good].map(source => [`project_document:${source.id}`, source.id])), onSourceFailure: id => failures.push(id) });
   assert.deepEqual(failures, [broken.id]); assert.deepEqual(snippets.map(snippet => snippet.sourceId), [good.id]);
 });
+
+test("register rows in source wording and in normalized wording resolve the same original passage", async () => {
+  const source = document("dash-source", "[[SIDE:1]]\nK-6.2 Tjenesten skal bemannes mellom 06:00–22:00 alle dager.\nK-6.3 Rapporter skal leveres ukentlig.");
+  for (const [index, text] of ["Tjenesten skal bemannes mellom 06:00–22:00 alle dager.", "Tjenesten skal bemannes mellom 06:00-22:00 alle dager."].entries()) {
+    globalThis.__literalRegisterTest = { rows: { [source.id]: [{ id: "K-6.2", text, heading: "Drift", pages: [1], idOrigin: "source", documentId: source.id }] } };
+    const snippets = await lookupRequirementSnippets({ ids: ["K-6.2"], documents: [source], fingerprints: new Map([[`project_document:${source.id}`, `dash-${index}`]]) });
+    assert.equal(snippets.length, 1);
+    assert.ok(source.raw_text.includes(snippets[0].text));
+    assert.match(snippets[0].text, /06:00–22:00/u, "A quotation carries the original dash.");
+  }
+});
