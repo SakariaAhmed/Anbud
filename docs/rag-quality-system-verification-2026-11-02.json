@@ -240,5 +240,5 @@
     "migrations_applied": false,
     "deployed": false
   },
-  "remaining": "All 18 recommendations are not complete; conceptual release recall remains below95%, and broader model reliability/human/production measurements remain."
+  "remaining": "All 18 recommendations are not complete; conceptual release recall remains below 95%. Independent review corrected the latest model smoke to 9/10 groundedness/citation correctness (exit-plan deadline conflated with completing exit), below the release gate. HTTP completion and deterministic quotation membership do not establish semantic groundedness. No v3 model run is claimed; broader reliability/human/production measurements remain."
 }

@@ -1,6 +1,6 @@
 {
   "fixture": "Owned synthetic three-document HTTP environment. No production documents or authentication.",
-  "comparison_limitations": "Sequential local development-server observations, including cold compilation and concurrent tests. No randomized latency claim or default-model change. GPT-5.4 comparison preceded the last two deterministic boundary fixes. The malformed-judge run was recovered from persisted chat; its answer-call cost is unavailable separately. Failed runs remain failures.",
+  "comparison_limitations": "Sequential local development-server observations, including cold compilation and concurrent tests. No randomized latency claim or default-model change. GPT-5.4 comparison preceded the last two deterministic boundary fixes. The malformed-judge run was recovered from persisted chat; its answer-call cost is unavailable separately. Failed runs remain failures. The final run is not passing release evidence: independent review found an exit-plan/exit-completion conflation missed by the model judge. Original verdicts and metrics remain alongside the corrected independent assessment. Labels are corrected in v3; no v3 model run has been performed.",
   "runs": [
     {
       "version": "rag-model-release.v2",
@@ -1695,7 +1695,7 @@
       "failures": [],
       "accounted_cost_delta_usd": 0.11936200000000063,
       "limitation": "Small synthetic release smoke; model judging is not a human audit or a statistical production-quality estimate.",
-      "label": "round9 safe excerpt boundaries: unchanged frozen suite passed; previous incomplete runs retained",
+      "label": "round9 safe excerpt boundaries: model judge reported pass; independent review rejects exit-plan conflation",
       "cases": [
         {
           "id": "exit-id",
@@ -1822,6 +1822,12 @@
             "citations_correct": true,
             "abstention_correct": true,
             "reason": "Skiller tydelig mellom primærkravene i K-1.3 og tolkningene i det genererte utkastet. Utkastet omtales som tolkning, ikke som ny primærkilde, og 30-dagersfristen er korrekt gjengitt."
+          },
+          "independent_review": {
+            "reviewer": "CodeRabbit finding independently verified against the original K-1.3 fixture",
+            "grounded": false,
+            "citations_correct": false,
+            "reason": "The final conclusion claims primary evidence requires exit within 30 days. K-1.3 requires delivery of an exit plan with export in open formats within 30 days; it does not establish completion of the entire exit or supplier transition. The original model judge verdict is retained unchanged."
           }
         },
         {
@@ -1876,7 +1882,20 @@
             "reason": "Forslaget er tydelig merket som ikke dokumentert kundekrav, og det skiller mellom dokumenterte krav og foreslått plan. P1, L2, Q3, M365 og E5 behandles som planbegreper, ikke som manglende krav-ID-er."
           }
         }
-      ]
+      ],
+      "independent_review": {
+        "metrics": {
+          "groundedness": 0.9,
+          "citation_correctness": 0.9,
+          "correct_abstention": 1
+        },
+        "failures": [
+          "groundedness: 0.9 < 0.98",
+          "citation_correctness: 0.9 < 0.98"
+        ],
+        "release_gate_passed": false,
+        "original_judge_metrics_preserved": true
+      }
     }
   ]
 }

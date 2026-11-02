@@ -5,6 +5,7 @@ import { getDocumentDetail, getProjectSourceRevision, listProjectDocumentSummari
 import { readStableProjectSourceSnapshot } from "@/lib/server/source-revision-snapshot";
 import { bindDocumentSourceEvidence } from "@/lib/server/document-source-evidence";
 import { sourceQuoteLength } from "@/lib/server/source-evidence";
+import { readJsonObject } from "@/lib/server/request-body";
 import { isRecord } from "@/lib/unknown-values";
 
 // Read-only POST keeps source text out of URLs/access logs. This permission
@@ -15,7 +16,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const access = await requireProjectPermission(id, "document.read");
     const limited = await enforceRateLimit(request, `source-evidence:${id}:${access.principal.id}`, { limit: 30, windowMs: 60_000 }, "For mange kildekontroller på kort tid. Vent litt før du prøver igjen.");
     if (limited) return limited;
-    const body: unknown = await request.json();
+    const body: unknown = await readJsonObject(request);
     if (!isRecord(body) || typeof body.documentId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(body.documentId) || typeof body.quote !== "string" || !body.quote.trim() || body.quote.length > 8000 || (body.sourceRevision !== undefined && (!Number.isSafeInteger(body.sourceRevision) || Number(body.sourceRevision) < 0))) return NextResponse.json({ error: "Kildehenvisningen mangler et gyldig originalutdrag." }, { status: 400 });
     const documentId = body.documentId, quote = body.quote;
     if (sourceQuoteLength(quote) < 12 && !access.permissions.includes("document.download")) return NextResponse.json({ error: "Utdraget er for kort til å kontrollere med din tilgang. Åpne en lagret henvisning med et fullstendig originalutdrag." }, { status: 422 });

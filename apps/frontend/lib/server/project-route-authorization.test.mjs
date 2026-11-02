@@ -207,3 +207,13 @@ test("malformed selected-regeneration bodies return 400 before enqueue", async (
     assert.ok(!h.dataCalls.some(call => String(call.name).startsWith("queue")), "Invalid input cannot reach queue persistence.");
   }
 });
+
+test("malformed source-check JSON returns 400 before reading source data", async () => {
+  for (const body of ["{", "[]", "null", '"text"']) {
+    const h = harness({ role: "restricted_viewer" });
+    const handler = h.load("app/api/projects/[id]/source-evidence/route.ts").POST;
+    const response = await handler(new Request(`http://localhost/api/projects/${projectId}/source-evidence`, { method: "POST", headers: { "content-type": "application/json" }, body }), { params: Promise.resolve({ id: projectId }) });
+    assert.equal(response.status, 400);
+    assert.deepEqual(h.dataCalls, []);
+  }
+});

@@ -3157,7 +3157,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   for (const issue of reviewed.evidence.issues) {
     const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
     const item = match ? coverage.items[Number(match[1])] : null;
-    if (item) { item.assessment = "Uklart"; downgraded = true; }
+    if (item?.assessment === "Godt") { item.assessment = "Uklart"; downgraded = true; }
   }
   if (!downgraded) return { ...reviewed.result, source_evidence: reviewed.evidence };
   coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;

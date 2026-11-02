@@ -53,3 +53,15 @@ test("a rewritten comparison drops both the replaced quotation proof and its old
   assert.ok(!reviewed.source_evidence.issues.some(issue => issue.path === "result.architecture_comparison.verdict"));
   assert.ok(reviewed.source_evidence.issues.some(issue => issue.path === "result.requirement_coverage.items.0.evidence"));
 });
+test("unsupported evidence cannot upgrade missing or weak requirements to unclear", () => {
+  for (const assessment of ["Mangler", "Dårlig"]) {
+    const { result, input } = fixture();
+    result.requirement_coverage.items[0].assessment = assessment;
+    result.requirement_coverage.good = 1;
+    result.requirement_coverage[assessment === "Mangler" ? "missing" : "weak"] = 1;
+    const reviewed = reviewSolutionEvaluationEvidence(result, input);
+    assert.equal(reviewed.requirement_coverage.items[0].assessment, assessment);
+    assert.equal(reviewed.requirement_coverage[assessment === "Mangler" ? "missing" : "weak"], 1);
+    assert.ok(reviewed.source_evidence.issues.some(issue => issue.path === "result.requirement_coverage.items.0.evidence"));
+  }
+});
