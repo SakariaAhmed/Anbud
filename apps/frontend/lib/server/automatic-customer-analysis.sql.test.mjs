@@ -142,6 +142,18 @@ test("postgres: automatic analysis is one-shot, readiness/lease fenced, manual-s
       select public.dispatch_ready_customer_analyses(20);
       do $$ begin if exists(select from public.project_jobs where project_id='${failedProject}' and kind='customer_analysis') then raise exception 'deleting failed document unexpectedly started a later paid job'; end if; end $$;
     `);
+    const abandonedProject = randomUUID();
+    sql(url, `
+      insert into public.projects(id,client_name,title) values('${abandonedProject}','Syntetisk kunde','Avbrutt køinnsetting');
+      insert into public.documents(project_id,role,processing_status,updated_at) values('${abandonedProject}','primary_customer_document','queued',now()-interval '20 minutes');
+      insert into public.project_analysis_requests(project_id,status) values('${abandonedProject}','pending');
+      select public.schedule_ready_customer_analysis('${abandonedProject}',null,null);
+      select public.dispatch_ready_customer_analyses(20);
+      do $$ begin
+        if not exists(select from public.project_analysis_requests where project_id='${abandonedProject}' and status='failed' and reason_code='document_basis_not_ready') then raise exception 'abandoned document with no job stayed pending'; end if;
+        if exists(select from public.project_jobs where project_id='${abandonedProject}') then raise exception 'abandoned document unexpectedly queued work'; end if;
+      end $$;
+    `);
     const replacementProject = randomUUID(), oldDoc = randomUUID(), newDoc = randomUUID();
     sql(url, `
       insert into public.projects(id,client_name,title) values('${replacementProject}','Syntetisk kunde','Erstattet kundedokument');

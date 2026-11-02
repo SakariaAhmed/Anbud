@@ -123,6 +123,13 @@ assert.ok(guestEvidence.source.evidence_id && guestEvidence.source.source_finger
 await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, quote: "Et oppdiktet krav som ikke finnes i dokumentgrunnlaget." }), cookie: guestCookie, expected: 422 });
 await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, sourceRevision: evidenceBody.sourceRevision + 1 }), cookie: guestCookie, expected: 409 });
 await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", { ...evidenceBody, documentId: "ffffffff-ffff-4fff-8fff-ffffffffffff" }), cookie: guestCookie, expected: 404 });
+const shortEvidenceBody = { ...evidenceBody, quote: "30 dager" };
+const deniedShort = await (await request(`/api/projects/${project.id}/source-evidence`, { ...json("POST", shortEvidenceBody), cookie: guestCookie, expected: 422 })).json();
+assert.equal(deniedShort.source, undefined, "A restricted short numeric probe cannot reveal surrounding source text.");
+assert.doesNotMatch(JSON.stringify(deniedShort), /Leverandøren skal levere/u);
+const ownerShort = await (await request(`/api/projects/${project.id}/source-evidence`, json("POST", shortEvidenceBody))).json();
+assert.match(ownerShort.source.original_quote, /Leverandøren skal levere en exitplan/u);
+checks.push("short numeric source expansion denied to restricted viewers and allowed to downloaders");
 checks.push("restricted viewer original-excerpt verification, invented quote/stale revision/foreign source denied");
 
 // Middleware deliberately hides forbidden project routes with 404 before

@@ -299,7 +299,11 @@ export async function drainNextQueuedProjectJob(
   // The scheduled worker stops its server after the HTTP response, so work
   // handed to its in-memory queue would be interrupted.
   if (envFlag("PROJECT_JOB_WORKER_PROCESS")) return null;
-  await (runtime.scheduleAnalysis ?? scheduleReadyCustomerAnalysis)(projectId, null);
+  try { await (runtime.scheduleAnalysis ?? scheduleReadyCustomerAnalysis)(projectId, null); }
+  catch (error) {
+    if (isProjectJobLeaseLostError(error)) throw error;
+    console.error(JSON.stringify({ event: "automatic_analysis_dispatch_failed", ...safeErrorTelemetry(error) }));
+  }
   const includeDoclingEnhancement = envFlag("DOCLING_ASYNC_AUTO_RUN", false);
   const next = await (runtime.findNext ?? findOldestQueuedProjectJob)(
     projectId,

@@ -7866,11 +7866,12 @@ begin
   -- An upload can briefly exist before its ingestion job is inserted.
   if exists(select 1 from public.documents d where d.project_id=p_project_id
     and public.project_document_affects_customer_analysis(d.role,d.supporting_subtype,d.subtype)
-    and d.processing_status in ('queued','processing')) then return null; end if;
+    and d.processing_status in ('queued','processing')
+    and d.updated_at > clock_timestamp() - interval '15 minutes') then return null; end if;
   if exists(
     select 1 from public.documents d where d.project_id=p_project_id
       and public.project_document_affects_customer_analysis(d.role,d.supporting_subtype,d.subtype)
-      and (d.processing_status='failed' or d.indexed_at is null
+      and (d.processing_status in ('queued','processing','failed') or d.indexed_at is null
         or not exists(select 1 from public.document_chunks c where c.source_type='project_document' and c.source_id=d.id and c.project_id=p_project_id))
   ) then
     update public.project_analysis_requests set status='failed',reason_code='document_basis_not_ready',updated_at=now() where project_id=p_project_id;

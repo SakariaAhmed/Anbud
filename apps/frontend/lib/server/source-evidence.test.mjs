@@ -110,3 +110,19 @@ test("short quoted numeric values must match whole tokens in the cited passage",
   const match = new SourceQuoteIndex(source).locate("30 dager", { tokenBoundaries: true });
   assert.equal(match.start, source.lastIndexOf("30 dager")); assert.equal(match.text, "30 dager");
 });
+
+test("quoted numbers require the complete decimal or thousands-grouped value, including tiny values", () => {
+  for (const [quote, text] of [["500 kr", "Rammen er 1 500 kr."], ["500 000 kr", "Rammen er 1 500 000 kr."], ["500 kr", "Rammen er 1\u00a0500 kr."], ["99 %", "Målet er 99,99 %."], ["30 dager", "Fristen er 1,30 dager."], ["5 %", "Målet er 25 %."], ["5", "Antallet er 25."], ["1 500", "Rammen er 1 500 000 kr."]]) {
+    assert.throws(() => validateChatEvidence(`Kilden sier «${quote}». [Kilde 1]`, [{ evidence_id: "number", original_quote: text }]), /sitat/iu, `${quote} is not ${text}`);
+  }
+  for (const quote of ["5 %", "48t"]) assert.throws(() => validateChatEvidence(`Kilden sier «${quote}». [Kilde 1]`, [{ evidence_id: "absent", original_quote: "Kilden oppgir ingen slik frist eller prosent." }]), /sitat/iu);
+  assert.equal(validateChatEvidence("Målet er «5 %». [Kilde 1]", [{ evidence_id: "exact", original_quote: "Det avtalte målet er 5 %." }]).length, 1);
+});
+test("saved excerpts retain the exact validated short number and requirement occurrence in long sources", () => {
+  const raw = "Tidligere frist var 130 dager.\nK-4.20 Gammelt krav.\n" + "Generell bakgrunn. ".repeat(400) + "\nGjeldende frist er 30 dager.\nK-4.2 Gjeldende krav.";
+  const source = { source_type: "project_document", evidence_id: "long", original_quote: raw };
+  const saved = validateChatEvidence("Fristen er «30 dager». K-4.2 gjelder. [Kilde 1]", [source]);
+  const excerpts = [saved[0].original_quote, ...(saved[0].quotation_excerpts ?? [])].join("\n");
+  assert.match(excerpts, /Gjeldende frist er 30 dager/u); assert.match(excerpts, /K-4\.2 Gjeldende/u);
+  assert.doesNotMatch(excerpts, /130 dager|K-4\.20/u);
+});

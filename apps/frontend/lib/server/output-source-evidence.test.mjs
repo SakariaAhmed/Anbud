@@ -108,3 +108,24 @@ test("authored strategy wording remains interpretation without false primary pro
   assert.equal(reviewed.evidence.references.length, 0);
   assert.equal(reviewed.evidence.issues, undefined);
 });
+
+test("output quotations reject shortened numeric groups and missing tiny values", () => {
+  for (const [quote, raw_text] of [["500 kr", "Rammen er 1 500 kr."], ["500 000 kr", "Rammen er 1 500 000 kr."], ["500 kr", "Rammen er 1\u00a0500 kr."], ["99 %", "Målet er 99,99 %."], ["30 dager", "Fristen er 1,30 dager."], ["5 %", "Målet er 25 %."], ["5", "Antallet er 25."], ["1 500", "Rammen er 1 500 000 kr."], ["5 %", "Prosent er ikke oppgitt."], ["48t", "Fristen er ikke oppgitt."]]) {
+    const reviewed = reviewOutputSourceEvidence({ documents: [{ ...source, document: { ...source.document, raw_text } }], fields: [{ path: "answer", text: `Kilden sier «${quote}».` }] });
+    assert.equal(reviewed.evidence.issues?.[0].code, "unverified_quote", `${quote} is not ${raw_text}`);
+    assert.equal(reviewed.evidence.references.length, 0);
+  }
+});
+test("short draft and prior-reference quotations retain their visible evidence classification", () => {
+  const artifact = { id: "short-draft", title: "Utkast", artifact_version: 2, content_markdown: "Forslaget legger opp til en overgang innen 45 dager." };
+  const bound = bindOutputSourceEvidence({ documents: [], artifacts: [artifact], fields: [{ path: "summary", text: "Utkastet foreslår «45 dager»." }] });
+  const proof = bound.references[0].source;
+  assert.equal(proof.classification, "interpretation"); assert.equal(proof.source_type, "generated_artifact");
+  assert.equal(proof.original_quote, artifact.content_markdown);
+  for (const source_type of ["generated_artifact", "project_document"]) {
+    const prior = { ...proof, source_type, classification: source_type === "generated_artifact" ? "interpretation" : "documented" };
+    const retained = bindOutputSourceEvidence({ documents: [], verifiedReferences: [prior], fields: [{ path: "summary", text: "Fristen er «45 dager»." }] });
+    assert.equal(retained.references[0].source.classification, prior.classification);
+    assert.equal(retained.references[0].source.original_quote, prior.original_quote);
+  }
+});

@@ -1713,3 +1713,19 @@ test("deployment claim pause keeps a durable job queued, while unrelated errors 
     ...runtime, async claim() { throw new Error("Unexpected database failure"); },
   }), /Unexpected database failure/);
 });
+
+test("web drain still starts ordinary queued work when automatic scheduling fails", async t => {
+  const logs = [];
+  t.mock.method(console, "error", value => logs.push(value));
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined }, async () => {
+    let started = false;
+    const result = await drainNextQueuedProjectJob("p1", {
+      scheduleAnalysis: async () => { throw new Error("private scheduling backend details"); },
+      findNext: async () => ({ id: "ordinary", input: { kind: "customer_analysis", projectId: "p1" } }),
+      autorun: async () => { started = true; return { leaseToken: "ordinary-lease" }; },
+    });
+    assert.equal(started, true); assert.equal(result.leaseToken, "ordinary-lease");
+    assert.equal(JSON.parse(logs[0]).event, "automatic_analysis_dispatch_failed");
+    assert.doesNotMatch(logs.join(""), /private scheduling backend details/u);
+  });
+});

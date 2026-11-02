@@ -9,7 +9,10 @@ export function quotedSourcePassages(value: string, includeOrdinaryQuotes = true
 }
 const canonical = (value: string) => value.replace(/[‐‑‒–—]/gu, "-").replace(/\u0000/gu, "").replace(/\s+/gu, " ").trim();
 export const sourceQuoteLength = (value: string) => canonical(quotationText(value)).length;
-export const isMeaningfulShortSourceQuote = (value: string) => sourceQuoteLength(value) >= 4 && sourceQuoteLength(value) < 12 && /\d/u.test(value);
+export const isMeaningfulShortSourceQuote = (value: string) => {
+  const text = canonical(quotationText(value));
+  return text.length > 0 && text.length < 12 && (/^\d/u.test(text) || text.length >= 4 && /\d/u.test(text));
+};
 
 export class SourceEvidenceValidationError extends Error {
   constructor(readonly code: "CHAT_SOURCE_REFERENCE_INVALID" | "CHAT_QUOTATION_INVALID" | "CHAT_REQUIREMENT_ID_INVALID", message: string) {
@@ -31,10 +34,12 @@ export class SourceQuoteIndex {
     const startAt = options.startAt ?? 0;
     const bounded = (start: number, end: number) => {
       if (!options.tokenBoundaries) return true;
-      const before = source.slice(Math.max(0, start - 2), start), after = source.slice(end, end + 2);
+      const before = source.slice(Math.max(0, start - 2), start), after = source.slice(end, end + 5);
       return !/[\p{L}\p{N}]$/u.test(before) && !/^[\p{L}\p{N}]/u.test(after)
         && !( /^\d/u.test(source.slice(start, end)) && /\d[.,]$/u.test(before))
-        && !( /\d$/u.test(source.slice(start, end)) && /^[.,]\d/u.test(after));
+        && !( /\d$/u.test(source.slice(start, end)) && /^[.,]\d/u.test(after))
+        && !( /^\d{3}(?!\d)/u.test(source.slice(start, end)) && /\d[ \u00a0\u202f]$/u.test(before))
+        && !( /\d$/u.test(source.slice(start, end)) && /^[ \u00a0\u202f]\d{3}(?!\d)/u.test(after));
     };
     const candidates = Array.from(new Set([excerpt, quotationText(excerpt)]));
     for (const candidate of candidates) {
@@ -72,6 +77,23 @@ export class SourceQuoteIndex {
   }
 }
 
+/** Preserve actual characters and offsets; a short value needs a unique,
+ * bounded occurrence with enough surrounding original context to verify it. */
+export function locateSourceEvidenceQuote(source: string, quote: string, index = new SourceQuoteIndex(source)) {
+  const short = sourceQuoteLength(quote) < 12;
+  if (short && !isMeaningfulShortSourceQuote(quote)) return null;
+  const match = index.locate(quote, { tokenBoundaries: true });
+  if (!match || !short) return match;
+  if (index.locate(quote, { tokenBoundaries: true, startAt: match.end })) return null;
+  const lineEnd = source.indexOf("\n", match.end);
+  const start = Math.max(source.lastIndexOf("\n", match.start) + 1, match.start - 120);
+  const end = Math.min(lineEnd < 0 ? source.length : lineEnd, match.end + 120);
+  const text = source.slice(start, end).trim();
+  if (sourceQuoteLength(text) < 12) return null;
+  const trimmedStart = start + source.slice(start, end).indexOf(text);
+  return { text, start: trimmedStart, end: trimmedStart + text.length };
+}
+
 export function evidenceIdentity(input: { sourceType: string; sourceId: string; revision: number; fingerprint: string; reference: string; text: string }) {
   return `E-${createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 24)}`;
 }
@@ -97,7 +119,7 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       // Repeating user-supplied wording is conversation, never document proof.
       // Cited quotations still require membership in the actual cited source.
       if (!sources.length && options.userText?.includes(quote)) continue;
-      if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote, { tokenBoundaries: isMeaningfulShortSourceQuote(quote) }) !== null)) {
+      if (!sources.some(source => source?.original_quote && new SourceQuoteIndex(source.original_quote).find(quote, { tokenBoundaries: true }) !== null)) {
         throw new SourceEvidenceValidationError("CHAT_QUOTATION_INVALID", "Et sitat i svaret finnes ikke i den oppgitte kilden. Prøv meldingen på nytt.");
       }
     }
@@ -117,10 +139,9 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
       if (original.length <= 4800) excerpts.push(original);
       else {
         for (const needle of needles) {
-          const found = indexer.find(needle);
+          const found = indexer.locate(needle, { tokenBoundaries: true });
           if (!found) continue;
-          const at = original.indexOf(found);
-          excerpts.push(original.slice(Math.max(0, at - 160), Math.min(original.length, at + found.length + 160)));
+          excerpts.push(original.slice(Math.max(0, found.start - 160), Math.min(original.length, found.end + 160)));
         }
         if (!excerpts.length) {
           const terms = paragraph.match(/[\p{L}\p{N}]{5,}/gu) ?? [];

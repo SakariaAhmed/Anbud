@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { SourceQuoteIndex, evidenceIdentity, sourceQuoteLength, isMeaningfulShortSourceQuote } from "@/lib/server/source-evidence";
+import { evidenceIdentity, locateSourceEvidenceQuote } from "@/lib/server/source-evidence";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail } from "@/lib/types";
 
@@ -8,24 +8,9 @@ import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail 
  * Requested page/heading values never become evidence. Repeated passages have
  * no precise locator unless the source structure identifies one unique place. */
 export function bindDocumentSourceEvidence(document: ProjectDocumentDetail | ServiceDocumentDetail, quote: string, options: { sourceType?: "project_document" | "service_document" } = {}): ChatSourceReference | null {
-  const short = sourceQuoteLength(quote) < 12;
-  if (short && !isMeaningfulShortSourceQuote(quote)) return null;
-  const index = new SourceQuoteIndex(document.raw_text);
-  const match = index.locate(quote, { tokenBoundaries: short });
+  const match = locateSourceEvidenceQuote(document.raw_text, quote);
   if (!match) return null;
-  let original = match.text;
-  if (short) {
-    // Bare labels such as Ja/Nei are not source evidence. Meaningful short
-    // numeric/standard terms retain enough original context for verification.
-    const at = match.start;
-    if (index.locate(quote, { tokenBoundaries: true, startAt: match.end })) return null;
-    const lineEnd = document.raw_text.indexOf("\n", at + original.length);
-    const start = Math.max(document.raw_text.lastIndexOf("\n", at) + 1, at - 120);
-    const end = Math.min(lineEnd < 0 ? document.raw_text.length : lineEnd, at + original.length + 120);
-    original = document.raw_text.slice(start, end).trim();
-    if (sourceQuoteLength(original) < 12) return null;
-  }
-  const at = document.raw_text.indexOf(original);
+  const original = match.text, at = match.start;
   const repeated = document.raw_text.indexOf(original, at + original.length) >= 0;
   const sections = repeated ? [] : document.structure_map.filter(section => section.text.includes(original));
   const section = sections.length === 1 ? sections[0] : undefined;
