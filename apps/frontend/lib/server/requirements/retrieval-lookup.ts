@@ -43,8 +43,8 @@ export async function lookupRequirementSnippets(input: {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
   const normalizeHeading = (text: string) => text.toLocaleLowerCase("nb-NO").trim().replace(/^#+\s*/u, "").replace(/^(?:kapittel|kap\.|seksjon)\s+/u, "").replace(/\s+/gu, " ").trim();
   const heading = input.heading ? normalizeHeading(input.heading) : null;
-  const inHeading = (entry: RequirementLedgerEntry, amendedIds: ReadonlySet<string>) => {
-    if (!heading || amendedIds.has(normalizeRequirementId(entry.id))) return true;
+  const inHeading = (entry: RequirementLedgerEntry, corrections: { ids: ReadonlySet<string>; quotes: SourceQuoteIndex }[]) => {
+    if (!heading || corrections.some(section => section.ids.has(normalizeRequirementId(entry.id)) && section.quotes.find(entry.text))) return true;
     const actual = normalizeHeading(entry.heading ?? "");
     if (/^\d+(?:\.\d+)*$/u.test(heading)) {
       const number = actual.match(/^(\d+(?:\.\d+)*)(?=$|[\s:).])/u)?.[1];
@@ -59,8 +59,8 @@ export async function lookupRequirementSnippets(input: {
       try {
         const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
         input.onAuthoritativeIds?.(entries.filter(entry => entry.idOrigin !== "inferred" && entry.idOrigin !== "generated").map(entry => normalizeRequirementId(entry.id)));
-        const amendedIds = new Set(findCorrectionsSections(document.raw_text).flatMap(extractRequirementIdentifiers).map(normalizeRequirementId));
-        return entries.filter(entry => inHeading(entry, amendedIds) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
+        const corrections = findCorrectionsSections(document.raw_text).map(section => ({ ids: new Set(extractRequirementIdentifiers(section).map(normalizeRequirementId)), quotes: new SourceQuoteIndex(section) }));
+        return entries.filter(entry => inHeading(entry, corrections) && wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
           .flatMap(entry => {
             const source = entry.correctionSource
               ? input.documents.find(source => source.id === entry.correctionSource!.documentId)

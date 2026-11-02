@@ -69,3 +69,15 @@ test("quoted chapter titles match numbered headings and numeric scopes accept pu
     for (const requested of ["30", "3.20", "Drift"]) assert.equal((await lookupRequirementSnippets({ ...input, heading: requested })).length, 0, `${requested}: ${heading}`);
   }
 });
+
+
+test("a correction cross-reference does not exempt unrelated occurrences from chapter scope", async () => {
+  const source = document("correction-cross-reference", "# 3 Kurs\nK-7 Leverandøren skal holde fire kurs.\n# 5 Drift\nK-7 Leverandøren skal levere driftsrapport.\n# Rettelser\nSe også jf. K-7 for bakgrunn.");
+  globalThis.__literalRegisterTest = { rows: { [source.id]: [
+    { id: "K-7", text: "Leverandøren skal holde fire kurs.", heading: "3 Kurs", pages: [], idOrigin: "source" },
+    { id: "K-7", text: "Leverandøren skal levere driftsrapport.", heading: "5 Drift", pages: [], idOrigin: "source" },
+  ] } };
+  const selected = await lookupRequirementSnippets({ ids: ["K-7"], heading: "3", documents: [source], fingerprints: new Map([[`project_document:${source.id}`, "cross-reference-v1"]]) });
+  assert.equal(selected.length, 1);
+  assert.match(selected[0].text, /fire kurs/u);
+});

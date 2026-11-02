@@ -114,20 +114,41 @@ function mentionsChatName(question: string, name: string, inflect = false) {
   return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}${inflect && !/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])`, "u").test(comparableChatText(question));
 }
 
-/** Name a source as the requested object or citation, not as subject matter. */
-function requestsChatSource(question: string, names: string[]) {
-  const text = question.toLocaleLowerCase("nb-NO");
-  return names.some(name => {
+/** Source exemptions use affirmative request frames, not arbitrary name mentions.
+ * Every sentence must select the source; a rejected or unrelated request cannot
+ * inherit another sentence's exemption. This is deliberately conservative. */
+function requestsChatSource(question: string, names: string[], attachment = false) {
+  const clauses = question.toLocaleLowerCase("nb-NO")
+    .split(/[!?;\n]+|\.(?:\s+|$)|\s+og\s+(?=(?:hva|hvilke|hvordan|ikke|unngå)\b)/u)
+    .map(clause => clause.trim()).filter(Boolean);
+  const determiner = "(?:(?:det|den|dette|denne|mitt|vårt|din|ditt|siste|nyeste|vedlagte|opplastede)\\s+)*";
+  return clauses.length > 0 && clauses.every(clause => names.some(name => {
+    if (!name.trim()) return false;
     const escaped = name.toLocaleLowerCase("nb-NO").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const target = `${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])`;
-    const rejected = new RegExp(`\\b(?:(?:ikke\\s+(?:(?:bruk|benytt|vis|gi|lag|ha|oppsummer)\\s+)?)|(?:ingen|unngå|uten|heller\\s+enn)\\s+)(?:(?:det|den|et|en|noen|ditt|mitt|vårt)\\s+)?${target}`, "u");
-    const requested = new RegExp(`\\b(?:hva\\s+(?:sier|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|ifølge|i|fra)\\s+(?:(?:det|den|mitt|vårt)\\s+)?${target}`, "u");
-    return requested.test(text) && !rejected.test(text);
-  });
+    const target = `${determiner}${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])(?!\\s+(?:til|av|for)\\b)`;
+    const direct = new RegExp(`^(?:hva\\s+(?:sier|viser|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|gi\\s+(?:en\\s+)?oppsummering\\s+av)\\s+${target}`, "u");
+    const citation = new RegExp(`\\b(?:ifølge|basert\\s+på)\\s+${target}`, "u");
+    const literalReading = new RegExp(`^hva\\s+står\\s+(?:det\\s+)?i\\s+${target}`, "u");
+    // A generic draft/assessment noun can also describe contractual subject
+    // matter. Locative reading is reserved for distinct application sources.
+    const locative = attachment
+      ? new RegExp(`^(?:hva\\s+sier(?:\\s+[\\p{L}\\p{N}_.-]+){0,3}|svar\\s+på\\s+spørsmålene)\\s+(?:i|fra)\\s+${target}`, "u")
+      : /^(?:risikoplan|løsningsvurdering|kundeanalyse|systemløsning|løsningsutkast|tilbudsstrategi|prosjektoversikt)$/u.test(name)
+        ? new RegExp(`\\b(?:i|fra)\\s+${target}`, "u") : null;
+    const match = direct.exec(clause) ?? citation.exec(clause) ?? literalReading.exec(clause) ?? locative?.exec(clause);
+    const rejectedSource = new RegExp(`(?:^|[,;]|\\b(?:og|men)\\s+)\\s*(?:jeg\\s+vil\\s+)?(?:ikke|ingen|unngå|uten|heller\\s+enn)\\s+(?:[\\p{L}]+\\s+){0,5}${target}`, "u");
+    if (!match || rejectedSource.test(clause)) return false;
+    // Negation before the selected source rejects that request, including
+    // "ikke bruk innholdet i ...". Negated subject matter after it does not.
+    const sourceRequest = clause.slice(0, match.index + match[0].length);
+    return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b/u.test(sourceRequest);
+  }));
 }
 
 function rejectsChatDraft(question: string) {
-  return /\b(?:(?:ikke\s+(?:(?:ha|bruk|benytt|gi|lag|vis)\s+)?)|(?:uten|ingen|unngå|heller\s+enn)\s+)(?:(?:et|en|noen|ny|nye|egen|egne)\s+)?(?:forslag|tolkning|utkast|generert)(?![\p{L}\p{N}])/iu.test(question);
+  // Only standalone output/source instructions reject interpretation. A risk
+  // "uten forslag til tiltak" is subject matter, not an instruction to us.
+  return /(?:^|[.!?;,]|\bog\s+)(?:\s*(?:jeg\s+vil\s+)?)(?:(?:ikke\s+(?:(?:ha|bruk|benytt|gi|lag|vis)\s+)?)|(?:uten|ingen|unngå|heller\s+enn)\s+)(?:(?:et|en|noen|ny|nye|egen|egne)\s+)?(?:forslag|tolkning|utkast|generert)(?![\p{L}\p{N}])/iu.test(question);
 }
 
 function chatAttachmentTerms(question: string) {
@@ -1008,7 +1029,8 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const namesProjectSource = chatDocumentMentions(input.question, projectDocuments).length > 0;
   const rejectsInterpretation = rejectsChatDraft(input.question);
   const affirmativeDraftRequest = requestsChatSource(input.question, ["utkast", "tolkning", "generert utkast", "genererte utkast", "generert bilag", "genererte bilag"])
-    || /\b(?:oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv)\s+[^.!?]+\s+som\s+(?:et\s+)?forslag\b/iu.test(input.question);
+    || (/\bsom\s+(?:et\s+)?forslag\b/iu.test(input.question)
+      && requestsChatSource(input.question, artifactSections.filter(section => section.explicitlyNamed).map(section => section.artifact.title)));
   const asksForAvailableInterpretation = !rejectsInterpretation && (
     artifactSections.some(section => section.explicitlyNamed && (affirmativeDraftRequest || (!namesProjectSource && section.interpretationNamed)))
     || Boolean(input.customerAnalysis && requestsChatSource(input.question, ["kundeanalyse", "analyse", "prosjektoversikt"]))
@@ -1021,13 +1043,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
   const requestedIds = extractRequirementIdentifiers(input.question);
   // Subject matter ("om prosjektet", "kundens ansvar") is not source scope.
-  // An attachment remains the source unless a project source is also requested.
-  const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\bprosjektets\s+(?:krav|dokument\w*|kilder?|grunnlag)\b/iu.test(input.question)
+  // The attachment must be requested affirmatively; project-source subjects and
+  // coordinated source names retain the project gates.
+  const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge|og|eller)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\b(?:prosjektets|kundens)\s+(?:krav|dokument\w*|kilder?|grunnlag)\b|\b(?:kravdokument\w*|kravspesifikasjon\w*|kundedokument\w*|løsningsdokument\w*|konkurransegrunnlag\w*)\b/iu.test(input.question)
     || namesProjectSource;
-  const comparesSources = /\b(?:sammenlign\w*|sammenhold\w*|forskjell\w*|strid|opp\s+mot|oppfyll\w*)\b/iu.test(input.question);
+  const comparesSources = /^(?:sammenlign\w*|sammenlikn\w*|sammenhold\w*|oppfyll\w*|dekk(?:er|e)|samsvar\w*|avvik\w*|tilfredsstill\w*|stemm\w*)\b|\b(?:strid|opp\s+mot)\b|^(?:vurder|vis|forklar|beskriv)\b[^.!?]*\bmot\b/iu.test(input.question.trim());
   const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
-    (/\b(?:vedlegg\w*|chatvedlegg\w*|vedlagt\w*|filen|dokumentet|opplast\w*)\b/iu.test(input.question)
-      || (source.document_title.length > 3 && mentionsChatName(input.question, source.document_title)))
+    requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)
     && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)));
   const needsProjectDocumentEvidence = needsDocumentEvidence && !attachmentQuestion;
   const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;

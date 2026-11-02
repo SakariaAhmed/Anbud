@@ -634,3 +634,57 @@ and `/private/tmp/anbud-r10-extended.log`. The owned app restarted with AI
 disabled and liveness returned 200. No new browser, PDF/HTTP, live-provider or
 semantic-quality result is claimed. Fresh council, CI and CodeRabbit review
 remain required; the budget and external/runtime/release gates are unchanged.
+
+
+## Council round 10 and affirmative source selection
+
+Both members rejected `856d05f6` (Sol 7/10, Opus 6/10). The prior paragraph's
+positive-selection and scoped-negation claims were broader than its tests:
+a rejected attachment, a rejected interpretation source, and additional mixed
+questions still enabled completion. Generic draft noun phrases also matched
+contractual subject matter. The repeated corrections demonstrate that these
+language heuristics are not a general intent classifier.
+
+The shared source-request owner now checks affirmative request frames for each
+sentence, rather than attachment keyword presence. Rejected source instructions
+cannot qualify through an `i`/`fra` phrase inside that instruction in the tested
+forms. Generic draft/assessment terms require an action or citation frame and
+reject noun complements such as `utkast til kontrakt` and `vurderingen av pris`.
+Locative interpretation requests are limited to distinct application names.
+The explicit `som et forslag` path uses the same request check. An empty title
+cannot grant a source exemption.
+
+The regression matrix preserves all four project gates for the reported rejected
+attachments, mixed project-source subjects and coordinated names, comparisons,
+and topic-word/title coincidences. It also preserves the reported valid file,
+analysis and evaluation summaries, including `fila`, `basert på`, `hva viser`,
+`den siste`, and negated subject matter. A correction-section chapter exemption
+now requires both the ID and the row wording within that section: a bare `jf.`
+cross-reference no longer exempts unrelated occurrences. The existing regression
+still exercises actual amendment ingestion, persisted ownership and chat lookup.
+
+Scope limitation: recognized request frames are conservative Norwegian syntax,
+not semantic intent proof. Complex coordination, unsupported paraphrases and
+indirect source requests can still be misclassified. No claim is made that every
+mixed or negated natural-language question is handled. Explicit source selection
+in the product would provide a stronger contract; that UI change is not part of
+this correction. Generated content remains interpretation, never primary evidence.
+The frozen holdout, labels, thresholds, generation prompt wording and model settings are unchanged.
+
+Verification: the new request-gate and correction-cross-reference groups fail
+against `856d05f6`. All 44 focused tests pass on the final code. The final full
+run passes 1,523 frontend and 202 root tests (1,725 total), zero failures/skips,
+plus parser goldens. Production build/types, lint, workflow boundaries and secret
+scan pass. Both recorded SQL regression gates pass (116 original + 55 extended),
+with zero provider calls, missing recorded inputs or memory fallback. Conceptual
+recall remains 30/36 (MRR .565), and stress remains 18/20; these are regression
+passes, not release-quality passes. The owned AI-disabled app restarted and its
+liveness endpoint returned 200.
+
+Logs: `/private/tmp/anbud-r11-before.log`, `/private/tmp/anbud-r11-focused.log`,
+`/private/tmp/anbud-r11-final-tests.log`, `/private/tmp/anbud-r11-final-build.log`,
+`/private/tmp/anbud-r11-final-lint.log`, `/private/tmp/anbud-r11-retrieval.log`,
+`/private/tmp/anbud-r11-extended.log`. No new browser, HTTP/OCR, provider-stream
+or semantic model proof is claimed. No paid provider calls, budget changes or
+production operations ran. Fresh council, CI and CodeRabbit review of the new
+commit remain required; all previously recorded release gaps remain open.
