@@ -5,7 +5,10 @@ import { summarizeModelReleaseResults } from "./rag_model_release_metrics.mjs";
 
 test("the recorded exit-plan conflation fails the gate while preserving the original judge verdict", () => {
   const report = JSON.parse(fs.readFileSync(new URL("../docs/rag-quality-model-smoke-2026-11-02.json", import.meta.url)));
-  const run = report.runs.at(-1);
+  const run = report.runs.find(run => run.version === "rag-model-release.v2"
+    && run.recorded_at === "2026-11-02T03:13:17.750Z"
+    && run.cases.some(item => item.id === "generated-bilag" && item.independent_review?.grounded === false));
+  assert.ok(run, "The independently audited v2 run must remain in the historical report.");
   const result = run.cases.find(item => item.id === "generated-bilag");
   assert.equal(result.verdict.grounded, true);
   assert.equal(result.independent_review.grounded, false);
