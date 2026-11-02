@@ -4,6 +4,9 @@ export type RequirementLedgerEntry = {
   idOrigin?: "source" | "inferred" | "generated";
   originalId?: string;
   text: string;
+  /** Wording provenance is separate from whether the requirement ID was observed. */
+  textOrigin?: "observed" | "reconstructed" | "unknown";
+  textEvidence?: { originalText: string; start: number; end: number };
   pages: number[];
   heading: string;
   documentOrder?: number;

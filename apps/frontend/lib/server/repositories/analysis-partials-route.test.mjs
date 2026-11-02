@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import {mkdtempSync,writeFileSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import path from "node:path";
+import test from "node:test";
+import {createJiti} from "jiti";
+const frontend=path.resolve(import.meta.dirname,"../../..");
+test("preview route requires current project read permission before reading encrypted snapshots and uses no-store",async(t)=>{
+  const directory=mkdtempSync(path.join(tmpdir(),"analysis-partial-route-"));
+  const state={denied:false,reads:0,permissions:[],partial:null};
+  globalThis.__analysisPartialRoute=state;
+  t.after(()=>{delete globalThis.__analysisPartialRoute;rmSync(directory,{recursive:true,force:true});});
+  const stub=path.join(directory,"stub.cjs");
+  writeFileSync(stub,`
+exports.requireProjectPermission=async(id,permission)=>{const s=globalThis.__analysisPartialRoute;s.permissions.push([id,permission]);if(s.denied)throw Object.assign(new Error('Denied'),{status:403});};
+exports.readCustomerAnalysisPartial=async()=>{const s=globalThis.__analysisPartialRoute;s.reads++;return s.partial;};
+exports.routeErrorResponse=(error)=>Response.json({error:'Ingen tilgang.'},{status:error.status??500});
+`);
+  const jiti=createJiti(path.join(directory,"test.cjs"),{alias:{"@/lib/server/authorization":stub,"@/lib/server/repositories/analysis-partials":stub,"@/lib/server/api-responses":stub,"@":frontend,"server-only":"/dev/null"}});
+  const {GET}=jiti(path.join(frontend,"app/api/projects/[id]/customer-analysis/partial/route.ts"));
+  const request=new Request("http://localhost/api/projects/project/customer-analysis/partial");
+  const context={params:Promise.resolve({id:"project"})};
+  let response=await GET(request,context);
+  assert.equal(response.status,200);assert.equal(response.headers.get("Cache-Control"),"private, no-store");assert.deepEqual(await response.json(),{partial:null});
+  state.partial={status:"incomplete",job_id:"job",job_status:"failed",source_revision:2,fields:{customer_goals:["Sikre drift."]}};
+  response=await GET(request,context);assert.deepEqual((await response.json()).partial,state.partial);
+  state.denied=true;const before=state.reads;
+  response=await GET(request,context);assert.equal(response.status,403);assert.equal(state.reads,before,"denied requests must never read partials");
+  assert.deepEqual(state.permissions,[["project","project.read"],["project","project.read"],["project","project.read"]]);
+});

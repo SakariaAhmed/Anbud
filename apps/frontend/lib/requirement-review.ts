@@ -5,7 +5,7 @@ import { isRecord } from "@/lib/unknown-values";
 import { parseOutputSourceEvidence } from "@/lib/output-source-evidence";
 
 export type RequirementSourceCheck = "verified" | "unverified" | "needs_clarification";
-export type RequirementReviewFilter = "all" | "review" | "unanswered" | "source";
+export type RequirementReviewFilter = "all" | "review" | "unanswered" | "source" | "confidence";
 
 export type RequirementReviewRow = {
   key: string; index: number; lineIndex: number; rawLine: string; ref: string; group: string;
@@ -13,6 +13,7 @@ export type RequirementReviewRow = {
   sourceDocumentId?: string; sourceLocator?: string; rowHash?: string;
   needsReview: boolean; unanswered: boolean; missingSource: boolean;
   sourceCheck: RequirementSourceCheck;
+  confidence: { level: "documented_excerpt" | "needs_review" | "unknown"; reasons: string[] };
   columns: ReturnType<typeof requirementResponseTableColumns>;
 };
 
@@ -55,6 +56,7 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
         const missingSource = !source.trim() || /^(?:-|—|ukjent|mangler|ikke oppgitt)$/iu.test(source.trim());
         const sourceIssue = sourceIssueRows.has(index);
         const sourceCheck: RequirementSourceCheck = missingSource || sourceIssue ? "needs_clarification" : verifiedRows.has(index) ? "verified" : "unverified";
+        const confidence = evidence.row_confidence?.find(row => row.index === index && row.ref === ref && row.row_hash === identity?.row_sha256) ?? { level: "unknown" as const, reasons: ["Svaret mangler en gjeldende kontroll av kildegrunnlaget, eller er endret etter kontrollen."] };
         const needsReview = unanswered || missingSource || sourceIssue || flagged(metadata.templateRepairRows, metadata.templateRepairLegacyRefs) || flagged(metadata.controlRepairRows, metadata.controlRepairLegacyRefs) || flagged(metadata.proposalInputRequiredRows, metadata.proposalInputRequiredLegacyRefs) || metadata.unresolvedFallbackAnswers.some(row => row.nr === index + 1) ||
           /\b(?:må avklares|trenger tilbudsinput|ikke dokumentert|kan ikke bekreftes)\b/iu.test(`${answer} ${columns.evidenceIndex >= 0 ? cells[columns.evidenceIndex] ?? "" : ""}`);
         result.push({ key: `${index}:${ref}`, index, lineIndex, rawLine, ref, group, requirement: cells[columns.requirementIndex] ?? "", answer,
@@ -62,7 +64,7 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
           sourceDocumentId: typeof identity?.source_document_id === "string" ? identity.source_document_id : undefined,
           sourceLocator: typeof identity?.source_locator === "string" ? identity.source_locator : undefined,
           rowHash: typeof identity?.row_sha256 === "string" ? identity.row_sha256 : undefined,
-          needsReview, unanswered, missingSource, sourceCheck });
+          needsReview, unanswered, missingSource, sourceCheck, confidence });
       }
       lineIndex++;
     }
@@ -75,7 +77,7 @@ export function requirementReviewRows(content: string, inputSnapshot?: unknown):
  * or proof of semantic support. The drawer rechecks the current source. */
 export function requirementReviewRowMatches(row: RequirementReviewRow, filters: { query: string; status: RequirementReviewFilter; sourceCheck: RequirementSourceCheck | "all" }) {
   return normalized(`${row.ref} ${row.requirement} ${row.answer} ${row.evidence} ${row.source}`).includes(normalized(filters.query)) &&
-    (filters.status === "all" || filters.status === "review" && row.needsReview || filters.status === "unanswered" && row.unanswered || filters.status === "source" && row.missingSource) &&
+    (filters.status === "all" || filters.status === "review" && row.needsReview || filters.status === "unanswered" && row.unanswered || filters.status === "source" && row.missingSource || filters.status === "confidence" && row.confidence.level !== "documented_excerpt") &&
     (filters.sourceCheck === "all" || filters.sourceCheck === row.sourceCheck);
 }
 

@@ -41,6 +41,10 @@ test("postgres: the destructive baseline reset can run twice and restores projec
     sql(target.toString(), reset);
     assert.equal(Number(sql(target.toString(), projectForeignKeys)), 3);
     assert.equal(Number(sql(target.toString(), allForeignKeys)), totalAfterFirst);
+    assert.equal(Number(sql(target.toString(), `select count(*) from pg_constraint
+      where contype='f' and conrelid='public.customer_analysis_partials'::regclass
+        and confrelid in ('public.projects'::regclass,'public.project_jobs'::regclass)`)), 2,
+    "partial previews retain project and job ownership after a baseline reset");
   } finally {
     sql(databaseUrl, `drop database ${name} with (force);`);
   }

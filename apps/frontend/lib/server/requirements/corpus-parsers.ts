@@ -11,6 +11,7 @@ export {
 export {
   buildExplicitIdDoclingTextRequirementLedger,
   buildExplicitIdPdfNarrativeRequirementLedger,
+  buildLabelledLineRequirementLedger,
 } from "@/lib/server/requirements/explicit-id-narrative-parser";
 export {
   buildDeclaredHeadingRequirementLedger,

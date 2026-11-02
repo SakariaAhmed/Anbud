@@ -14,6 +14,27 @@ type DocumentScopeMetadata = Pick<
   | "processing_status"
 >;
 
+/** Stored on the still-usable basic document; the recovery control keys on the error. */
+export const DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE = "Grunnversjonen er lagret og kan brukes.";
+export const DOCUMENT_ENHANCEMENT_FAILURE_ERROR = "Dokumentforbedringen feilet. Grunnversjonen er lagret og kan brukes. Prøv forbedringen på nytt.";
+
+export function canRetryDocumentEnhancement(
+  document: Pick<ProjectDocument, "processing_status" | "processing_error" | "parser_used">,
+) {
+  return document.processing_status === "basic_ready"
+    && document.parser_used !== "docling"
+    && Boolean(document.processing_error?.trim());
+}
+
+/** The caller states which revision it saw, so a retry cannot act on a newer one. */
+export function documentEnhancementRetryDecision(
+  document: Pick<ProjectDocument, "processing_status" | "processing_error" | "parser_used" | "chunk_source_revision">,
+  expectedSourceRevision: unknown,
+): "allowed" | "stale" | "not_eligible" {
+  if (!Number.isSafeInteger(expectedSourceRevision) || expectedSourceRevision !== document.chunk_source_revision) return "stale";
+  return canRetryDocumentEnhancement(document) ? "allowed" : "not_eligible";
+}
+
 const REQUIREMENT_SOURCE_METADATA_PATTERN =
   /\b(?:bilag\s*[12]|krav[\p{L}\d_-]*|requirements?|konkurransegrunnlag|rfp)\b/iu;
 const STRONG_REQUIREMENT_SOURCE_METADATA_PATTERN =

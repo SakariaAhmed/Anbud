@@ -113,6 +113,7 @@ export type RetrievalQuality = {
 export type RetrievalTelemetry = {
   authoritativeRequirementIds?: string[];
   requirementLookupFailed?: boolean;
+  requirementLookupTruncated?: boolean;
   missingRequirementIds?: string[];
   query: string;
   exactTerms: string[];
@@ -127,8 +128,8 @@ export type RetrievalTelemetry = {
   quality: RetrievalQuality;
 };
 
-/** Returns indexes into `candidates`, most relevant first, or null to keep
- * the existing order. Indexes left out keep their order after the listed ones. */
+/** Returns relevant indexes, most relevant first. Empty means no relevant
+ * evidence; null means failure and preserves the heuristic fallback. */
 export type RetrievalReranker = (input: {
   query: string;
   candidates: RetrievedDocumentSnippet[];
@@ -486,6 +487,8 @@ export function documentSourceKeysForMemoryFallback(
 
 const MAX_RETRIEVAL_LIMIT = 16;
 const MODEL_RERANK_CANDIDATES = 32;
+const MODEL_RERANK_MAX_CANDIDATES = 48;
+const MODEL_RERANK_SEMANTIC_CANDIDATES = 8;
 
 /** Occurrences of `needle` in `haystack` that stand as a whole value: not
  * preceded or followed by a letter or digit. */
@@ -1929,6 +1932,46 @@ function rerankSnippets(input: {
     .sort((left, right) => right.score - left.score);
 }
 
+function retrievalCandidateKey(candidate: RetrievedDocumentSnippet) {
+  return `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
+}
+
+/** Keep SQL fusion and semantic hits from being erased by lexical boosts.
+ * Channel votes are fused across queries before applying their quotas. The
+ * model still sees heuristic order, and failure still returns that order.
+ * The union grows only when channels disagree, with a hard ceiling of 48. */
+export function buildRetrievalRerankPool(input: {
+  ranked: RetrievedDocumentSnippet[];
+  retrievalRankings: RetrievedDocumentSnippet[][];
+}) {
+  const ranked = input.ranked;
+  if (ranked.length <= MODEL_RERANK_CANDIDATES) return ranked;
+  const storedRankings = input.retrievalRankings.map(candidates => candidates.filter(candidate =>
+    candidate.retrievalSource === "hybrid" || candidate.retrievalSource === "vector",
+  ));
+  const hybrid = reciprocalRankFusion(storedRankings.map(candidates => [...candidates].sort((a, b) =>
+    (b.rrfScore ?? 0) - (a.rrfScore ?? 0) || (b.similarity ?? 0) - (a.similarity ?? 0),
+  )), retrievalCandidateKey);
+  const semantic = reciprocalRankFusion(storedRankings.map(candidates => candidates.filter(candidate =>
+    candidate.similarity != null && Number.isFinite(candidate.similarity),
+  ).sort((a, b) =>
+    (a.semanticRank ?? Number.POSITIVE_INFINITY) - (b.semanticRank ?? Number.POSITIVE_INFINITY) ||
+    (b.similarity ?? 0) - (a.similarity ?? 0),
+  )), retrievalCandidateKey);
+  const available = new Set(ranked.map(retrievalCandidateKey));
+  const selected = new Set<string>();
+  const add = (candidates: RetrievedDocumentSnippet[], count: number) => {
+    for (const candidate of candidates.slice(0, count)) {
+      const key = retrievalCandidateKey(candidate);
+      if (available.has(key) && selected.size < MODEL_RERANK_MAX_CANDIDATES) selected.add(key);
+    }
+  };
+  add(hybrid, MODEL_RERANK_CANDIDATES);
+  add(semantic, MODEL_RERANK_SEMANTIC_CANDIDATES);
+  add(ranked, MODEL_RERANK_CANDIDATES);
+  return ranked.filter(candidate => selected.has(retrievalCandidateKey(candidate)));
+}
+
 function assessRetrievalQuality(input: {
   snippets: RetrievedDocumentSnippet[];
   exactTerms: string[];
@@ -2085,6 +2128,8 @@ function withSurroundingSections(input: {
 
 export async function retrieveDocumentSnippetsWithMetadata(input: {
   query: string;
+  /** Explicit current-question chapter scope for authoritative ID lookups, before budgeting. */
+  requirementHeading?: string;
   /** Independent semantic intents, searched concurrently and fused by rank. */
   subqueries?: string[];
   projectId?: string | null;
@@ -2100,6 +2145,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   broaderExactTerms?: string[];
   /** Orders the best candidates by relevance; null keeps the heuristic order. */
   rerank?: RetrievalReranker;
+  /** Explicit diagnostic sink for offline evaluation; never logs source text. */
+  onCandidateRanking?: (value: { stage: "retrieved" | "subquery" | "fused" | "rerank_pool"; query: string; candidates: RetrievedDocumentSnippet[] }) => void;
   /**
    * Returns each matched part with up to 4 800 characters of its section. Only
    * for callers that send whole snippets: a caller that cuts snippets to their
@@ -2154,7 +2201,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
   let requirementLookupFailed = false;
   const authoritativeRequirementIds = new Set<string>();
-  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
+  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, heading: input.requirementHeading, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: () => { requirementLookupFailed = true; } })).catch(error => {
         assertEmbeddingFallbackAllowed(error);
         if (error instanceof Error && error.name === "AbortError") throw error;
         requirementLookupFailed = true;
@@ -2198,7 +2245,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     query: string;
     queryTokens: string[];
     exactTerms: string[];
-  }) => {
+  }): Promise<RetrievedDocumentSnippet[]> => {
     let hybridCandidates: RetrievedDocumentSnippet[] = [];
     let vectorCandidates: RetrievedDocumentSnippet[] = [];
     let queryEmbeddingFailed = false;
@@ -2273,12 +2320,18 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     return [...hybridCandidates, ...vectorCandidates, ...fallbackCandidates];
   };
 
+  const retrievalRankings: RetrievedDocumentSnippet[][] = [];
   const queries = Array.from(new Set([query, ...(input.subqueries ?? []).map(normalizeChunkText).filter(Boolean)])).slice(0, 4);
-  const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async passQuery => {
+  const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async (passQuery, queryIndex) => {
     const tokens = tokenizeForRetrieval(passQuery);
-    return rerankSnippets({ candidates: await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms }), queryTokens: tokens, exactTerms });
+    const gathered = await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms });
+    retrievalRankings[queryIndex] = gathered;
+    input.onCandidateRanking?.({ stage: "retrieved", query: passQuery, candidates: [...gathered].sort((a, b) => (b.rrfScore ?? 0) - (a.rrfScore ?? 0)) });
+    const candidates = rerankSnippets({ candidates: gathered, queryTokens: tokens, exactTerms });
+    input.onCandidateRanking?.({ stage: "subquery", query: passQuery, candidates });
+    return candidates;
   })), lookup]);
-  const candidateKey = (candidate: RetrievedDocumentSnippet) => `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
+  const candidateKey = retrievalCandidateKey;
   let rankingQuery = query;
   let rankingTokens = queryTokens;
   let rankingExactTerms = exactTerms;
@@ -2306,6 +2359,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
         queryTokens: broaderTokens,
         exactTerms: rankingExactTerms,
       });
+    retrievalRankings.push(broaderCandidates);
+    input.onCandidateRanking?.({ stage: "retrieved", query: broaderQuery, candidates: [...broaderCandidates].sort((a, b) => (b.rrfScore ?? 0) - (a.rrfScore ?? 0)) });
     rankings.push(rerankSnippets({
       candidates: broaderCandidates,
       queryTokens: rankingTokens,
@@ -2316,18 +2371,15 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   }
 
   let usedModelRerank = false;
+  input.onCandidateRanking?.({ stage: "fused", query: rankingQuery, candidates: ranked });
+  const pool = input.rerank || input.onCandidateRanking
+    ? buildRetrievalRerankPool({ ranked, retrievalRankings })
+    : [];
+  input.onCandidateRanking?.({ stage: "rerank_pool", query: rankingQuery, candidates: pool });
   if (input.rerank && ranked.length > 1) {
-    const pool = ranked.slice(0, MODEL_RERANK_CANDIDATES);
-    const order = Array.from(new Set(
-      (await input.rerank({ query: rankingQuery, candidates: pool })) ?? [],
-    )).filter((index) => Number.isInteger(index) && index >= 0 && index < pool.length);
-    if (order.length) {
-      const chosen = new Set(order);
-      ranked = [
-        ...order.map((index) => pool[index]),
-        ...pool.filter((_, index) => !chosen.has(index)),
-        ...ranked.slice(pool.length),
-      ];
+    const response = await input.rerank({ query: rankingQuery, candidates: pool });
+    if (response && response.every(index => Number.isInteger(index) && index >= 0 && index < pool.length)) {
+      ranked = [...new Set(response)].map(index => pool[index]);
       usedModelRerank = true;
     }
   }
@@ -2343,6 +2395,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     });
   }
   const exactRows = lookedUpRows.filter(hasUncoveredText);
+  const requirementLookupTruncated = exactRows.length > limit;
   if (exactRows.length) {
     // Deterministic lookups are outside the model rerank contract. Every
     // occurrence stays visible instead of silently choosing a repeated ID.
@@ -2354,6 +2407,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const authoritativeShapes = new Set([...authoritativeRequirementIds].map(id => id.replace(/\d+/gu, "#")));
   const missingRequirementIds = requirementIds.filter(id => (!isAmbiguousRequirementIdentifier(id) || authoritativeRequirementIds.has(id) || authoritativeShapes.has(id.replace(/\d+/gu, "#"))) && !lookedUpRows.some(row => row.requirementId === id));
   if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: requirementLookupFailed ? "Et kravregister kunne ikke leses sikkert. Kontroller dokumentgrunnlaget før du bruker svaret." : "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
+  if (requirementLookupTruncated) quality = { ...quality, sufficient: false, confidence: "low", reason: "Krav-ID-en har flere forekomster enn søket kan vise samtidig. Avgrens til dokument og kapittel." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {
     const document = snippet.sourceType === "project_document"
@@ -2373,6 +2427,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const telemetry = {
     authoritativeRequirementIds: [...authoritativeRequirementIds],
     requirementLookupFailed,
+    requirementLookupTruncated,
     missingRequirementIds,
     query,
     exactTerms,

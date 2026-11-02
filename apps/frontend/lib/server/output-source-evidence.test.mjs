@@ -141,3 +141,17 @@ test("output checks numeric symbols and every Unicode thousands separator withou
   }
   assert.doesNotThrow(() => bindOutputSourceEvidence({ documents: [], fields: [{ path: "answer", text: 'Forslag: "P1", "Q3" og "L2".' }] }));
 });
+
+test("per-answer source confidence follows immutable row identity and is invalidated by edits", () => {
+  const { unchangedRequirementRowEvidence } = app("../output-source-evidence.ts");
+  const rows = [0, 1].map(index => ({ index, ref: "K-1.3", rowHash: String(index + 1).repeat(64), answer: "Forslag til leveranse", evidence: "«eksport innen 30 dager»" }));
+  const first = reviewRequirementRowOutputEvidence({ rows, documents: [source] });
+  assert.deepEqual(first.evidence.row_confidence.map(row => row.level), ["documented_excerpt", "documented_excerpt"]);
+  const edited = rows.map((row, index) => index ? row : { ...row, answer: "Manuelt endret svar" });
+  const retained = unchangedRequirementRowEvidence(first.evidence, rows, edited);
+  assert.deepEqual(retained.row_confidence.map(row => row.index), [1], "Repeated IDs do not transfer confidence between rows.");
+  const regenerated = reviewRequirementRowOutputEvidence({ rows: edited, parentRows: rows, parentEvidence: first.evidence, regeneratedIndexes: new Set([0]), documents: [source] });
+  assert.deepEqual(regenerated.evidence.row_confidence.map(row => row.index).sort(), [0, 1]);
+  assert.deepEqual(regenerated.evidence.row_confidence.find(row => row.index === 1), first.evidence.row_confidence[1]);
+  assert.deepEqual(unchangedRequirementRowEvidence(first.evidence, rows, rows.map(row => ({ ...row, rowHash: "f".repeat(64) }))).row_confidence, undefined);
+});

@@ -39,9 +39,11 @@ import {
   saveCustomerAnalysisSection,
   startProjectJob,
   updateGeneratedArtifact,
+  retryDocumentEnhancement,
   uploadProjectDocument,
 } from "@/lib/client/project-api";
 import { DocumentProcessingFailure, trackDocumentProcessing } from "@/lib/client/document-job-tracker";
+import { recordWorkflowRenderAfterPaint } from "@/lib/client/workflow-render-metric";
 import { useProjectActivity } from "@/hooks/use-project-activity";
 import { useProjectJobRunner } from "@/hooks/use-project-job-runner";
 import { useProjectWorkspacePrefetch } from "@/hooks/use-project-workspace-prefetch";
@@ -97,6 +99,7 @@ import type {
 
 export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
 
+const ENHANCEMENT_WAIT_NOTICE = "Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.";
 const PROJECT_WORKSPACE_UI_SCALE = 0.9;
 const DEFAULT_SIDEBAR_WIDTH = 260;
 const MIN_SIDEBAR_WIDTH = Math.round(270 * PROJECT_WORKSPACE_UI_SCALE);
@@ -546,9 +549,9 @@ export function ProjectWorkspacePage({
   async function trackDocumentIngestionJob(
     job: ProjectJobRecord | null | undefined,
     documentId: string,
-    options: { propagateFailure?: boolean } = {},
+    options: { propagateFailure?: boolean; submittedAt?: number } = {},
   ) {
-    if (!job || job.kind !== "document_ingestion") {
+    if (!job || (job.kind !== "document_ingestion" && job.kind !== "document_docling_enhancement")) {
       return null;
     }
 
@@ -556,7 +559,7 @@ export function ProjectWorkspacePage({
     documentJobAbortControllersRef.current.add(controller);
 
     try {
-      return await trackDocumentProcessing({
+      const tracked = await trackDocumentProcessing({
         projectId: project.id,
         job,
         signal: controller.signal,
@@ -571,7 +574,9 @@ export function ProjectWorkspacePage({
               if (document.id !== documentId || jobStatus.status === "completed") return document;
               // Enhancement cannot turn the persisted basic result into a
               // failed ingestion. The tracker refreshes its authoritative state.
-              if (jobStatus.kind === "document_docling_enhancement") return document;
+              if (jobStatus.kind === "document_docling_enhancement") {
+                return jobStatus.status === "failed" ? document : { ...document, processing_message: progressMessageLabel(jobStatus.message), processing_error: null };
+              }
               if (jobStatus.status === "failed") return {
                 ...document,
                 processing_status: "failed",
@@ -588,12 +593,25 @@ export function ProjectWorkspacePage({
           }, { preserveArtifactCount: true }));
         },
         onEnhancement() {
-          setNotice("Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.");
+          setNotice(ENHANCEMENT_WAIT_NOTICE);
+        },
+        onEnhancementFailed() {
+          setNotice("Dokumentforbedringen feilet. Grunnversjonen er lagret og kan brukes. Du kan prøve forbedringen på nytt under Dokumenter.");
+        },
+        onDocumentReady(ready) {
+          if (options.submittedAt === undefined || !(ready.processing_status === "basic_ready" || ready.processing_status === "enhanced_ready")) return;
+          recordWorkflowRenderAfterPaint(project.id, { phase: "upload_to_ready", traceId: ready.id, documentId: ready.id, sourceRevision: ready.chunk_source_revision }, options.submittedAt, controller.signal);
+        },
+        onIngestionFailed() {
+          if (options.submittedAt === undefined) return;
+          recordWorkflowRenderAfterPaint(project.id, { phase: "upload_to_ready", traceId: documentId, documentId, status: "failed" }, options.submittedAt, controller.signal);
         },
         onProject(freshProject) {
           setProject((current) => mergeProjectRefresh(current, freshProject));
         },
       });
+      setNotice((current) => current === ENHANCEMENT_WAIT_NOTICE ? "" : current);
+      return tracked;
     } catch (error) {
       if (controller.signal.aborted) return null;
       if (error instanceof DocumentProcessingFailure && error.kind === "server") {
@@ -908,6 +926,7 @@ export function ProjectWorkspacePage({
       setError("Velg en fil først.");
       return;
     }
+    const submittedAt = performance.now();
     await runAction("upload", async () => {
       const formData = new FormData();
       formData.append("file", file);
@@ -932,7 +951,7 @@ export function ProjectWorkspacePage({
           `Prosjektet har allerede et ${uploadRole === "primary_customer_document" ? "kundedokument" : "løsningsdokument"}, så dokumentet ble lagret som støttedokument. Velg rollen selv hvis det skal erstatte det.`,
         );
       }
-      void trackDocumentIngestionJob(payload.job, payload.document.id);
+      void trackDocumentIngestionJob(payload.job, payload.document.id, { submittedAt });
       setDocTitle("");
       setFile(null);
       setUploadRole("supporting_document");
@@ -983,6 +1002,7 @@ export function ProjectWorkspacePage({
 
   async function onUploadRequirementDocument(file: File) {
     let uploadedDocument: ProjectDocument | null = null;
+    const submittedAt = performance.now();
 
     await runAction("upload-requirement-document", async () => {
       const formData = new FormData();
@@ -1024,7 +1044,7 @@ export function ProjectWorkspacePage({
         completedDocument = await trackDocumentIngestionJob(
           payload.job,
           payload.document.id,
-          { propagateFailure: true },
+          { propagateFailure: true, submittedAt },
         );
       }
       if (!isDocumentReadyForEvaluation(completedDocument)) {
@@ -1043,6 +1063,7 @@ export function ProjectWorkspacePage({
 
   async function onUploadArchitectureDocument(file: File) {
     let uploadedDocument: ProjectDocument | null = null;
+    const submittedAt = performance.now();
 
     await runAction("upload-architecture-document", async () => {
       const formData = new FormData();
@@ -1083,7 +1104,7 @@ export function ProjectWorkspacePage({
         completedDocument = await trackDocumentIngestionJob(
           payload.job,
           payload.document.id,
-          { propagateFailure: true },
+          { propagateFailure: true, submittedAt },
         );
       }
       if (!isDocumentReadyForEvaluation(completedDocument)) {
@@ -1228,6 +1249,25 @@ export function ProjectWorkspacePage({
     } finally {
       setBusy(null);
     }
+  }
+
+  async function onRetryDocumentEnhancement(document: ProjectDocument) {
+    await runAction(`enhance-${document.id}`, async () => {
+      const job = await retryDocumentEnhancement({ projectId: project.id, documentId: document.id, sourceRevision: document.chunk_source_revision });
+      recordJob(job);
+      // The server cleared the failure when it accepted the retry.
+      setProject((current) => normalizeProjectState({
+        ...current,
+        documents: current.documents.map((item) => item.id === document.id
+          ? { ...item, processing_message: "Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.", processing_error: null }
+          : item),
+      }, { preserveArtifactCount: true }));
+      setNotice("Dokumentforbedringen er startet på nytt. Grunnversjonen kan brukes imens.");
+      void trackDocumentIngestionJob(job, document.id).then((updated) => {
+        if (updated?.processing_status === "enhanced_ready") setNotice("Dokumentforbedringen er ferdig.");
+        else if (updated && !updated.processing_error) setNotice("");
+      });
+    });
   }
 
   async function onDeleteDocument(document: ProjectDocument) {
@@ -1846,6 +1886,7 @@ export function ProjectWorkspacePage({
         onFileChange={onSelectUploadFile}
         onUploadDocument={onUploadDocument}
         onDeleteDocument={onDeleteDocument}
+        onRetryDocumentEnhancement={onRetryDocumentEnhancement}
         onGenerateCustomerAnalysis={onGenerateCustomerAnalysis}
         onSaveAnalysis={onSaveAnalysis}
         onGenerateSolutionEvaluation={onGenerateSolutionEvaluation}

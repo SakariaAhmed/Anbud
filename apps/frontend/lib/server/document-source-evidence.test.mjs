@@ -83,3 +83,8 @@ test("reusing one document index preserves evidence identity and repeated-quote 
     assert.deepEqual(bindDocumentSourceEvidence(input, quote, { index }), bindDocumentSourceEvidence(input, quote));
   }
 });
+
+test("plain and bold versions on different pages cannot acquire a unique locator", () => {
+  const raw_text = "[[SIDE:1]]\nData skal lagres i Norge.\n[[SIDE:2]]\nData skal **lagres i Norge**.";
+  assert.equal(bindDocumentSourceEvidence({ ...document, raw_text }, "Data skal lagres i Norge.").page_start, null);
+});

@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 
 import { supplementalRetrievalFixtures } from "./rag_supplemental_fixtures.mjs";
 import { scoreRetrievalCases } from "./rag_eval.mjs";
-import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
+import { evaluateRetrievalGate, retrievalGateMode } from "./rag_retrieval_gate.mjs";
 
 // Keep stdout machine-readable; application telemetry belongs on stderr.
 console.log = (...values) => console.error(...values);
@@ -62,7 +62,7 @@ const withoutStructure = args.includes("--without-structure");
 const extendedSuite = args.includes("--extended-suite");
 const replayWithModelRerank = args.includes("--replay-with-model-rerank");
 const caseGroup = option("--case-group");
-if (caseGroup && args.includes("--gate")) throw new Error("A case subset cannot pass the complete regression gate.");
+if (caseGroup && (args.includes("--gate") || args.includes("--release-gate"))) throw new Error("A case subset cannot pass the complete regression gate.");
 if (replayWithModelRerank && (!useRecordedEmbeddings || !useModelRerank || process.env.OPENAI_BASE_URL !== "http://127.0.0.1:4340/v1")) throw new Error("Paid replay requires recorded embeddings, model reranking and the owned loopback budget proxy.");
 if (replayWithModelRerank) {
   const response = await fetch("http://127.0.0.1:4340/budget");
@@ -128,6 +128,9 @@ const app = load({
   ? path.join(repositoryRoot, "scripts/rag_retrieval_eval_store.cjs")
   : unavailableDataApi });
 const { retrieveDocumentSnippetsWithMetadata, buildKeywordSearchQuery, replaceProjectDocumentChunks } = app(path.join(frontendRoot, "lib/server/document-chunks.ts"));
+const { matchCenteredExcerpt } = app(path.join(frontendRoot, "lib/server/ai/requirement-coverage.ts"));
+const retrievalRerankExcerpt = app(path.join(frontendRoot, "lib/server/ai/retrieval-rerank.ts")).retrievalRerankExcerpt
+  ?? ((text, query) => matchCenteredExcerpt(text, query, 700));
 const { extractTextFromBuffer } = app(path.join(frontendRoot, "lib/server/documents.ts"));
 const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/ai/retrieval-query.ts"));
 // Chat's own request (query plan, exact terms, broader retry, sections and
@@ -208,9 +211,25 @@ if (live && results.some(row => row.used_memory_fallback)) throw new Error("Stor
 async function runCase(item) {
   const startedAt = Date.now();
   const request = await retrievalRequest(item.question, item.previous_question);
-  const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
+  const diagnostics = [];
+  const retrieval = await retrieveDocumentSnippetsWithMetadata({ ...request, ...(args.includes("--diagnostics") ? { onCandidateRanking: ({ stage, query, candidates }) => {
+    const matches = (snippets) => scoreRetrievalCases([{ ...item, retrieved: snippets.map(snippet => ({ source_id: snippet.sourceId, reference: snippet.reference, text: snippet.text, page_start: snippet.pageStart, page_end: snippet.pageEnd, heading_path: snippet.headingPath })) }]);
+    const score = matches(candidates);
+    diagnostics.push({ stage, candidates: candidates.length, expected_rank: score.mrr ? Math.round(1 / score.mrr) : null,
+      ranking_metadata: candidates.map(snippet => ({ source_id: snippet.sourceId, chunk_index: snippet.chunkIndex, semantic_rank: snippet.semanticRank, keyword_rank: snippet.keywordRank, rrf_score: snippet.rrfScore })),
+      expected_passages: candidates.flatMap((snippet, index) => matches([snippet]).mrr ? [{ rank: index + 1,
+        source_id: snippet.sourceId, chunk_index: snippet.chunkIndex, similarity: snippet.similarity,
+        semantic_rank: snippet.semanticRank, keyword_rank: snippet.keywordRank, rrf_score: snippet.rrfScore,
+        lexical_score: snippet.lexicalScore, score: snippet.score, passage_chars: snippet.text.length,
+        excerpt_chars: retrievalRerankExcerpt(snippet.text, query).length,
+        expected_text_survives_excerpt: Boolean(matches([{ ...snippet, text: retrievalRerankExcerpt(snippet.text, query) }]).mrr),
+      }] : []),
+      ...(stage === "rerank_pool" ? { excerpt_chars_total: candidates.reduce((total, snippet) => total + retrievalRerankExcerpt(snippet.text, query).length, 0) } : {}),
+    });
+  } } : {}) });
   results.push({
     ...item,
+    ...(diagnostics.length ? { candidate_diagnostics: diagnostics } : {}),
     retrieval_latency_ms: Date.now() - startedAt,
     used_hybrid_search: retrieval.telemetry.usedHybridSearch,
     used_broadened_search: retrieval.telemetry.usedBroadenedSearch ?? false,
@@ -291,8 +310,8 @@ if (databaseUrl && !useStoredEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
-if (args.includes("--gate")) {
-  report.gate = evaluateRetrievalGate(results, extendedSuite ? "extended" : args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
+if (args.includes("--gate") || args.includes("--release-gate")) {
+  report.gate = evaluateRetrievalGate(results, retrievalGateMode({ extendedSuite, releaseGate: args.includes("--release-gate"), recorded: useRecordedEmbeddings, stored: useStoredEmbeddings }));
   if (!report.gate.passed) process.exitCode = 2;
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

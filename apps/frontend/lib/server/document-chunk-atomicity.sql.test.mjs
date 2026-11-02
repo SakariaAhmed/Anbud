@@ -196,8 +196,10 @@ function runPsqlFile(databaseUrl, filePath) {
   );
 }
 
-function runPsqlAsync(databaseUrl, sql) {
-  return new Promise((resolve) => {
+function runPsqlAsync(databaseUrl, sql, waitForInsert = false) {
+  let readyResolve, readyReject;
+  const ready = waitForInsert ? new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; }) : null;
+  const result = new Promise((resolve) => {
     const child = spawn(
       "psql",
       [databaseUrl, "-X", "-v", "ON_ERROR_STOP=1", "-Atq", "-c", sql],
@@ -212,9 +214,15 @@ function runPsqlAsync(databaseUrl, sql) {
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
+      if (stderr.includes("anbud_chunk_insert_locked")) readyResolve?.();
     });
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
+    child.on("close", (status) => {
+      if (!stderr.includes("anbud_chunk_insert_locked")) readyReject?.(new Error("Replacement exited before the insert barrier"));
+      resolve({ status, stdout, stderr });
+    });
   });
+  result.ready = ready;
+  return result;
 }
 
 function delay(ms) {
@@ -485,6 +493,7 @@ test(
             returns trigger language plpgsql as $$
             begin
               if current_setting('anbud.slow_chunk_insert', true) = 'on' then
+                raise notice 'anbud_chunk_insert_locked';
                 perform pg_sleep(0.35);
               end if;
               return new;
@@ -750,8 +759,9 @@ test(
           jobId: "00000000-0000-4000-8000-000000000131",
           leaseToken: "11111111-1111-4111-8111-111111111111",
         })} commit;`,
+        true,
       );
-      await delay(80);
+      await projectParentReplace.ready;
       const projectParentDelete = runPsqlAsync(
         databaseUrl.toString(),
         "delete from public.projects where id = '00000000-0000-4000-8000-000000000101';",
@@ -779,8 +789,9 @@ test(
           jobId: "00000000-0000-4000-8000-000000000231",
           leaseToken: "22222222-2222-4222-8222-222222222222",
         })} commit;`,
+        true,
       );
-      await delay(80);
+      await serviceParentReplace.ready;
       const serviceParentDelete = runPsqlAsync(
         databaseUrl.toString(),
         "delete from public.service_descriptions where id = '00000000-0000-4000-8000-000000000202';",
@@ -853,18 +864,29 @@ test(
         ),
         "seed role-race chunks",
       );
-      const roleDemotion = runPsqlAsync(
-        databaseUrl.toString(),
-        "begin; update public.documents set role = 'supporting_document' where id = '00000000-0000-4000-8000-000000000511'; select pg_sleep(0.35); commit;",
-      );
-      await delay(80);
-      const duringRoleRace = runPsql(
-        databaseUrl.toString(),
-        replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0),
-      );
+      // Keep the demotion transaction open until the competing replacement
+      // actually ran. Startup delays cannot reverse the intended lock ordering.
+      const roleWriter = spawn("psql", [databaseUrl.toString(), "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { stdio: ["pipe", "pipe", "pipe"] });
+      let roleOutput = "", roleError = "";
+      roleWriter.stdout.on("data", chunk => { roleOutput += chunk; });
+      roleWriter.stderr.on("data", chunk => { roleError += chunk; });
+      const roleDone = new Promise(resolve => roleWriter.once("close", status => resolve({ status, stdout: roleOutput, stderr: roleError })));
+      const roleLocked = new Promise((resolve, reject) => {
+        roleWriter.stdout.on("data", () => { if (roleOutput.includes("ROLE_LOCKED")) resolve(); });
+        roleWriter.once("error", reject);
+        roleWriter.once("close", () => { if (!roleOutput.includes("ROLE_LOCKED")) reject(new Error("Role writer exited before acquiring its lock")); });
+      });
+      roleWriter.stdin.write("begin; update public.documents set role = 'supporting_document' where id = '00000000-0000-4000-8000-000000000511';\n\\echo ROLE_LOCKED\n");
+      let duringRoleRace;
+      try {
+        await roleLocked;
+        duringRoleRace = runPsql(databaseUrl.toString(), replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0));
+      } finally {
+        roleWriter.stdin.end("commit;\n");
+        assertPsqlSucceeded(await roleDone, "concurrent primary-role demotion");
+      }
       assert.notEqual(duringRoleRace.status, 0);
       assert.match(duringRoleRace.stderr, /could not obtain lock/u);
-      assertPsqlSucceeded(await roleDemotion, "concurrent primary-role demotion");
       const afterRoleRace = runPsql(
         databaseUrl.toString(),
         replaceSql(concurrencyFingerprint, roleRaceRows, roleRaceRows.length, 0),

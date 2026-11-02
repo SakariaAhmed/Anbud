@@ -1,5 +1,7 @@
 "use client";
 
+import { currentCriterionCoverage } from "@/lib/project-follow-up";
+
 import { buildArchitectureActions } from "@/lib/evaluation-actions";
 
 import {
@@ -762,6 +764,7 @@ export function ProjectEvaluationTab({
   projectId,
   canDownloadDocuments = false,
   documents,
+  sourceDocuments,
   solutionEvaluation,
   hasSolutionDocument,
   busy,
@@ -775,6 +778,7 @@ export function ProjectEvaluationTab({
   projectId?: string;
   canDownloadDocuments?: boolean;
   documents: ProjectDocument[];
+  sourceDocuments: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
   hasSolutionDocument: boolean;
   busy: boolean;
@@ -1014,6 +1018,11 @@ export function ProjectEvaluationTab({
             );
           })()}
 
+          {solutionEvaluation.evidence_review ? (
+            <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              {solutionEvaluation.evidence_review.message}
+            </div>
+          ) : null}
           {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} excludePaths={["result.requirement_coverage", "result.document_findings"]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
           <div>
             <RequirementCoveragePanel
@@ -1032,6 +1041,23 @@ export function ProjectEvaluationTab({
               canDownloadDocuments={canDownloadDocuments}
             />
           </div>
+
+          {solutionEvaluation.criterion_coverage?.length ? <section aria-label="Dekning av evalueringskriterier" className="space-y-3">
+            <h3 className="font-semibold">Evalueringskriterier</h3>
+            <p className="text-xs text-muted-foreground">Dokumenterte kriterier er bekreftet i konkurransegrunnlaget. Forslag må avklares med kunden.</p>
+            {solutionEvaluation.criterion_coverage.map((item, index) => {
+              const current = currentCriterionCoverage(item, { documents: sourceDocuments });
+              return <article key={item.criterion_id} className="min-w-0 rounded-md border p-3 text-sm [overflow-wrap:anywhere]">
+                <h4 className="font-medium">{item.criterion}</h4>
+                <p className="mt-1 text-xs text-muted-foreground">{!current || item.origin === "unknown" ? "Ukjent kriteriegrunnlag" : item.origin === "observed" ? "Dokumentert evalueringskriterium" : "Forslag fra kundeanalysen"}</p>
+                <p className="mt-1">{current ? `${item.assessment}: ${item.rationale}` : "Uklart: Vurderingen mangler bekreftet kildegrunnlag eller gjelder tidligere kilder. Kjør en ny vurdering."}</p>
+                {current && item.evidence ? <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{item.evidence}</p> : null}
+                {projectId && item.criterion_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={item.criterion_source}>Kilde til kriteriet</SourceEvidenceButton> : null}
+                {projectId && current?.answer_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={current.answer_source}>Dokumentert svargrunnlag</SourceEvidenceButton> : null}
+                {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} path={`result.criterion_coverage.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
+              </article>;
+            })}
+          </section> : null}
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel

@@ -2,6 +2,7 @@ import "server-only";
 
 import { decryptJson, decryptString, encryptJson, encryptString } from "@/lib/server/crypto";
 import { isRecord } from "@/lib/unknown-values";
+import { observedRequirementWording } from "@/lib/server/requirements/normalization";
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import type {
   DocumentEvidenceKind,
@@ -22,7 +23,8 @@ export function parsePersistedRequirementRegister(value: unknown, expected: { do
     throw new Error("Kravregisteret samsvarer ikke med dokumentversjonen.");
   }
   if (value.requirementRegister === undefined) return null;
-  if (!isRecord(value.requirementRegister) || value.requirementRegister.version !== 1 || !Array.isArray(value.requirementRegister.rows)) throw new Error("Det lagrede kravregisteret kan ikke valideres.");
+  if (!isRecord(value.requirementRegister) || (value.requirementRegister.version !== 1 && value.requirementRegister.version !== 2) || !Array.isArray(value.requirementRegister.rows)) throw new Error("Det lagrede kravregisteret kan ikke valideres.");
+  const registerVersion = value.requirementRegister.version;
   return value.requirementRegister.rows.map((row: unknown) => {
     if (!isRecord(row) || typeof row.id !== "string" || !row.id.trim() || typeof row.text !== "string" || !row.text.trim() ||
       typeof row.heading !== "string" || !Array.isArray(row.pages) || row.pages.some(page => !Number.isSafeInteger(page) || Number(page) <= 0 || Number(page) > 100_000) ||
@@ -31,9 +33,18 @@ export function parsePersistedRequirementRegister(value: unknown, expected: { do
       throw new Error("Det lagrede kravregisteret kan ikke valideres.");
     }
     const correction = row.correctionSource;
+    const textOrigin = registerVersion === 2 ? row.textOrigin ?? "unknown" : "unknown";
+    const textEvidence = row.textEvidence;
+    if (!["observed", "reconstructed", "unknown"].includes(String(textOrigin)) ||
+      (textOrigin === "observed" && (!isRecord(textEvidence) || typeof textEvidence.originalText !== "string" || !textEvidence.originalText.trim() ||
+      !Number.isSafeInteger(textEvidence.start) || Number(textEvidence.start) < 0 || !Number.isSafeInteger(textEvidence.end) || Number(textEvidence.end) - Number(textEvidence.start) !== textEvidence.originalText.length))) throw new Error("Kravtekstens opprinnelse kunne ikke valideres.");
     if (correction !== undefined && (!isRecord(correction) || correction.documentId !== expected.documentId || typeof correction.documentTitle !== "string" || typeof correction.excerpt !== "string" ||
       !Array.isArray(correction.pages) || correction.pages.some(page => !Number.isSafeInteger(page) || Number(page) <= 0 || Number(page) > 100_000))) throw new Error("Kravrettelsens kilde kunne ikke valideres.");
-    return { id: row.id, text: row.text, heading: row.heading, pages: row.pages as number[],
+    // Registers stored before row text kept source characters read the same way.
+    return { id: row.id, text: textOrigin === "observed" && isRecord(textEvidence) ? observedRequirementWording(row.text, String(textEvidence.originalText)) : row.text,
+      heading: row.heading, pages: row.pages as number[],
+      textOrigin: textOrigin as RequirementLedgerEntry["textOrigin"],
+      ...(textOrigin === "observed" && isRecord(textEvidence) ? { textEvidence: { originalText: String(textEvidence.originalText), start: Number(textEvidence.start), end: Number(textEvidence.end) } } : {}),
       documentId: expected.documentId, documentTitle: typeof row.documentTitle === "string" ? row.documentTitle : undefined,
       idOrigin: row.idOrigin as RequirementLedgerEntry["idOrigin"], originalId: typeof row.originalId === "string" ? row.originalId : undefined,
       sourceExcerpt: typeof row.sourceExcerpt === "string" ? row.sourceExcerpt : undefined,

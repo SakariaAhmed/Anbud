@@ -80,6 +80,7 @@ export async function insertProjectJob(
   record: ProjectJobRecord,
   queuedInput: unknown,
   runtime: ProjectJobRepositoryRuntime = {},
+  enhancementRetrySourceRevision?: number,
 ) {
   const dataApi = serviceClient(runtime);
   const durablePayload = {
@@ -95,9 +96,10 @@ export async function insertProjectJob(
     updated_at: record.updated_at,
   };
 
-  const { data, error } = await dataApi.rpc("enqueue_project_job_serialized", {
+  const { data, error } = await dataApi.rpc(enhancementRetrySourceRevision === undefined ? "enqueue_project_job_serialized" : "enqueue_document_enhancement_retry", {
     p_project_id: record.project_id,
     p_job: durablePayload,
+    ...(enhancementRetrySourceRevision === undefined ? {} : { p_source_revision: enhancementRetrySourceRevision }),
   });
   if (error || !data) {
     throw new Error(error?.message || "Kunne ikke lagre prosjektjobben.");
@@ -203,6 +205,31 @@ export async function updatePersistedProjectJob(
     throw new Error(updated.error.message);
   }
   return Boolean(updated.data);
+}
+
+/**
+ * The terminal transition records failure even before a retry can read its
+ * document or after a deadline abandons the workflow. Returns false when the
+ * lease is no longer authoritative; newer document revisions stay unchanged.
+ */
+export async function failDocumentEnhancementJob(input: {
+  jobId: string; leaseToken: string; projectId: string; documentId: string; sourceRevision: number;
+  jobMessage: string; jobError: string; documentMessage: string; documentError: string;
+  terminalMetadata: Record<string, unknown>;
+}, runtime: ProjectJobRepositoryRuntime = {}) {
+  assertLeaseToken(input.leaseToken);
+  const terminalMetadata = sanitizeProjectJobTerminalMetadata(input.terminalMetadata);
+  if (!terminalMetadata) throw new Error("Prosjektjobben har ugyldig terminalmetadata.");
+  const { error } = await serviceClient(runtime).rpc("fail_document_enhancement_job", {
+    p_job_id: input.jobId, p_lease_token: input.leaseToken, p_project_id: input.projectId,
+    p_document_id: input.documentId, p_source_revision: input.sourceRevision,
+    p_job_message: input.jobMessage, p_job_error: input.jobError,
+    p_document_message: input.documentMessage, p_document_error: input.documentError,
+    p_terminal_metadata: terminalMetadata,
+  });
+  if (error?.message?.includes("PROJECT_JOB_LEASE_LOST")) return false;
+  if (error) throw new Error(error.message);
+  return true;
 }
 
 export async function heartbeatProjectJob(

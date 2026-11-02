@@ -1,0 +1,22 @@
+{
+  "version": "rag-large-holdout.v1",
+  "purpose": "Independent synthetic release set; not a production population estimate",
+  "factual_cases": 60,
+  "negative_cases": 20,
+  "metric_policy": "distinct-factual",
+  "thresholds": { "groundedness": 0.98, "citation_correctness": 0.98, "correct_abstention": 0.95 },
+  "protocol": {
+    "analysis_present": true,
+    "minimum_project_characters": 90001,
+    "final_answer_attempts": 1,
+    "judge_must_differ_from_answer_model": true,
+    "negative_citations": "Required when the case asks to disclose conflicting evidence; abstention and citations can both be required.",
+    "grading": "Judge the requested core facts and every claim actually made. Additional expected context is not required. Verify citations against the full frozen source, including superseded claims; a correct quotation alone does not establish semantic support.",
+    "label_uncertainty": "Municipal conflicting-count and retirement-date cases expect explicit unresolved conflict. Publish disagreements with this rubric alongside outcomes; never change v1 labels after observing results.",
+    "no_holdout_tuning": true
+  },
+  "fixtures": [
+    { "file": "healthcare.v1.json", "author": "gpt-6.1-sol", "sha256": "405f2f2eab1b9a030ca0448d61988a3c1f9e443024b793e475774b311b3d4d3b" },
+    { "file": "municipal.v1.json", "author": "claude-opus-5-5", "sha256": "f1c64f20d53442165e36299f9b1c3416f4295111a6dd16dc12d831cdf1e3e3b8" }
+  ]
+}

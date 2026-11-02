@@ -1,0 +1,242 @@
+{
+  "version": 2,
+  "tier": "deterministic-owner-contract",
+  "provenance": "Fictional frozen supplement. Injected storage and embedding transport; no model, live embeddings or pgvector quality claim.",
+  "documents": [
+    {
+      "id": "contract-v2-a",
+      "project_id": "contract-v2",
+      "role": "primary_customer_document",
+      "title": "Krav A",
+      "file_name": "a.txt",
+      "file_format": "txt",
+      "chunk_source_revision": 1,
+      "structure_map": [],
+      "raw_text": "[[SIDE:2]]\nNORD-IAM-02 Leverandøren skal tilby døgnvakt.\n[[SIDE:5]]\nNORD-IAM-02 Leverandøren skal dokumentere vaktplan.\n[[SIDE:8]]\nNORD-IAM-02 Leverandøren skal tilby døgnvakt."
+    },
+    {
+      "id": "contract-v2-b",
+      "project_id": "contract-v2",
+      "role": "supporting_document",
+      "supporting_subtype": "kravdokument",
+      "title": "Krav B",
+      "file_name": "b.txt",
+      "file_format": "txt",
+      "chunk_source_revision": 1,
+      "structure_map": [],
+      "raw_text": "NORD-IAM-02 Leverandøren skal varsle kunden ved vaktskifte."
+    }
+  ],
+  "registers": {
+    "contract-v2-a": [
+      {
+        "id": "NORD-IAM-02",
+        "idOrigin": "source",
+        "text": "Leverandøren skal tilby døgnvakt.",
+        "pages": [
+          2
+        ],
+        "heading": "Beredskap"
+      },
+      {
+        "id": "NORD-IAM-02",
+        "idOrigin": "source",
+        "text": "Leverandøren skal dokumentere vaktplan.",
+        "pages": [
+          5
+        ],
+        "heading": "Beredskap"
+      },
+      {
+        "id": "NORD-IAM-02",
+        "idOrigin": "source",
+        "text": "Leverandøren skal tilby døgnvakt.",
+        "pages": [
+          8
+        ],
+        "heading": "Beredskap"
+      }
+    ],
+    "contract-v2-b": [
+      {
+        "id": "NORD-IAM-02",
+        "idOrigin": "source",
+        "text": "Leverandøren skal varsle kunden ved vaktskifte.",
+        "pages": [],
+        "heading": ""
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "all-repeated-occurrences",
+      "kind": "id_lookup",
+      "question": "Hva sier NORD-IAM-02?",
+      "expected_requirement_id": "NORD-IAM-02",
+      "expected_source_ids": [
+        "contract-v2-a"
+      ],
+      "expected_texts": [
+        "NORD-IAM-02 Leverandøren skal tilby døgnvakt."
+      ],
+      "required_evidence": [
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal tilby døgnvakt."
+          ],
+          "expected_page": 2,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal dokumentere vaktplan."
+          ],
+          "expected_page": 5,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal tilby døgnvakt."
+          ],
+          "expected_page": 8,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-b"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal varsle kunden ved vaktskifte."
+          ],
+          "expected_page_start": null,
+          "expected_page_end": null,
+          "expected_heading_path": []
+        }
+      ]
+    },
+    {
+      "id": "occurrences-over-budget",
+      "question": "Hva sier NORD-IAM-02?",
+      "limit": 2,
+      "expected_requirement_id": "NORD-IAM-02",
+      "required_evidence": [
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal tilby døgnvakt."
+          ],
+          "expected_page": 2,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal dokumentere vaktplan."
+          ],
+          "expected_page": 5,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-a"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal tilby døgnvakt."
+          ],
+          "expected_page": 8,
+          "expected_heading": "Beredskap"
+        },
+        {
+          "expected_source_ids": [
+            "contract-v2-b"
+          ],
+          "expected_texts": [
+            "NORD-IAM-02 Leverandøren skal varsle kunden ved vaktskifte."
+          ],
+          "expected_page_start": null,
+          "expected_page_end": null,
+          "expected_heading_path": []
+        }
+      ],
+      "expected_truncated": true
+    }
+  ],
+  "artifact_cases": [
+    {
+      "alias": "Bilag 1",
+      "artifact_type": "bilag1_rekonstruksjon",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    },
+    {
+      "alias": "bilag1",
+      "artifact_type": "bilag1_rekonstruksjon",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    },
+    {
+      "alias": "kravsvar",
+      "artifact_type": "forbedret_kravsvar",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    },
+    {
+      "alias": "kravbesvarelse",
+      "artifact_type": "forbedret_kravsvar",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    },
+    {
+      "alias": "systemløsning",
+      "artifact_type": "losningsutkast",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    },
+    {
+      "alias": "risikoplan",
+      "artifact_type": "gjennomforing_og_risiko",
+      "expected_heading": "Tilbakeføring",
+      "expected_text": "Eksport ved avslutning tar 30 dager."
+    }
+  ],
+  "existing_coverage": [
+    {
+      "contract": "repeated IDs across sources, budget=1 and source revision",
+      "file": "apps/frontend/lib/server/document-chunks.test.mjs",
+      "test": "exact full IDs resolve authoritative repeated rows before model reranking and invalidate with source changes"
+    },
+    {
+      "contract": "missing and ambiguous IDs, technical P1",
+      "file": "apps/frontend/lib/server/document-chunks.test.mjs",
+      "test": "ordinary P1 terminology does not become a missing-ID refusal while an observed P1 register row stays pinned"
+    },
+    {
+      "contract": "unreadable register, broad and ambiguous-ID requests",
+      "file": "apps/frontend/lib/server/document-chunks.test.mjs",
+      "test": "an unreadable register fails the gate for ambiguous IDs and broad questions without affecting ordinary successful P1 lookup"
+    },
+    {
+      "contract": "normalized words keep original quotation, no manufactured page",
+      "file": "apps/frontend/lib/server/requirements/retrieval-lookup.test.mjs",
+      "test": "register rows in source wording and in normalized wording resolve the same original passage"
+    },
+    {
+      "contract": "technical/calendar/product labels have no requirement authority",
+      "file": "apps/frontend/lib/server/source-evidence.test.mjs",
+      "test": "uncited conversation labels and service terminology do not consume citation repair"
+    }
+  ]
+}

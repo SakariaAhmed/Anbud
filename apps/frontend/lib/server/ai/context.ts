@@ -200,6 +200,18 @@ export function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
 
 export function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
   return JSON.stringify({
+    evidence_review: evaluation.evidence_review,
+    criterion_coverage: evaluation.criterion_coverage?.map((item) => ({
+      criterion_id: item.criterion_id,
+      criterion_index: item.criterion_index,
+      criterion: item.criterion,
+      origin: item.origin,
+      assessment: item.assessment,
+      review_required: item.review_required,
+      rationale: compactText(item.rationale, 300),
+      evidence: compactText(item.evidence, 300),
+      requirement_references: item.requirement_references,
+    })),
     fit_to_customer_needs: compactText(evaluation.fit_to_customer_needs, 500),
     strengths: evaluation.strengths.slice(0, 5),
     weaknesses: evaluation.weaknesses.slice(0, 5),
@@ -227,4 +239,15 @@ export function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult
     likely_score_assessment: evaluation.likely_score_assessment,
     executive_summary: compactText(evaluation.executive_summary, 500),
   });
+}
+
+
+/** Compact search terms; the complete criterion contract stays in generation. */
+export function solutionEvaluationRetrievalTerms(evaluation: SolutionEvaluationResult) {
+  return [
+    compactText(evaluation.fit_to_customer_needs, 400),
+    compactText(evaluation.executive_summary, 400),
+    ...(evaluation.criterion_coverage ?? []).slice(0, 8).map(item =>
+      `${compactText(item.criterion, 120)}: ${compactText(item.assessment, 20)}`),
+  ].filter(Boolean).join("\n");
 }

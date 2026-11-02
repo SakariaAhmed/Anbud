@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import type { Untrusted } from "@/lib/unknown-values";
 import { repairChatCitationParagraph } from "@/lib/server/ai/chat-citation-repair";
 import { parseChatSourceReferences } from "@/lib/chat-source-references";
+import { findCorrectionsSections } from "@/lib/server/requirements/corrections";
+import { isRequirementDocument } from "@/lib/document-processing";
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
 import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
@@ -104,6 +106,75 @@ function comparableChatText(text: string) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+/** Match source/artifact names without treating Bilag 1 as Bilag 12. */
+function mentionsChatName(question: string, name: string, inflect = false) {
+  const escaped = comparableChatText(name).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}${inflect && !/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])`, "u").test(comparableChatText(question));
+}
+
+/** Source exemptions use affirmative request frames, not arbitrary name mentions.
+ * Source requests must select an available source. Closed output-only follow-ups
+ * may inherit it; rejected sources and new factual requests do not. */
+function requestsChatSource(question: string, names: string[], attachment = false) {
+  const clauses = question.toLocaleLowerCase("nb-NO")
+    .split(/[!?;\n]+|\.(?:\s+|$)|\s+og\s+(?=(?:hva|hvilke|hvordan|ikke|unngå|gi|oppgi)(?![\p{L}\p{N}]))/u)
+    .map(clause => clause.trim()).filter(Boolean);
+  const determiner = "(?:(?:det|den|dette|denne|mitt|vårt|din|ditt|siste|nyeste|vedlagte|opplastede)\\s+)*";
+  const styleTerm = "(?:fagspråk|sjargong|gjenta[kg]elser|forkortelser|tabeller|punktlister|tekniske\\s+uttrykk|engelske\\s+ord|lange\\s+(?:setninger|avsnitt))";
+  const mentionTerm = "(?:frister|priser|beløp|navn|leverandøren|kunden)";
+  const listSeparator = "(?:\\s*,\\s*(?:(?:og|eller)\\s+)?|\\s+(?:og|eller)\\s+)";
+  const styleOnlyFollowup = new RegExp(`^unngå\\s+(?:(?:å\\s+bruke\\s+)?${styleTerm}(?:${listSeparator}${styleTerm})*|å\\s+nevne\\s+${mentionTerm}(?:${listSeparator}${mentionTerm})*)$`, "u");
+  return clauses.length > 0 && clauses.every((clause, index) => {
+    // These complete output-shaped follow-ups inherit the source selected by
+    // the preceding clause. Anything requesting another fact/source must match
+    // its own source frame (notably "gi meg kundens bindende exit-frist").
+    if (index > 0 && (
+      /^(?:gi\s+(?:(?:meg|oss)\s+)?(?:(?:en\s+)?(?:kort\s+)?oppsummering|hovedpunktene|(?:to|tre|fire|fem|\d+)\s+(?:anbefalinger|tiltak)))$/u.test(clause)
+      || styleOnlyFollowup.test(clause)
+      || (attachment && /^oppgi\s+fristene$/u.test(clause))
+    )) return true;
+    return names.some(name => {
+      if (!name.trim()) return false;
+      const escaped = name.toLocaleLowerCase("nb-NO").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+      const distinctSource = /^(?:risikoplan|løsningsvurdering|kundeanalyse|systemløsning|løsningsutkast|tilbudsstrategi|prosjektoversikt)$/u.test(name);
+      // Contractual nouns can describe a topic ("utkast til kontrakt"). An
+      // attachment or distinct application source may have a topic/beneficiary
+      // suffix; a generic source also permits the beneficiary "for meg/oss".
+      // Generic locations are refused even without a matching project title.
+      const complementGuard = attachment || distinctSource ? "" : `(?!\\s+(?:til|av|for(?!\\s+(?:meg|oss)\\b))\\b)`;
+      const locationGuard = /^(?:analyse|vurdering)$/u.test(name)
+        ? `(?!\\s+i\\s+(?!(?:korte\\s+trekk|punktform|praksis|(?:tre|to|fire|fem|\\d+)\\s+punkter)\\b))` : "";
+      const target = `${determiner}${escaped}${!/\d/u.test(name) ? (/e$/u.test(name) ? "(?:n|t)?" : "(?:en|et)?") : ""}(?![\\p{L}\\p{N}])${complementGuard}${locationGuard}`;
+      // All attachment frames use the same definite-source contract. This also
+      // prevents an attachment titled "Vedlegg" from standing in for Vedlegg 3.
+      const genericAttachment = /^(?:vedlegg|chatvedlegg|fil|dokument)$/u.test(name.toLocaleLowerCase("nb-NO"));
+      const attachmentTarget = genericAttachment
+        ? `(?:${target}(?<=en|et)|(?:(?:vedlagte|opplastede|denne|dette|mitt|vårt|ditt|siste|nyeste)\\s+)+${escaped})(?![\\p{L}\\p{N}])(?!(?:\\s+(?:til\\b|\\d)))` : target;
+      const requestTarget = attachment ? attachmentTarget : target;
+      const direct = new RegExp(`^(?:hva\\s+(?:sier|viser|foreslår|anbefaler)|oppsummer|forklar|vis|vurder|forbedre|omskriv|beskriv|gi\\s+(?:(?:meg|oss)\\s+)?(?:en\\s+)?(?:kort\\s+)?oppsummering\\s+av)\\s+${requestTarget}`, "u");
+      const citation = new RegExp(`\\b(?:ifølge|basert\\s+på)\\s+${requestTarget}`, "u");
+      const literalReading = new RegExp(`^hva\\s+står\\s+(?:det\\s+)?i\\s+${requestTarget}`, "u");
+      const attachmentReading = attachment
+        ? new RegExp(`\\b(?:(?:i|fra|se\\s+på|les)\\s+|oppsummer(?:e|ing)?\\s+(?:av\\s+)?|sammendrag\\s+av\\s+)${attachmentTarget}|^hva\\s+(?:handler|inneholder)\\s+${attachmentTarget}`, "u") : null;
+      // Generic draft/assessment nouns do not qualify through a bare locative.
+      const locative = distinctSource ? new RegExp(`\\b(?:i|fra)\\s+${target}`, "u") : null;
+      const match = direct.exec(clause) ?? citation.exec(clause) ?? literalReading.exec(clause) ?? attachmentReading?.exec(clause) ?? locative?.exec(clause);
+      const rejectedSource = new RegExp(`(?:^|[,;]|\\b(?:og|men)\\s+)\\s*(?:jeg\\s+vil\\s+)?(?:ikke|ingen|unngå|uten|unntatt|heller\\s+enn)\\s+(?:[\\p{L}]+\\s+){0,5}${target}`, "u");
+      if (!match || rejectedSource.test(clause)) return false;
+      // Negation before the selected source rejects that request, including
+      // "ikke bruk innholdet i ...". Negated subject matter after it does not.
+      const sourceRequest = clause.slice(0, match.index + match[0].length);
+      return !/(?:^|[,;]|\bog\s+)\s*(?:jeg\s+vil\s+)?(?:ikke|ingen|unngå|uten|heller\s+enn)\b|\bikke\s+(?:(?:å\s+)?(?:bruke?|benytte?|vise?|oppsummere?)|i|fra|ifølge|basert\s+på)\b|\bunntatt\s+(?:i|fra)\b|\bser?\s+bort\s+fra\b|\bbortsett\s+fra\b|\butenom\b|\benn\s+(?:i|fra)\b/u.test(sourceRequest);
+    });
+  });
+}
+
+function rejectsChatDraft(question: string) {
+  // Only standalone output/source instructions reject interpretation. A risk
+  // "uten forslag til tiltak" is subject matter, not an instruction to us.
+  return /(?:^|[.!?;,]|\bog\s+)(?:\s*(?:jeg\s+vil\s+)?)(?:(?:ikke\s+(?:(?:ha|bruk|benytt|gi|lag|vis)\s+)?)|(?:uten|ingen|unngå|heller\s+enn)\s+)(?:(?:et|en|noen|ny|nye|egen|egne)\s+)?(?:forslag|tolkning|utkast|generert)(?![\p{L}\p{N}])/iu.test(question);
 }
 
 function chatAttachmentTerms(question: string) {
@@ -594,7 +665,7 @@ function wholeSourceReference(input: { sourceId: string; sourceType: "project_do
 /** Rank sections across every authorized current artifact before budgeting the
  * prompt. A late relevant section does not lose to five unrelated documents. */
 export function selectProjectChatArtifactSections(input: {
-  artifacts: readonly GeneratedArtifact[]; projectId?: string; question: string;
+  artifacts: readonly GeneratedArtifact[]; projectId?: string; question: string; relevanceQuestion?: string;
   limit?: number; characterBudget?: number;
 }) {
   const aliases: Record<string, string[]> = {
@@ -603,18 +674,21 @@ export function selectProjectChatArtifactSections(input: {
     verdiargumentasjon: ["verdiargumentasjon"], anbefalt_arkitektur: ["anbefalt arkitektur"],
     gjennomforing_og_risiko: ["gjennomføring", "risikoplan"],
   };
-  const question = comparableChatText(input.question), terms = chatAttachmentTerms(input.question);
+  const question = comparableChatText(input.question), terms = chatAttachmentTerms(input.relevanceQuestion ?? input.question);
   const artifacts = selectProjectChatArtifacts({ ...input, limit: input.artifacts.length });
   const sections = artifacts.flatMap((artifact, artifactOrder) => {
-    const explicitlyNamed = [artifact.title, ...(aliases[artifact.artifact_type] ?? [])]
-      .some(alias => alias.length > 3 && question.includes(comparableChatText(alias)));
+    const artifactAliases = aliases[artifact.artifact_type] ?? [];
+    const explicitlyNamed = [artifact.title, ...artifactAliases]
+      .some(alias => alias.length > 3 && mentionsChatName(question, alias, true));
+    const interpretationNamed = artifactAliases.some(alias => !["bilag 1", "bilag1"].includes(alias)
+      && requestsChatSource(input.question, [alias]));
     let heading = artifact.title;
     return artifact.content_markdown.split(/(?=^#{1,6}\s)/mu).flatMap((section, sectionOrder) => {
       heading = section.match(/^#{1,6}\s+(.+)/u)?.[1] ?? heading;
       return section.split(/\n\s*\n/u).filter(text => text.trim()).map((text, paragraphOrder) => {
         const comparable = comparableChatText(text), title = comparableChatText(heading);
         const score = (explicitlyNamed ? 100 : 0) + terms.reduce((sum, term) => sum + (title.includes(term) ? 3 : 0) + (comparable.includes(term) ? 1 : 0), 0);
-        return { artifact, heading, text, score, artifactOrder, sectionOrder, paragraphOrder };
+        return { artifact, heading, text, score, explicitlyNamed, interpretationNamed, artifactOrder, sectionOrder, paragraphOrder };
       });
     });
   }).sort((a, b) => b.score - a.score || a.artifactOrder - b.artifactOrder || a.sectionOrder - b.sectionOrder || a.paragraphOrder - b.paragraphOrder);
@@ -776,7 +850,7 @@ export function selectProjectChatArtifacts(input: {
     .map((artifact, index) => {
       const title = comparableChatText(artifact.title);
       const body = comparableChatText(artifact.content_markdown);
-      const explicitlyNamed = title.length > 3 && comparableChatText(input.question).includes(title);
+      const explicitlyNamed = title.length > 3 && mentionsChatName(input.question, title);
       const score = (explicitlyNamed ? 1000 : 0) + terms.reduce((sum, term) =>
         sum + (title.includes(term) ? 3 : body.includes(term) ? 1 : 0), 0);
       return { artifact, index, score };
@@ -815,6 +889,49 @@ function buildChatAnswerStructureContext(input: {
   );
 }
 
+function chatDocumentMentions(question: string, documents: ProjectDocumentDetail[]) {
+  const normalize = (value: string) => value.replace(/[_.]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const originalQuery = ` ${normalize(question)} `;
+  const query = originalQuery.toLocaleLowerCase("nb-NO");
+  return documents.flatMap(document => {
+    const names = [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
+      .map(normalize).flatMap(name => [name, name.match(/\bbilag\s+\d+[a-z]?\b/iu)?.[0] ?? ""])
+      .filter(name => name.length >= 4 && (!/^[\p{L}]+$/u.test(name) || originalQuery.includes(` ${name} `)))
+      .map(name => name.toLocaleLowerCase("nb-NO"));
+    const mentioned = names.filter(name => query.includes(` ${name} `));
+    if (!mentioned.length) return [];
+    const ids = extractRequirementIdentifiers(question);
+    const sourceOnly = ids.length === 1 && mentioned.some(name => ["i", "fra", "ifølge", "under"].some(preposition =>
+      ["", "hva sier", "hva krever", "hva betyr", "vis", "vis meg", "forklar", "beskriv"].some(verb =>
+        ["", "dokumentet "].some(noun => query.trim() === normalize(`${verb} ${ids[0]} ${preposition} ${noun}${name}`).toLocaleLowerCase("nb-NO")))));
+    return [{ document, sourceOnly }];
+  });
+}
+
+function requestedChatSourceScope(question: string, documents: ProjectDocumentDetail[]) {
+  if (!extractRequirementIdentifiers(question).length) return { documents, requirementHeading: undefined };
+  // Narrow only complete source-only requests. Questions about comparisons,
+  // occurrence, exclusions or any additional subject retain every source.
+  // A chapter is only removed from this grammar when it terminates the query.
+  const chapter = question.match(/[,\s(]*\b(?:kapittel|kap\.?|seksjon)\s+(?:[«“"']([^»”"']+)[»”"']|(\d+(?:\.\d+)*))[\s).?!;:»”"'\]]*$/iu);
+  const sourceQuestion = chapter ? question.slice(0, chapter.index) : question;
+  const mentioned = chatDocumentMentions(sourceQuestion, documents);
+  const named = mentioned.filter(item => item.sourceOnly).map(item => item.document);
+  const canNarrow = named.length > 0 && named.length === mentioned.length && named.some(isRequirementDocument);
+  // Global chapter lookup is only safe when no document is mentioned and the
+  // remaining question is itself just an ID request.
+  const ids = extractRequirementIdentifiers(sourceQuestion);
+  const idOnly = ids.length === 1 && /^(?:(?:hva (?:sier|krever|betyr)|vis(?: meg)?|forklar|beskriv)\s+)?[^\s]+[?.!]*$/iu.test(sourceQuestion.trim());
+  const heading = canNarrow || (!mentioned.length && idOnly) ? chapter : null;
+  const requestedIds = extractRequirementIdentifiers(question);
+  // Amendments own their persisted correction rows. Keep that source available
+  // in retrieval and whole-source prompts when the question names the original
+  // requirement document.
+  const scopedDocuments = canNarrow ? documents.filter(document => named.includes(document)
+    || findCorrectionsSections(document.raw_text).some(section => extractRequirementIdentifiers(section).some(id => requestedIds.includes(id)))) : documents;
+  return { documents: scopedDocuments, requirementHeading: heading?.[1] ?? heading?.[2] };
+}
+
 /**
  * The retrieval request chat sends for a question, with the domain hints and
  * plan the answer prompt uses. scripts/rag_retrieval_eval.mjs measures it.
@@ -843,6 +960,7 @@ export async function buildProjectChatRetrievalRequest(
     input.solutionDocument,
     ...(input.supportingDocuments ?? []),
   ].filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const sourceScope = requestedChatSourceScope(input.question, projectDocumentsForRetrieval);
   const planInput = {
     question: input.question,
     domainHints,
@@ -857,7 +975,8 @@ export async function buildProjectChatRetrievalRequest(
     query: retrievalPlan.standalone_query,
     subqueries: retrievalPlan.subqueries,
     projectId: projectDocumentsForRetrieval[0]?.project_id ?? null,
-    documents: projectDocumentsForRetrieval,
+    documents: sourceScope.documents,
+    requirementHeading: sourceScope.requirementHeading,
     exactTerms: Array.from(
       new Set([
         ...extractExactRetrievalTerms(input.question),
@@ -887,16 +1006,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   const isDrafting = /^(?:kan\s+du\s+)?skriv(?:\s+(?:en|et))?\s+(?:e-?post|melding|utkast|agenda)\b/iu.test(input.question.trim());
   const isHistoryTransformation = input.recentMessages.some(message => message.role === "assistant" && message.content.trim()) && /\b(?:forrige\s+svar|svaret\s+kortere|gjør\s+(?:det|dette)\s+kortere|oversett\s+(?:svaret|det))\b/iu.test(input.question);
   const needsDocumentEvidence = !isConversational && !isDrafting && !isHistoryTransformation;
-  // Small projects keep their complete authorized source collection.
-  const promptDocuments = [
-    input.customerDocument,
-    input.solutionDocument,
-    ...(input.supportingDocuments ?? []),
-  ].filter((document): document is ProjectDocumentDetail => Boolean(document));
-  const fullDocumentsInContext =
-    promptDocuments.length > 0 &&
-    promptDocuments.reduce((sum, document) => sum + document.raw_text.length, 0) <=
-    CHAT_FULL_DOCUMENTS_MAX_CHARS;
+  // Explicit source scope narrows evidence, but does not turn a large-project
+  // question into the whole-document path used for small projects.
+  const promptDocuments = initial.request.documents;
+  const projectSourceCharacters = [input.customerDocument, input.solutionDocument, ...(input.supportingDocuments ?? [])]
+    .reduce((sum, document) => sum + (document?.raw_text.length ?? 0), 0);
+  const fullDocumentsInContext = promptDocuments.length > 0 && projectSourceCharacters <= CHAT_FULL_DOCUMENTS_MAX_CHARS;
   // With every searched document whole in the prompt, excerpts only anchor
   // references: their order is not worth a model call, and a section would
   // move the anchor away from the matched part.
@@ -931,14 +1046,76 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sourceId: `attachment-${createHash("sha256").update(`${input.projectId ?? ""}\0${attachment.rawText}`).digest("hex")}`,
     sourceType: "chat_attachment", title: attachment.title, text: attachment.rawText, revision: 0,
   }));
-  const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
+  const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id,
+    question: input.question, relevanceQuestion: retrievalPlan.standalone_query || input.question });
+  // A source title such as "Bilag 1" can also name a generated draft. Only an
+  // explicit interpretation request may use that draft without primary evidence.
+  const projectDocuments = [input.customerDocument, input.solutionDocument, ...(input.supportingDocuments ?? [])]
+    .filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const namesProjectSource = chatDocumentMentions(input.question, projectDocuments).length > 0;
+  const rejectsInterpretation = rejectsChatDraft(input.question);
+  const affirmativeDraftRequest = requestsChatSource(input.question, ["utkast", "tolkning", "generert utkast", "genererte utkast", "generert bilag", "genererte bilag"])
+    || (/\bsom\s+(?:et\s+)?forslag\b/iu.test(input.question)
+      && requestsChatSource(input.question, artifactSections.filter(section => section.explicitlyNamed).map(section => section.artifact.title)));
+  const genericInterpretationNames = (name: "analyse" | "vurdering") => {
+    const documentComplement = new RegExp(`\\b${name}${name === "analyse" ? "n?" : "(?:en)?"}\\s+(?:i(?!\\s+(?:korte\\s+trekk|punktform|praksis|(?:tre|to|fire|fem|\\d+)\\s+punkter)\\b)|fra|og|eller|mot|under|ved|på\\s+(?:side|siden|kapittel|kap\\.?|seksjon)\\b)\\b`, "iu");
+    return namesProjectSource && documentComplement.test(input.question) ? [] : [name];
+  };
+  const asksForAvailableInterpretation = !rejectsInterpretation && (
+    artifactSections.some(section => section.explicitlyNamed && (affirmativeDraftRequest || (!namesProjectSource && section.interpretationNamed)))
+    || Boolean(input.customerAnalysis && requestsChatSource(input.question, ["kundeanalyse", "prosjektoversikt", ...genericInterpretationNames("analyse")]))
+    || Boolean(input.solutionEvaluation && requestsChatSource(input.question, ["løsningsvurdering", ...genericInterpretationNames("vurdering")])));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
     const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
     const revision = artifact.artifact_version ?? 0;
     return { source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference: heading, heading_path: [heading], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: text, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference: heading, text }) };
   });
   const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
-  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => !attachmentReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)) && (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
+  const requestedIds = extractRequirementIdentifiers(input.question);
+  // Subject matter ("om prosjektet", "kundens ansvar") is not source scope.
+  // The attachment must be requested affirmatively; project-source subjects and
+  // coordinated source names retain the project gates.
+  const attachmentNames = ["vedlegg(?:et|ene)?", "chatvedlegg(?:et)?", "fil(?:en|a)?", "dokument(?:et)?",
+    ...attachmentReferences.map(source => source.document_title.trim()).filter(Boolean).map(title => title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))].join("|");
+  const comparisonQuestion = input.question.replace(/[‐‑‒–—]/gu, "-");
+  const mentionsProjectEvidence = /\b(?:i|fra|mot|med|ifølge|og|eller)\s+(?:(?:selve|hele|dette)\s+)?(?:prosjekt(?:et|ets|dokument\w*)?|kunde(?:ns\s+krav|dokument\w*)|konkurranse(?:n|grunnlag\w*)?|krav(?:dokument\w*|spesifikasjon\w*)|løsningsdokument\w*)\b|\b(?:prosjektets|kundens)\s+(?:krav|dokument\w*|kilder?|grunnlag)\b|\b(?:kravdokument\w*|kravspesifikasjon\w*|kundedokument\w*|løsningsdokument\w*|konkurransegrunnlag\w*)\b/iu.test(input.question)
+    || new RegExp(`(?<![\\p{L}\\p{N}])(?:${attachmentNames})(?![\\p{L}\\p{N}])\\s*(?:,|\\s+(?:og|eller))\\s+(?:(?:de|andre|gjeldende)\\s+){0,3}(?:krav(?:ene|et)?|kunden)\\b`, "iu").test(input.question)
+    || namesProjectSource;
+  const comparisonTargetModifiers = `(?:(?:de|den|det|alle|andre|gjeldende|øvrige|våre|vår|deres|kundens|prosjektets)\\s+){0,4}`;
+  const comparisonTarget = `${comparisonTargetModifiers}(?:krav(?:ene|et)?|behov(?:ene|et)?|løsning(?:en)?|kontrakt(?:en)?|tilbud(?:et)?|kundekrav\\w*|evalueringskriter\\w*|prosjekt(?:et|ets)?|kunden|kravdokument\\w*|kravspesifikasjon\\w*|konkurransegrunnlag\\w*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  // Apply the same dash folding to both sides and accept the title's definite
+  // ending, as the affirmative source selector does.
+  const comparisonNames = ["vedlegg(?:et|ene)?", "chatvedlegg(?:et)?", "fil(?:en|a)?", "dokument(?:et)?",
+    ...attachmentReferences.map(source => source.document_title.trim().replace(/[‐‑‒–—]/gu, "-")).filter(Boolean)
+      .map(title => `${title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${!/\d/u.test(title) ? (/e$/iu.test(title) ? "(?:n|t)?" : "(?:en|et)?") : ""}`)].join("|");
+  const comparisonSource = `(?<![\\p{L}\\p{N}])(?:${comparisonNames}|det|den)(?![\\p{L}\\p{N}])`;
+  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:prosjektet|krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  // Legal-claim readings of "krav" are attachment subject matter.
+  // Check each relation separately so a later genuine comparison remains gated.
+  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\s+${comparisonTargetModifiers}(?:krav(?:ene|et)?|behov(?:ene|et)?)(?![\\p{L}\\p{N}]))))\\s+${comparisonTarget}`, "giu");
+  const isThirdPartyClaim = (match: RegExpMatchArray) => /\bkrav(?:ene|et)?$/iu.test(match[0])
+    && /^\s+fra\s+(?:(?:en|andre)\s+)?tredje(?:\s*part(?:er|en|ene)?|\s*mann(?:en)?)(?![\p{L}\p{N}])/iu.test(comparisonQuestion.slice((match.index ?? 0) + match[0].length));
+  const hasStandaloneComparison = Array.from(comparisonQuestion.matchAll(standaloneComparisons)).some(match =>
+    !isThirdPartyClaim(match) && !(/^mot\s+krav(?:ene|et)?(?![\p{L}\p{N}])/iu.test(match[0]) && /\b(?:vern|innsigelser|skadesløs)\s*$/iu.test(comparisonQuestion.slice(0, match.index))));
+  // Bounded manner/source modifiers may intervene, but topic complements such
+  // as "om tiltak mot datatap" must not be consumed as comparison modifiers.
+  const comparisonModifiers = `(?:\\s+(?:samlet|grundig|nøye|sett|fra\\s+leverandøren)){0,3}`;
+  const comparesSources = /\b(?:sammenlign(?:e|er|et)?|sammenlikn(?:e|er|et)?|sammenhold(?:e|er|t)?|oppfyll(?:e|er)?|strid|opp\s+mot)\b|^(?:dekk(?:er|e)|samsvar\w*|avvik\w*|tilfredsstill\w*|stemm\w*)\b/iu.test(comparisonQuestion.trim())
+    || new RegExp(`^(?:vurder|vis|forklar|beskriv)\\b[^.!?]*${comparisonSource}${comparisonModifiers}\\s+(?:mot|i\\s+lys\\s+av)\\s+`, "iu").test(comparisonQuestion.trim())
+    || new RegExp(`${comparisonSource}${comparisonModifiers}\\s+(?:i\\s+forhold\\s+til|kontra|mot|i\\s+lys\\s+av)\\s+${comparisonTarget}`, "iu").test(comparisonQuestion)
+    // A requirement/project target remains a comparison even when the subject
+    // or attachment occurs elsewhere. Bare "mot kunden" is handled above so
+    // ordinary "plikter mot kunden" topic reading remains possible.
+    || hasStandaloneComparison
+    // These relations also compare requirement targets when their subject is
+    // not adjacent. Solution/contract topic readings are deliberately excluded.
+    || Array.from(comparisonQuestion.matchAll(new RegExp(`\\b(?:i\\s+forhold\\s+til|i\\s+lys\\s+av)\\s+${requirementComparisonTarget}`, "giu"))).some(match => !isThirdPartyClaim(match))
+    || new RegExp(`\\b(?:(?:det|den|vedlegget|filen|fila|dokumentet)\\s+(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker|er\\s+i\\s+tråd)|(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker)\\s+(?:det|den|vedlegget|filen|fila|dokumentet))\\s+(?:(?:med|fra|på)\\s+)?${comparisonTarget}`, "iu").test(comparisonQuestion);
+  const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
+    requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)
+    && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)));
+  const needsProjectDocumentEvidence = needsDocumentEvidence && !attachmentQuestion;
+  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
   // full text. Coverage is checked per source: a document available only
@@ -1000,21 +1177,6 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
         telemetry: retrievalResult.telemetry,
       })
     : "";
-  // A follow-up ("utdyp punkt 2") is matched by its standalone form.
-  const relevanceQuery = retrievalPlan.standalone_query || input.question;
-  const supportingDocuments = (input.supportingDocuments ?? [])
-    .map((document, index) =>
-      buildDelimitedContext(
-        `Støttedokument ${index + 1}: ${document.title}${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === document.id) + 1}]` : ""}`,
-        fullDocumentsInContext
-          ? document.raw_text
-          : buildQuestionRelevantText({
-              rawText: document.raw_text,
-              question: relevanceQuery,
-              limit: useStructuredCoverage ? 2200 : 3500,
-            }),
-      ),
-    );
   const generatedArtifacts = artifactSections.map(({ artifact, heading, text }, index) =>
     buildDelimitedContext(`Generert utkast – tolkning, ikke primærkilde: ${artifact.title} › ${heading} [Kilde ${sourceReferences.length - artifactReferences.length + index + 1}]`, text));
 
@@ -1026,29 +1188,16 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
           `${documentRuleScope} Let gjennom hele dokumentene, også senere kapitler, tabeller og rettelser, før du sier at noe ikke er beskrevet. Et sammendrag eller en generell påstand om at alle krav er oppfylt, er ikke svar på et konkret krav. Påpek motstridende tall eller frister med begge verdiene og kildene.`,
         )
       : "",
-    input.customerDocument
-      ? buildDelimitedContext(
-          `Kundedokument${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === input.customerDocument?.id) + 1}]` : ""}`,
-          fullDocumentsInContext
-            ? input.customerDocument.raw_text
-            : "",
-        )
-      : "",
-    input.solutionDocument
-      ? buildDelimitedContext(
-          `Løsningsdokument${fullDocumentsInContext ? ` [Kilde ${wholeReferences.findIndex(source => source.source_id === input.solutionDocument?.id) + 1}]` : ""}`,
-          fullDocumentsInContext
-            ? input.solutionDocument.raw_text
-            : "",
-        )
-      : "",
-    ...(fullDocumentsInContext ? supportingDocuments : []),
+    ...(fullDocumentsInContext ? promptDocuments.map((document, index) => buildDelimitedContext(
+      `${document.role === "primary_customer_document" ? "Kundedokument" : document.role === "primary_solution_document" ? "Løsningsdokument" : "Støttedokument"}: ${document.title} [Kilde ${index + 1}]`,
+      document.raw_text,
+    )) : []),
   ];
 
   const userPrompt = [
     buildDelimitedContext("Prosjekt", `Prosjektnavn: ${input.projectName}`),
-    // Whole documents come first: they are the same every turn, so the
-    // provider's prompt cache can reuse them.
+    // Whole-document sections come first so repeated source scopes can
+    // reuse the provider's prompt cache.
     ...(fullDocumentsInContext ? documentSections : []),
     input.customerAnalysis
       ? buildDelimitedContext(
@@ -1128,11 +1277,13 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     domainHints,
     retrievalPlan,
     retrievalTelemetry: retrievalResult.telemetry,
-    abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsDocumentEvidence && !promptAttachments.length
+    abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsProjectDocumentEvidence
       ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
-      : unresolvedRequirementId
+      : retrievalResult.telemetry.requirementLookupTruncated && needsProjectDocumentEvidence && !fullDocumentsInContext
+      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Gjenta krav-ID-en sammen med dokumenttittel og kapittelnummer eller kapitteltittel i anførselstegn, for eksempel «K-42 i Bilag 2, kapittel 3», slik at ingen forekomster utelates fra svaret."
+      : unresolvedRequirementId && needsProjectDocumentEvidence
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
-      : needsDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !input.customerAnalysis && !input.solutionEvaluation && !generatedArtifacts.length && !input.sessionSummary
+      : needsProjectDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !asksForAvailableInterpretation
       ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert${retrievalResult.telemetry.usedBroadenedSearch ? " etter et nytt søk" : " i de tilgjengelige kildene"}. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`
       : null,
   };

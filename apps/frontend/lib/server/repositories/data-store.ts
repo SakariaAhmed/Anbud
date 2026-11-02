@@ -2023,6 +2023,23 @@ export async function updateDocumentProcessingState(input: {
   revalidateProjectCaches(input.projectId);
 }
 
+export async function setDocumentEnhancementState(input: {
+  projectId: string; documentId: string; sourceRevision: number;
+  message: string; error: string | null;
+}) {
+  const lease = getProjectWorkflowLease();
+  const { data, error } = await createServiceClient().rpc("set_document_enhancement_state", {
+    p_project_id: input.projectId, p_document_id: input.documentId, p_source_revision: input.sourceRevision,
+    p_message: input.message, p_error: input.error, p_job_id: lease?.jobId ?? null, p_lease_token: lease?.leaseToken ?? null,
+  });
+  if (error) {
+    rethrowAuthoritativeLeaseLoss(new Error(error.message));
+    throw new Error(error.message);
+  }
+  if (data === true) revalidateProjectCaches(input.projectId);
+  return data === true;
+}
+
 export async function publishDocumentReadiness(input: {
   projectId: string; documentId: string; sourceRevision: number;
   status: "basic_ready" | "enhanced_ready"; message: string; parserUsed: string | null;
@@ -2045,6 +2062,7 @@ export async function publishDocumentReadiness(input: {
 
 export async function saveDocumentIngestionResult(input: {
   requirementRegister?: RequirementLedgerEntry[];
+  expectedSourceRevision?: number;
   projectId: string;
   documentId: string;
   role: ProjectDocumentRole;
@@ -2075,6 +2093,9 @@ export async function saveDocumentIngestionResult(input: {
   const existing = await fetchSingleDocumentRow(select => dataApi.from("documents")
     .select(select).eq("project_id", input.projectId).eq("id", input.documentId).single());
   if (!existing) throw new Error("Fant ikke dokumentet.");
+  if (input.expectedSourceRevision !== undefined && existing.chunk_source_revision !== input.expectedSourceRevision) {
+    throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
+  }
   const sameText = decryptString(existing.raw_text) === input.rawText;
   const sameStructure = JSON.stringify(decryptJson(existing.structure_map, [])) === JSON.stringify(input.structureMap);
   const encryptedRawText = sameText ? existing.raw_text : encryptString(input.rawText);
@@ -2225,7 +2246,7 @@ export async function saveDocumentIngestionResult(input: {
           }
         : undefined,
     });
-    if (input.requirementRegister) artifact.requirementRegister = { version: 1, rows: input.requirementRegister };
+    if (input.requirementRegister) artifact.requirementRegister = { version: 2, rows: input.requirementRegister };
     await storeDocumentIntelligenceArtifact(artifact)
       .then(async (stored) => {
         if (!stored) return;

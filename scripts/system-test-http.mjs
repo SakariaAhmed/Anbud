@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { systemTestStatusPath } from "./system-test-runtime.mjs";
+import { assertOwnedSystemTestStack, systemTestStatusPath } from "./system-test-runtime.mjs";
 
 const statusPath = systemTestStatusPath();
 const status = JSON.parse(readFileSync(statusPath, "utf8"));
@@ -26,7 +26,7 @@ const checks = [];
 let adminCookie;
 // Each run starts a fresh scenario in this owned database, including fresh
 // rate-limit fixtures. Application authorization and session checks stay real.
-assert.equal(runtime.env.DATA_API_URL, "http://127.0.0.1:55449");
+assertOwnedSystemTestStack(status, runtime);
 const resetLimits = await fetch(`${runtime.env.DATA_API_URL}/app_rate_limits`, {
   method: "DELETE", headers: { authorization: `Bearer ${runtime.env.DATA_API_SERVICE_ROLE_KEY}` },
 });
@@ -248,7 +248,7 @@ if (aiEnabled) {
 }
 runtime.sessions = { adminCookie, guestCookie };
 writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
-const result = { resumedCompletedAiWorkflows: resumeAi, reusedCompletedChat: resumeChat, projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
+const result = { resumedCompletedAiWorkflows: resumeAi, reusedCompletedChat: resumeChat, projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR uploads (scripts/system-test-documents.mjs)"] };
 writeFileSync(path.join(status.directory, "http-result.json"), JSON.stringify(result, null, 2));
 writeFileSync(statusPath, JSON.stringify({ ...status, projectId: project.id, documents: uploaded, httpChecks: checks.length }, null, 2));
 console.log(JSON.stringify(result, null, 2));

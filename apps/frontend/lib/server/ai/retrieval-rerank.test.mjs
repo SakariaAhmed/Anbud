@@ -104,3 +104,19 @@ test("reranking propagates cancellation and lease loss instead of falling back",
     } finally { reranker.cleanup(); }
   }
 });
+
+
+test("bounded rerank excerpts preserve source decimal and version values", async () => {
+  const reranker = loadReranker(() => ({ ranking: [1] }));
+  try {
+    const evidence = "Portalen skal oppfylle WCAG 2.2 nivå AA og bruke TLS 1.3. Tilgjengelighet skal være 99.95 prosent.";
+    const source = `${"Innledning uten relevans. ".repeat(40)}${evidence} ${"Oppfølging uten relevans. ".repeat(40)}`;
+    const excerpt = reranker.retrievalRerankExcerpt(source, "WCAG tilgjengelighet TLS");
+    assert.ok(excerpt.includes(evidence), excerpt);
+    assert.ok(source.includes(excerpt), "the excerpt is a contiguous source slice");
+    assert.ok(excerpt.length <= 700);
+    await reranker.rerankRetrievalCandidates({ query: "WCAG tilgjengelighet TLS", candidates: [candidate(source)] });
+    assert.ok(reranker.state.requests[0].user.includes(evidence), "the completion receives unchanged values");
+    assert.equal(reranker.retrievalRerankExcerpt("Kort tekst med 2.2.", "tekst"), "Kort tekst med 2.2.");
+  } finally { reranker.cleanup(); }
+});

@@ -770,6 +770,23 @@ export async function deleteGeneratedArtifact(input: {
   };
 }
 
+export async function retryDocumentEnhancement(input: {
+  projectId: string;
+  documentId: string;
+  sourceRevision: number;
+}) {
+  invalidateProjectReadCache(input.projectId);
+  const response = await fetch(`/api/projects/${input.projectId}/documents/${input.documentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "retry_enhancement", source_revision: input.sourceRevision }),
+  }).finally(() => invalidateProjectReadCache(input.projectId));
+  const fallback = "Kunne ikke starte dokumentforbedringen på nytt.";
+  const payload = await readJsonPayload<{ error?: string; job?: ProjectJobRecord }>(response, fallback);
+  if (!response.ok || !payload.job) throw new Error(payload.error || fallback);
+  return payload.job;
+}
+
 export async function deleteProjectDocument(input: {
   projectId: string;
   documentId: string;

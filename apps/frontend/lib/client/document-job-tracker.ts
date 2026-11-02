@@ -28,9 +28,14 @@ export async function trackDocumentProcessing(input: {
   onStatus: (job: ProjectJobRecord) => void;
   onEnhancement: () => void;
   onProject: (project: ProjectDetail) => void;
+  /** After the first usable version is refreshed, whether or not enhancement follows. */
+  onDocumentReady?: (document: ProjectDocument) => void;
+  onIngestionFailed?: () => void;
+  /** Enhancement failed but the usable basic version remains; the work may continue. */
+  onEnhancementFailed?: () => void;
 }): Promise<ProjectDocument | null> {
   let serverFailure = false;
-  let phase: "ingestion" | "enhancement" = "ingestion";
+  let phase: "ingestion" | "enhancement" = input.job.kind === "document_docling_enhancement" ? "enhancement" : "ingestion";
   const assertActive = () => input.signal.throwIfAborted();
   const refreshProject = async () => {
     const project = await fetchProjectState(input.projectId, input.signal);
@@ -59,11 +64,13 @@ export async function trackDocumentProcessing(input: {
   try {
     assertActive();
     let completed = await watch(input.job.id);
+    const ingested = phase === "ingestion" ? documentFromJobResult(completed.result) : null;
     const enhancementId = completed.result && "docling_enhancement_job_id" in completed.result
       ? completed.result.docling_enhancement_job_id : null;
     if (typeof enhancementId === "string") {
       // Publish the persisted basic result before waiting for enhancement.
       try { await refreshProject(); } catch { assertActive(); }
+      if (ingested) input.onDocumentReady?.(ingested);
       phase = "enhancement";
       input.onEnhancement();
       completed = await watch(enhancementId);
@@ -71,6 +78,8 @@ export async function trackDocumentProcessing(input: {
     const document = documentFromJobResult(completed.result);
     if (!document) return null;
     await refreshProject();
+    if (ingested && typeof enhancementId !== "string") input.onDocumentReady?.(ingested);
+    if (phase === "enhancement" && document.processing_error) input.onEnhancementFailed?.();
     return document;
   } catch (error) {
     if (input.signal.aborted) throw error;
@@ -79,6 +88,7 @@ export async function trackDocumentProcessing(input: {
       // succeeded. A refresh error must not relabel that terminal failure.
       try { await refreshProject(); } catch { /* The activity loop retries reads. */ }
       assertActive();
+      if (phase === "ingestion") input.onIngestionFailed?.();
     }
     throw new DocumentProcessingFailure(serverFailure ? "server" : "connection", phase);
   }

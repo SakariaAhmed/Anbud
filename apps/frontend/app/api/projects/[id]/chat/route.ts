@@ -491,7 +491,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       domainHints,
     });
     const encoder = new TextEncoder();
-    recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "context_assembly", durationMs: Date.now() - startedAt });
+    recordWorkflowPerformance({ traceId, projectId: id, sourceRevision: project.snapshot_revision, operation: "chat", phase: "context_assembly", durationMs: Date.now() - startedAt });
     const assistantContextSnapshot = {
       ...contextSnapshot,
       domain_hints: chatStream.domainHints,
@@ -517,16 +517,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       new ReadableStream({
         async start(controller) {
           let assistantMessage = "";
+          let pendingWhitespace = "";
           let firstToken = true;
 
           try {
             for await (const chunk of chatStream.stream) {
+              // Persisted chat trims the answer's outer whitespace. Hold only
+              // the trailing whitespace until another visible chunk arrives,
+              // so the client receives exactly the transcript we save.
+              const pending = pendingWhitespace + (assistantMessage ? chunk : chunk.trimStart());
+              const visible = pending.trimEnd();
+              pendingWhitespace = pending.slice(visible.length);
+              if (!visible) continue;
               if (firstToken) {
                 firstToken = false;
                 recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "first_token", durationMs: Date.now() - startedAt });
               }
-              assistantMessage += chunk;
-              controller.enqueue(encoder.encode(chunk));
+              assistantMessage += visible;
+              controller.enqueue(encoder.encode(visible));
             }
 
             const cleanedAssistantMessage = assistantMessage.trim();

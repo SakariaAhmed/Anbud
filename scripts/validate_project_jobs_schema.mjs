@@ -49,6 +49,9 @@ const REQUIRED_FUNCTIONS = [
   "finish_automatic_customer_analysis",
   "automatic_customer_analysis_preflight",
   "scheduled_worker_capacity_preflight",
+  "fail_document_enhancement_job",
+  "enqueue_document_enhancement_retry",
+  "set_document_enhancement_state",
 ];
 
 const FENCING_VERSION = "authoritative-lease-fencing-v1";

@@ -1,0 +1,716 @@
+{
+  "version": "healthcare.v1",
+  "purpose": "independent synthetic holdout; not production population proof",
+  "documents": [
+    {
+      "id": "healthcare-grunnlag",
+      "title": "Helsevik Regional Helsedrift – konkurransegrunnlag",
+      "role": "primary_customer_document",
+      "file_name": "helsevik_konkurransegrunnlag_fiktivt.txt",
+      "raw_text": "[[SIDE:1]]\nFIKTIVT KONKURRANSEGRUNNLAG — HELSEVIK REGIONAL HELSEDRIFT\nDette er et syntetisk anbud laget for testing. Helsevik Regional Helsedrift, alle steder, personer og leverandører i dokumentpakken er oppdiktet. Tallene beskriver bare denne fiktive anskaffelsen og skal ikke brukes som opplysninger om virkelige helsetjenester.\n\n1. Oppdrag og virksomhet\nHelsevik Regional Helsedrift, heretter HRH, skal anskaffe felles infrastruktur og drift for tre behandlingssteder: Fjordhavn sykehus, Vestsund rehabiliteringssenter og Dalenga distriktsklinikk. Fjordhavn har akuttmottak og døgnvirksomhet, Vestsund har planlagte rehabiliteringsopphold, mens Dalenga har poliklinikk og ambulerende team. Anskaffelsen gjelder grunnlaget for tjenestene, ikke levering av klinisk beslutningsstøtte.\nVed kontraktsstart omfatter tjenesteomfanget 1 840 administrerte arbeidsstasjoner, 126 virtuelle servere og 38 nettverkssoner. Tallene er inventargrunnlag, ikke et minimumskjøp av nye enheter. Utstyr som fortsatt er egnet, skal videreføres etter teknisk kontroll. Kliniske apparater inngår bare for tilkoblingskontroll og registrering av kontaktpunkt hos apparatleverandøren.\nOppdragsgiver ønsker færre uplanlagte avbrudd, bedre oversikt over avhengigheter og mer etterprøvbar håndtering av hendelser. Ansatte skal kunne se status for en sak uten å måtte ringe flere avdelinger. Besparelser skal dokumenteres gjennom målinger før og etter tiltak; en generell påstand om moderne teknologi er ikke et akseptkriterium.\nHRH eier anskaffelsesbeslutningen. En regional driftsgruppe følger leveransen, og lokale klinikkontakter bidrar med praktisk planlegging. Klinikkontaktene kan foreslå tidspunkt, men kan ikke endre krav eller inngå økonomiske forpliktelser på vegne av HRH. Samme grense gjelder når et møte refereres i en prosjektlogg.\n\n[[SIDE:2]]\n2. Dokumentpakke og leserekkefølge\nKonkurransegrunnlaget beskriver omfang, prosess og minstekrav. Driftsbilag B beskriver den operative tjenesten. De to dokumentene gjelder sammen; den ene teksten opphever ikke automatisk den andre. Et datert, skriftlig endringsbrev fra oppdragsgiver går foran den konkrete teksten det uttrykkelig erstatter. Et løsningsforslag er leverandørens tilbudte fremgangsmåte og endrer ikke konkurransegrunnlagets krav.\nKravkoder er lokale i hvert dokument. K-01 i dette konkurransegrunnlaget er et annet krav enn K-01 i driftsbilag B. Ved henvisning skal dokumenttittel og kravkode oppgis sammen. Bruk av bare en kode i møteinnkalling eller sjekkliste er ikke tilstrekkelig til å endre et krav. Sidetallene i denne pakken viser dokumentets egne sider, ikke sidetallet i en samlet utskrift.\nDersom to beskrivelser på samme nivå motsier hverandre, skal leverandøren be om skriftlig avklaring. Den mest detaljerte formuleringen er ikke i seg selv overordnet. Å velge det høyeste tallet løser heller ikke en slik konflikt. Spørsmål og svar blir bindende først når HRH publiserer dem som del av konkurransen.\nVedleggene inneholder flere typer tall. Inventartall er registrert beholdning. Prognoser beskriver en forventning som kan endres. Kapasitetsgrenser beskriver hva tjenesten skal håndtere uten ny etablering. De tre kategoriene skal holdes fra hverandre både i prisbeskrivelsen og i akseptansetestene.\nEt skriftlig forbehold i tilbudet skal plasseres i forbeholdstabellen med dokument, side og konsekvens. En avvikende beskrivelse i et annet kapittel blir ikke automatisk et akseptert forbehold. HRH vil avklare identifiserte avvik før eventuell kontraktsinngåelse. Ingen tekst i dette grunnlaget gir leverandøren fullmakt til å utføre endringer i eksisterende drift før bestilling.\n\n[[SIDE:3]]\n3. Steder og trafikkmønster\nFjordhavn sykehus består av et hovedbygg og to polikliniske fløyer. Hovedbygget er i bruk hele døgnet, men kontorarealene har lav aktivitet om natten. En endring som ser liten ut i kontortiden, kan påvirke nattarbeid hvis den treffer felles innlogging eller meldingskø. Leverandøren skal derfor vurdere funksjon, ikke bare antall påloggede brukere.\nVestsund har en resepsjon som stenger klokken 19 på hverdager. Døgnposten fortsetter driften etter at resepsjonen er stengt, og lokal vakttelefon er da inngang til tekniske rom. Leveranser av utstyr skal avtales med logistikkansvarlig. Det er ikke tillatt å sette reservedeler i korridorer eller i rom som benyttes til pasientoppfølging.\nDalenga har variable åpningstider for de ambulerende teamene. Teamene bruker bærbart utstyr ute på oppdrag og kan ha behov for hjelp før poliklinikken åpner. Nettverksarbeid i bygget skal ikke tolkes som at alle arbeidsstasjoner er tilgjengelige samtidig. Planen må angi hvilke maskiner som kan oppdateres når de vender tilbake til basen.\nLokasjonstabell, registrert planleggingsgrunnlag:\nSted | Arbeidsstasjoner | Virtuelle servere med lokal tjenesteeier | Nettverkssoner\nFjordhavn | 1 120 | 82 | 24\nVestsund | 460 | 28 | 9\nDalenga | 260 | 16 | 5\nSummene er de samme som inventaret på side 1. Tabellen angir ikke fysisk plassering av alle virtuelle servere. En server med tjenesteeier ved Vestsund kan kjøres i felles datasenter. Flytting av eierskap i registeret skal derfor ikke føre til fysisk migrering uten en egen teknisk beslutning.\nFor alle stedene skal leverandøren etablere en kontaktliste med funksjonsadresser. Personnavn kan vedlikeholdes i arbeidsverktøyet, men konkurransegrunnlaget krever ikke at de publiseres i åpne rapporter.\n\n[[SIDE:4]]\n4. Kapasitet, lagring og første hovedkrav\nK-01: Den delte filplattformen skal tilby minst 96 TiB brukbar kapasitet etter at lokal redundans er trukket fra. Replikert kopi på annet sted teller ikke med i denne kapasiteten. Plattformen skal kunne utvides i trinn på 12 TiB uten ny navnestruktur for brukerne.\nDette er krav K-01 i konkurransegrunnlaget. Driftsbilagets identiske kode gjelder en annen funksjon. Leverandøren skal beskrive målemetoden slik at HRH kan kontrollere at brutto diskplass, reservekapasitet og tilgjengelig brukerplass ikke blandes. Kompresjon eller antatt deduplisering kan rapporteres som tillegg, men kan ikke brukes til å oppfylle minstekapasiteten før gevinsten er målt på godkjente testdata.\nForventet årlig vekst i filplattformen er 14 prosent i planleggingsperioden. Dette er en prognose for kapasitetsoppfølging, ikke en bindende bestilling av 14 prosent mer lagring hvert år. Leverandøren skal varsle når beregnet tid til full plattform blir kortere enn seks måneder. Tiltaksforslaget skal angi forventet ledetid, konsekvens ved å vente og hvilke datatyper som driver veksten.\nMidlertidige eksportfiler og tekniske logger skal ha egne navngitte områder. De skal ikke plasseres i en skjult fellesmappe uten eier. Tjenesteeier avgjør oppbevaring innenfor de avtalte rammene. Driftspersonell skal ikke slette pasientrelatert materiale på grunnlag av et generelt råd om å frigjøre plass.\nTilgangsgrupper skal kunne knyttes til organisatoriske funksjoner. Enhetene kan dele en teknisk plattform uten at de deler innsyn. Kapasitet per ansatt eller per pasient er ikke angitt i denne anskaffelsen; slik fordeling skal eventuelt vedtas i et senere tjenesteeiermøte etter behovskartlegging.\n\n[[SIDE:5]]\n5. Nettverksgrunnlag og segmentering\nLeverandøren skal videreføre logisk skille mellom administrative tjenester, klinisk støtteutstyr, besøksnett og bygningsdrift. Endringer i adresser eller sonetilhørighet skal registreres før gjennomføring. En brannmurregel skal ha navngitt tjenesteeier, begrunnelse og dato for ny vurdering. Regler uten kjent eier skal undersøkes, ikke automatisk slettes i arbeidstiden.\nK-07: På hvert behandlingssted skal det være to uavhengige uplinker fra kjernesvitsjlaget. Uavhengigheten gjelder strømforsyning og fysisk føringsvei fra teknisk rom til det lokale termineringspunktet. Konkurransen krever ikke to internettleverandører på hvert sted. Tilbyderen skal synliggjøre hvilket feilområde som fortsatt er felles.\nTrådløs dekning skal kartlegges i resepsjoner, møterom, kontorarealer og avtalte behandlingsrom. Målingen skal vise tidspunkt, kanalbelastning og representative terminaltyper. En grønn markering på en plantegning uten målegrunnlag er ikke tilstrekkelig. Byggeprosjekter kan endre dekningen, og kontrollmåling skal derfor kunne bestilles etter flytting av vegger eller større installasjoner.\nMobile kliniske vogner skal gjennomgå tilkoblingstest før de tas inn på egne soner. Oppdragsgiver har ikke valgt kommunikasjonsprotokoll mellom vognene og fremtidig sporingsløsning. Tilbyderen skal beskrive hvordan et senere protokollvalg kan innarbeides uten å love en bestemt standard i denne konkurransen. Testen gjelder stabil tilkobling, ikke medisinsk godkjenning av vognen.\nBesøksnettet skal presentere en forståelig hjelpetekst om hvor brukeren kan henvende seg ved problemer. Det skal ikke gi innsyn i interne enhetsnavn. Målinger fra besøksnettet skal holdes adskilt fra målinger av kliniske tjenester, slik at høy trafikk fra besøkende ikke feilaktig fremstår som aktivitet i pasientrettede systemer.\n\n[[SIDE:6]]\n6. Identitet og privilegert arbeid\nK-11: Privilegerte administratorøkter skal tas opp i en egen revisjonslogg, og opptakene skal oppbevares i 180 kalenderdager. Kravet omfatter leverandørens driftspersonell og underleverandører når de bruker privilegert tilgang. Vanlige brukersesjoner skal ikke tas opp gjennom denne ordningen.\nTilgang til opptak skal begrenses til avtalte kontrollfunksjoner. Det skal være mulig å søke på sak, tidspunkt og autorisert operatør uten å se innholdet i andre saker. Opptakene skal beskyttes mot endring. Ved utløpt oppbevaring skal sletting følge en dokumentert jobb med kontrollerbar kjørehistorikk. Eventuelle senere endringsbrev kan endre lagringstiden for dette konkrete kravet.\nDriftspersonell skal ha personlige kontoer for normalt arbeid og egne identiteter for privilegerte handlinger. Felleskonto kan bare benyttes for et registrert teknisk behov og skal knyttes til en sporbar uttaksprosess. Passord til felleskonto skal ikke deles i sakstekst, vedlegg eller åpne chatrom. En feil som krever hasteinngrep fritar ikke leverandøren fra å registrere hvem som handlet.\nTilgangsbestilling skal ha bestiller, godkjenner, omfang og varighet. Godkjenning av en teknisk konto er ikke samtidig godkjenning av alle datatilganger kontoen kan brukes til. Ved organisasjonsendringer skal tjenesteeier vurdere gruppetilhørigheter før masseendring utføres. Leverandøren skal støtte en kontrollert tilbakeføring hvis importen av nye organisasjonsdata inneholder feil.\nTekniske hendelser skal kunne undersøkes med minst mulig innsyn i forretningsinnhold. En revisor kan få nødvendig utdrag for en bestemt sak etter bestilling, men har ikke fri søketilgang til alle arbeidsflater. Kravet skal demonstreres med fiktive kontoer i akseptansetesten, slik at testen ikke krever bruk av pasientopplysninger.\n\n[[SIDE:7]]\n7. Sikkerhetskopiering og gjenoppretting\nK-14: For laboratoriets bestillingskø er største tillatte datatap ved gjenoppretting 20 minutter, og tjenesten skal kunne gjenopprettes innen 150 minutter. Tiden regnes fra HRH har erklært gjenopprettingshendelse og gjort nødvendig gjenopprettingsmiljø tilgjengelig. Målet gjelder køens registrerte data og funksjon, ikke eksterne analyseinstrumenters behandlingstid.\nFor dokumentarkivet er tilsvarende mål seks timers datatap og tolv timers gjenoppretting. Arkivets periodiske innlesning gir et annet behov enn laboratoriekøen. Leverandøren skal ikke bruke det mest romslige arkivmålet som felles mål for alle tjenester. En samlet rapport skal derfor vise tjeneste, datatap, gjenopprettingstid og resultat fra siste test i separate felt.\nSikkerhetskopiene skal ligge på et område der ordinære produksjonskontoer ikke kan endre allerede skrevne kopier. Leverandøren skal beskrive hvordan administrativ feil eller kompromittering i produksjon begrenses. Det er tillatt å foreslå flere tekniske mekanismer, men dokumentasjonen skal gjøre det mulig å forstå hvilke tillitsforhold løsningen fortsatt er avhengig av.\nGjenoppretting skal øves på representative data. En rapport om at en sikkerhetskopieringsjobb fullførte, viser ikke alene at tjenesten kan gjenopprettes. Testprotokollen skal vise hvilken kopi som ble valgt, om integritetskontroll lyktes og hvordan brukbarhet ble verifisert av tjenesteeier. Der det finnes avhengigheter, skal rekkefølgen på gjenoppretting fremgå.\nEn øvelse som avdekker feil, skal gi en konkret oppfølgingssak med ansvarlig og tidspunkt for ny kontroll. Leverandøren kan ikke lukke saken bare ved å kjøre samme jobb på nytt hvis årsaken til feilen fortsatt er ukjent. Dette hindrer ikke at en midlertidig kopi brukes for å sikre drift mens varig retting pågår.\n\n[[SIDE:8]]\n8. Innføring og beslutningsporter\nOppstarten deles i kartlegging, teknisk pilot, klinisk pilot og trinnvis overtakelse. Kartleggingen skal kontrollere registerdata og finne skjulte avhengigheter. Teknisk pilot skal vise at grunnfunksjonene virker i testmiljø. Klinisk pilot skal bruke avtalt representativ arbeidsflyt med tjenesteeiere til stede. Ingen av pilotene gir generell tillatelse til å migrere alle lokasjoner.\nK-18: Pilotpakken skal leveres innen 24. februar 2027. Leveransen skal inneholde testplan, kontaktmatrise, tilbakeføringsprosedyre og oversikt over åpne avvik. Datoen gjelder pakken som dokumentleveranse. Den er ikke en dato for å starte klinisk produksjon eller en automatisk godkjenning av løsningen.\nKlinisk produksjonssetting kan først besluttes etter at tjenesteeier har godkjent en gjennomført gjenopprettingstest og en lokal smitteverngjennomgang er signert. Det er ikke fastsatt noen kalenderdato for klinisk produksjonssetting. Hvis forutsetningene ikke er oppfylt, skal HRH behandle ny fremdriftsplan i styringsmøte. En passert dokumentfrist erstatter ikke disse beslutningene.\nLeverandøren skal foreslå puljer som tar hensyn til pasientflyt og lokale driftsforhold. Fjordhavn kan ikke behandles som en vanlig kontorbygning i perioder med stor akuttaktivitet. Vestsund kan ha rom utilgjengelig på grunn av oppholdsskifter. Dalenga trenger særskilt plan for utstyr som er ute med ambulerende team. Avhengigheter skal stå i planen med en konkret kontaktfunksjon.\nFør hver pulje skal HRH få en kort beslutningspakke som viser hva som flyttes, hvilke tjenester som kan påvirkes og hvordan puljen kan tilbakeføres. Den som utfører arbeid, skal ikke selv godkjenne at alle avvik er akseptable. Muntlig bekreftelse fra en enkelt sluttbruker skal heller ikke regnes som formell godkjenning av hele puljen.\n\n[[SIDE:9]]\n9. Endringsstyring og servicevinduer\nPlanlagte endringer skal ha vurdering av risiko, berørte tjenester, testgrunnlag og tilbakeføring. Leverandøren skal klassifisere endringen etter faktisk mulig påvirkning. At en kommando bare tar noen sekunder, sier lite om hvor lang tid det tar å rette en feil etterpå. Omfanget av nødvendig klinisk koordinering skal derfor fremgå før endringsrådet tar stilling.\nK-22: Ordinært teknisk servicevindu er onsdag klokken 01.00–03.00 lokal tid. Arbeid som kan påvirke kliniske tjenester, skal i tillegg godkjennes av lokal tjenesteeier. Servicevinduet er en mulighet for koordinert arbeid, ikke en tillatelse til å ha tjenestene utilgjengelige i hele perioden.\nVarsel om et planlagt klinisk avbrudd skal beskrive hvem som mister hvilken funksjon, alternativ arbeidsmåte og hvordan avbruddet avsluttes. En generell e-post med ordet vedlikehold er ikke tilstrekkelig. Når et varsel endres, skal siste versjon knyttes til samme endringssak slik at tidligere mottakere finner rett informasjon.\nHasteendringer skal registreres selv om fullstendig dokumentasjon ikke kan ferdigstilles før tiltaket. Begrunnelse, beslutningstaker og utførte steg skal sikres underveis. Etterpå skal endringsrådet vurdere om tiltaket skal videreføres, justeres eller tilbakeføres. Hasteprosessen må ikke bli en fast omvei for planlagt arbeid.\nHRH skal kunne følge kjeden fra bestilling til teknisk kontroll og klinisk bekreftelse. Det kreves ikke én bestemt programvare for dette, men dataene må kunne eksporteres i en lesbar struktur. Leverandøren skal vise en slik eksport med fiktive saker før overtakelse. Eksporten skal bevare tidsstempler og godkjenningshistorikk uten å kopiere unødvendig personinnhold.\n\n[[SIDE:10]]\n10. Tildeling og dokumentasjon\nTilbudene vurderes etter tre kunngjorte kriterier: kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent. Innen kvalitet vurderes dokumentert gjennomføringsevne, forståelse av driftsbehov og etterprøvbar løsning for kontinuitet. Beskrivelsen skal knyttes til denne leveransen og ikke bare gjengi leverandørens generelle selskapspresentasjon.\nKostnad vurderes ut fra prisskjemaets sammenlignbare total over fire år. Engangsbeløp, løpende beløp og opsjoner skal vises hver for seg. At en opsjon finnes i skjemaet, betyr ikke at den vil bli bestilt. HRH vil ikke rangere tilbud etter en oppgitt rabattprosent dersom grunnlaget for rabatten er forskjellig mellom leverandører.\nMiljøbeskrivelsen skal vise plan for gjenbruk, kontrollert ombruk av utstyr og dokumenterbar transportoppfølging. Leverandøren skal skille mellom tiltak som allerede er innarbeidet i den tilbudte leveransen og tiltak som bare kan kjøpes senere. Et nytt programnavn eller en generell ambisjon er ikke i seg selv dokumentasjon av redusert belastning.\nAlternative kriterier som foreslås i leverandørdialogen, endrer ikke kunngjorte vekter. Leverandøren kan forklare hvordan et forslag støtter et av de eksisterende kriteriene. Bare et skriftlig endringsbrev fra HRH som uttrykkelig endrer tildelingsmodellen, kan innføre nye vekter. Denne avgrensningen skal hindre at et interessant faglig forslag senere omtales som et vedtatt konkurransekrav.\nTilbudets dokumentasjon skal ha entydige henvisninger. Hvis en kontroll krever en betalt tilleggstjeneste, skal det fremgå i prisbesvarelsen. HRH vil vurdere samlet besvarelse, men en utenforstående lenke som endres etter tilbudsfristen kan ikke være eneste grunnlag for å dokumentere oppfyllelse.\n\n[[SIDE:11]]\n11. Prisstruktur og volumgrenser\nPrisskjemaet skiller etablering, drift og endringsbestillinger. Etableringen skal omfatte avtalt kartlegging, piloter og dokumentert overtakelse av tjenestene i grunnomfanget. Løpende drift skal ha en enhetspris per administrert arbeidsstasjon og en egen prislinje for server- og plattformdrift. Det er ikke publisert noen ferdig pris i denne dokumentpakken.\nTilbyderen skal oppgi hvilke volumintervaller som gir ny enhetspris. Et intervall skal ha nedre grense, øvre grense og beregningsregel for overgang. Det skal være mulig å kontrollere en faktura uten å tolke salgsformuleringer om fleksibilitet. Det skal også fremgå hvordan utstyr i karantene eller under reparasjon håndteres i målegrunnlaget.\nMålepunktet for arbeidsstasjoner er siste virkedag i måneden. En enhet teller når den står i tjenesteregisteret med aktiv forvaltning og ikke er merket som avhendet. En midlertidig utlånsenhet teller bare i den kategorien den faktisk tilhører. Den samme fysiske maskinen skal ikke faktureres både som ordinær arbeidsstasjon og som reserve samme måned.\nVed tvil skal leverandøren kunne legge frem maskinlesbart grunnlag med enhetsidentifikator og kategori. Serienumre kan utleveres til avtalt kontrollfunksjon, men skal ikke stå i åpent månedsreferat. Oppdragsgiver skal ha mulighet til å påpeke avvik før omstridt del av fakturaen behandles som endelig.\nValutaforbehold, prisindeks og eventuell reguleringsdato skal beskrives i egne felter. En illustrasjon i et løsningsnotat er ikke bindende pris. Ingen formulering om forventet effektivisering gir i seg selv en garanti om lavere månedskostnad. Garantier må fremgå av en eksplisitt akseptert kontraktsbestemmelse, som ikke er vedlagt denne syntetiske pakken.\n\n[[SIDE:12]]\n12. Informasjon og behandling av data\nHRH skal beholde kontroll over opplysningene som behandles for tjenestene. Leverandøren skal beskrive hvilke tekniske driftsdata som samles inn, formålet med innsamlingen og hvilke roller som kan lese dem. Driftstelemetri skal ikke uten videre brukes til å måle den enkelte ansattes arbeidsinnsats. Formålsendringer krever behandling hos HRH før gjennomføring.\nK-31: Primærkopier, sikkerhetskopier og gjenopprettingskopier av HRHs tjenestedata skal lagres i Norge eller Sverige. Kravet gjelder også midlertidig lagring som oppstår under øvelser. En leverandør kan ha administrativ organisasjon i andre land, men dette gir ikke unntak fra oppgitte lagringssteder.\nFor hver lagringskomponent skal tilbudet oppgi land, funksjon, ansvarlig driftsenhet og sletteprosess. Dokumentasjon av fysisk sted skal være tilstrekkelig konkret til at HRH kan kontrollere kravet uten å få tilgang til andre kunders opplysninger. En henvisning til en internasjonal regionbetegnelse er ikke tilstrekkelig dersom den omfatter flere land enn de tillatte.\nTestmateriale skal som hovedregel være syntetisk. Dersom en avhengighet krever representative produksjonsuttrekk, må tjenesteeier godkjenne avgrensning, maskering og sletting før uttrekket skjer. Godkjenning for ett testformål er ikke godkjenning for videre bruk i opplæring, presentasjoner eller utvikling av andre produkter.\nLeverandøren skal vedlegge en oversikt over driftsunderleverandører og deres faktiske funksjon. Oversikten skal ikke bare liste merkenavn. Endringer skal varsles slik at HRH kan vurdere avhengigheter og tilgang. Ingen bestemt sertifisering av samtlige underleverandører er navngitt i konkurransegrunnlaget; tilbudte sertifikater kan beskrives som dokumentasjon, men skal ikke omtales som allerede vedtatte minstekrav.\n\n[[SIDE:13]]\n13. Arbeidsflater og tilgjengelighet for ansatte\nHjelpeportalen skal ha norsk brukergrensesnitt for ansatte. Tekster om feil skal si hva brukeren kan gjøre videre og vise en saksreferanse når en sak er registrert. Portalen skal fungere med tastatur og skal ikke kreve at en ansatt kan skille mellom bestemte farger for å forstå om tjenesten er tilgjengelig. Det skal være mulig å lese viktige meldinger på små skjermer.\nEnkelte ansatte har delt arbeidsplass og kort tid mellom oppgaver. Innlogging skal ikke forutsette at de har en privat mobiltelefon. Leverandøren skal beskrive hvilke tilgjengelige metoder som støttes og hvordan HRH kan gi midlertidig tilgang ved mistet utstyr. Beskrivelsen må også dekke hvordan midlertidig tilgang utløper, slik at hastehjelp ikke skaper varige åpninger.\nTjenestekatalogen skal være organisert etter oppgaver som bestilling av utstyr, feil på arbeidsflate og tilgang til avtalte systemer. Den skal ikke kreve kjennskap til leverandørens interne avdelingsnavn. Når en bestilling sendes videre, skal den ansatte kunne se hvilken funksjon som har ansvar. Det er tillatt å samle flere tekniske oppgaver under én brukerrettet sak.\nVed større endringer skal det finnes en kort forklaring for lokal kontaktperson. Den skal beskrive forventet effekt og når vedkommende skal melde fra om problemer. Lange tekniske endringslogger kan følge som vedlegg for spesialistene, men kan ikke være eneste hjelp til ansatte som skal ta løsningen i bruk.\nAkseptansetesten skal inkludere en resepsjonsoppgave, en delt arbeidsstasjon og en bærbar enhet som kommer tilbake etter flere dager uten nett. Tjenesteeier velger representative forløp. Resultatet skal beskrive gjennomførbar oppgave, observert hinder og nødvendig retting. En skjermdump av en startside er ikke dokumentasjon av at arbeidsforløpet virker.\n\n[[SIDE:14]]\n14. Ansvarsdeling og tekniske grensesnitt\nHRH forvalter kliniske applikasjoner gjennom egne tjenesteeiere. Leverandøren drifter underliggende plattform, avtalt nettverk og administrerte arbeidsflater. Ved feil skal partene samarbeide om avgrensning. At feilen kan ligge hos en applikasjonsleverandør, gir ikke grunnlag for å lukke saken før en mottakende funksjon har overtatt den.\nIntegrasjoner skal føres i et register med kilde, mottaker, dataansvarlig, kontaktpunkt og avtalt driftsvindu. Registeret skal skille mellom produksjon, test og planlagte forbindelser. En tegnet pil i en målarkitektur er ikke bevis for at en integrasjon er etablert. Leverandøren skal heller ikke opprette nye dataflyter bare for å gjøre en demonstrasjon mer sammenhengende.\nFor laboratoriets bestillingskø skal endringer koordineres med laboratoriets fagansvarlige. Infrastrukturleverandøren skal teste at køtjenesten starter og at avtalte prøvemeldinger kan behandles i testmiljøet. Faglig vurdering av meldingsinnhold gjøres av HRH. Denne fordelingen er valgt for å unngå at en teknisk godkjenning blir oppfattet som medisinsk kontroll.\nRegionens langsiktige arkitekturplan omtaler mer standardisert informasjonsutveksling. Konkurransen pålegger ikke leverandøren å levere et nytt FHIR-grensesnitt til journalsystemet. Det er heller ikke vedlagt bestilling eller akseptkriterier for et slikt grensesnitt. Et senere integrasjonsprosjekt vil kreve egen avgrensning og beslutning fra HRH.\nGrensesnitt mot bygningsdrift skal testes sammen med lokal teknisk avdeling. Temperaturvarsel fra et teknisk rom skal kunne følges til en navngitt vaktfunksjon, men infrastrukturomfanget inkluderer ikke reparasjon av kjøleanlegg. Dersom overvåking viser en slik feil, skal hendelsen overføres med målinger og tidspunkt til den funksjonen som har fysisk vedlikeholdsansvar.\n\n[[SIDE:15]]\n15. Leveranser og dokumentasjonskontroll\nK-36: Etter gjennomført akseptansetest har HRH tolv virkedager til å sende samlet avviksprotokoll for den testede puljen. Fristen begynner første virkedag etter at komplett testprotokoll og avtalt dokumentasjon er mottatt. Et ufullstendig vedlegg starter ikke fristen. Stillhet alene regnes ikke som godkjenning.\nLeverandøren skal levere en driftsbeskrivelse som kan brukes av en annen kvalifisert operatør med avtalte tilganger. Beskrivelsen skal forklare oppstart, normal kontroll, vanlige feil, avhengigheter og sikker tilbakeføring. Hemmelige verdier skal ligge i godkjent hemmelighetslager og skal ikke kopieres inn i dokumentet for å gjøre det selvstendig.\nNettverkskart og tjenesteregister skal ha dato og eier. Endringer som er gjennomført i teknikken, men ikke i dokumentasjonen, skal registreres som åpne leveranseavvik. Det skal fremgå om et avvik hindrer sikker drift eller gjelder en mindre redaksjonell retting. Bare HRH kan godta at et avvik står åpent ved overtakelse.\nOverlevering skal omfatte kontroll av at HRH kan åpne eksporterte filer og søke etter en bestemt tjeneste. Dokumentasjonen skal ikke bare være tilgjengelig gjennom leverandørens interne konto. HRH skal få avtalte lesetilganger og et avtalt eksportformat. Eksporten skal kunne leses uten å kjøpe en ny lisens for et spesifikt dokumentasjonsverktøy.\nProsjektets beslutningslogg skal vise beslutning, beslutningsgrunnlag, ansvarlig funksjon og eventuelle betingelser. En presentasjon fra et statusmøte er ikke tilstrekkelig som eneste spor etter at et krav er endret. Hvis et lysark og et signert beslutningsnotat gir ulik informasjon, skal avviket undersøkes før driftspersonell utfører det omstridte tiltaket.\n\n[[SIDE:16]]\n16. Samarbeid, kontroll og avsluttende avgrensning\nHRH ønsker et samarbeid der avvik oppdages tidlig og kan forklares med konkrete observasjoner. Leverandøren skal foreslå en møteform som bruker mest tid på beslutninger og oppfølging. Det skal være mulig å lese hva som gjenstår uten å gå gjennom en lang presentasjon. Tiltak som krever HRHs ressurser, skal merkes tydelig med ønsket funksjon og forventet innsats.\nHver måned skal leverandøren vise tjenestekvalitet, hendelser, restanser og planlagte endringer. Rapporten skal inneholde forklaring når tall påvirkes av uvanlige hendelser eller endret målegrunnlag. Leverandøren skal ikke sammenligne perioder med ulike definisjoner uten å vise forskjellen. Beslutninger om nye måledefinisjoner skal dokumenteres før de brukes til økonomisk vurdering.\nHRH kan be om stikkprøver av saksforløp og dokumentasjon. Prøvene skal være målrettet og håndteres gjennom avtalt tilgang. Personopplysninger skal begrenses til det kontrollen trenger. Det skal være mulig å forklare tidslinjen i en sak uten å publisere hele innholdet fra den ansattes henvendelse i en regional rapport.\nOppdragsgiver vil vurdere tilbudets sammenheng på tvers av kapasitet, bemanning og arbeidsmetode. En tilbudt funksjon som avhenger av en senere opsjon, skal ikke presenteres som del av grunnleveransen. Dersom en funksjon krever en forutsetning HRH ikke har bekreftet, skal dette beskrives med konsekvens og forslag til avklaring.\nDenne fiktive dokumentpakken inneholder ikke signert kontrakt, ferdig prisskjema eller senere møtereferater. Det som finnes i pakken, er konkurransegrunnlag, operativt driftsbilag, et avgrenset endringsbrev og ett løsningsforslag. Leser skal ikke fylle hullene med vanlige bransjevilkår. Ukjent pris, uavklart dato eller uvalgt protokoll skal behandles som manglende informasjon til HRH faktisk avklarer det."
+    },
+    {
+      "id": "healthcare-drift",
+      "title": "Helsevik Regional Helsedrift – driftsbilag B",
+      "role": "primary_customer_document",
+      "file_name": "helsevik_driftsbilag_b_fiktivt.txt",
+      "raw_text": "[[SIDE:1]]\nFIKTIVT DRIFTSBILAG B — OPERATIV TJENESTE FOR HELSEVIK\nDette driftsbilaget er del av en oppdiktet anskaffelse og inneholder ingen virkelige pasienter, adresser eller beredskapsopplysninger. Bilaget utdyper konkurransegrunnlaget for Helsevik Regional Helsedrift. Stedsnavnene Fjordhavn, Vestsund og Dalenga viser de samme fiktive stedene som i grunnlaget.\n\nB1. Tjenestens innganger\nHenvendelser skal kunne komme gjennom hjelpeportal, telefon og overvåkingssystem. De tre inngangene skal opprette eller knyttes til en felles sak slik at samme hendelse ikke får tre uavhengige eiere. En ansatt skal ikke måtte vite hvilken teknisk gruppe som til slutt løser saken. Den funksjonen som mottar henvendelsen, har ansvar for en forståelig første respons.\nBrukerstøtten skal være bemannet alle dager klokken 06.30–22.30. Utenfor dette tidsrommet skal en vaktordning håndtere kritiske hendelser og henvendelser fra døgnfunksjoner. Det kreves ikke full ordinær bestillingstjeneste om natten. En nattvakt skal likevel kunne melde fra om feil uten å vente til neste morgen.\nVaktordningen skal ha tilgang til oppdatert tjenesteregister og kontaktinformasjon for klinisk koordinering. Det skal være tydelig når en vakt kan utføre et tiltak selv og når tjenesteeier må godkjenne. For akutt inntrufne feil skal det finnes en vei til ansvarlig beslutningstaker selv om ordinær kontorfunksjon er stengt.\nSaksverktøyet skal bevare tidspunktet for første mottak selv om saken senere flyttes mellom grupper. En overføring skal ikke nullstille måling av respons eller skjule tidligere ventetid. Feilregistrerte saker kan korrigeres, men endringen skal vise tidligere og ny klassifisering. Oppdragsgiver skal kunne kontrollere et utvalg slike endringer uten å be leverandøren rekonstruere historikken manuelt.\n\n[[SIDE:2]]\nB2. Hendelseskategorier og lokalt krav K-01\nK-01: En P1-hendelse skal bekreftes av en ansvarlig operatør innen 7 minutter etter at den er mottatt i avtalt kanal. Automatisk kvittering alene teller ikke som bekreftelse. Operatøren skal oppgi saksreferanse og neste kontaktpunkt for klinisk koordinator.\nDette er K-01 i driftsbilag B. Det må ikke forveksles med lagringskravet K-01 i konkurransegrunnlaget. P1 omfatter bortfall av en kritisk felles tjeneste uten fungerende alternativ arbeidsmåte, eller en bekreftet hendelse med raskt økende alvorlig påvirkning. Klassifiseringen skal baseres på faktisk berørt funksjon. Én bruker med administrativt hastebehov blir ikke automatisk P1.\nP2 gjelder betydelig funksjonssvikt der en avtalt alternativ arbeidsmåte fortsatt kan brukes. P2 skal bekreftes innen 45 minutter og ha et første løsnings- eller omgåelsesforslag innen seks timer. Forslaget skal beskrive hva den ansatte faktisk kan gjøre. Et generelt svar om at saken undersøkes er ikke et omgåelsesforslag.\nP3 gjelder feil med begrenset påvirkning og planlegges i ordinær arbeidskø. Bestillinger av nytt utstyr håndteres separat fra hendelser. Det er ikke akseptabelt å flytte uløste hendelser til en bestillingskategori bare for å stoppe en måling. Hvis omfanget endres, skal operatøren oppdatere kategorien og forklare hvorfor.\nBekreftelse, teknisk retting og klinisk normalisering er forskjellige tidspunkter. Rapporten skal vise dem hver for seg. At en tjeneste svarer på teknisk kontroll, betyr ikke alltid at køer er tømt eller lokale arbeidsflater er tilbake i normal bruk. Klinisk koordinator avgjør når den berørte arbeidsflyten er normalisert, mens drift bekrefter den tekniske statusen.\n\n[[SIDE:3]]\nB3. Varsling under alvorlige hendelser\nVed P1 skal leverandøren opprette en felles hendelseslogg og utpeke en hendelsesleder. Klinisk koordinator skal få status minst hvert 25. minutt så lenge påvirkningen vedvarer. Status skal angi bekreftede observasjoner, hva som undersøkes og når neste oppdatering kommer. Ukjent årsak skal omtales som ukjent, ikke som en antatt brukerfeil.\nDen første statusmeldingen skal være kort nok til å kunne leses over telefon. Den bør inneholde berørt funksjon, antatt geografisk omfang og kjent alternativ arbeidsmåte. Tekniske detaljer kan ligge i loggen. Det er viktigere at koordinator forstår hva avdelingene kan gjøre, enn at meldingen viser alle kommandoer som er forsøkt.\nHendelseslederen skal holde arbeidslogg med tid, beslutninger og hvem som utfører tiltak. Parallelle arbeidsspor skal ha tydelige eiere slik at to operatører ikke endrer samme komponent uten samordning. Dersom en mulig retting innebærer nytt klinisk avbrudd, må dette vurderes eksplisitt selv om hendelsen allerede er alvorlig.\nEksterne leverandører skal få nok tekniske opplysninger til å undersøke sitt område. De skal ikke få hele saksinnholdet hvis dette inneholder opplysninger de ikke trenger. Leverandøren skal bruke avtalte kanaler og merke uttrekk med hva de gjelder. Sporbar deling betyr ikke at alle parter får generell tilgang til alle logger.\nNår påvirkningen opphører, skal HRH få en foreløpig oppsummering med restarbeid og eventuelle usikkerheter. Leverandøren skal ikke angi en bekreftet rotårsak før grunnlaget støtter den. Dersom flere forklaringer gjenstår, skal videre undersøkelse ha ansvarlig og forventet neste kontroll. Dette gjør det mulig å skille gjenopprettet drift fra ferdig årsaksanalyse.\n\n[[SIDE:4]]\nB4. Beredskap, øvelser og roller\nDet skal gjennomføres to regionale beredskapsøvelser per år, én i mars og én i oktober. Marsøvelsen skal omfatte gjenoppretting av en valgt kritisk tjeneste. Oktoberøvelsen skal omfatte bortfall av lokal kontakt med ett behandlingssted og bruk av alternativ kommunikasjonsvei. Valg av konkret tjeneste og sted besluttes i planleggingsmøte.\nØvelsene skal planlegges slik at ordinær pasientbehandling ikke utsettes for unødvendig risiko. Det kan brukes isolert miljø eller en avgrenset del av tjenesten når det gir relevant kontroll. Dersom en øvelse utsettes, skal HRH dokumentere begrunnelse og nytt tidspunkt. En skrivebordsøvelse kan supplere, men ikke automatisk erstatte den avtalte tekniske kontrollen.\nØvelsesrapporten skal beskrive scenario, forutsetninger, observerte resultater og avvik. Det skal fremgå hvilke deler som ble simulert. En deltakerliste dokumenterer deltakelse, ikke om gjenoppretting lyktes. Tjenesteeier skal kunne se hvilke avhengigheter som faktisk ble prøvd og hvilke som fortsatt bare er antatt.\nLeverandøren skal stille med hendelsesleder, teknisk koordinator og loggfører. Én person kan ha flere roller i en liten skrivebordsdel, men under teknisk gjennomføring må loggføringen være ivaretatt mens operatørene arbeider. HRH stiller klinisk koordinator og ansvarlig for godkjenning av lokal påvirkning.\nLæringspunkter skal føres inn i ordinær tiltaksoversikt. En feil i en kontaktliste må rettes der listen eies, ikke bare kommenteres i øvelsesrapporten. Ved neste øvelse skal et utvalg tidligere tiltak kontrolleres for å se om de faktisk ble gjennomført. Gjentakende avvik skal vurderes som mulig svakhet i arbeidsmåten, ikke som nye uavhengige engangstilfeller.\n\n[[SIDE:5]]\nB5. Utlån, reparasjon og reserveutstyr\nDen regionale utlånspoolen skal bestå av 26 bærbare arbeidsstasjoner og 14 mobile etikettskrivere. Utstyret skal være klargjort med godkjent grunnoppsett og registrert med tilstand. Utlånspoolen er atskilt fra lokal lagerbeholdning av nettverksdeler. Den skal ikke telles som et krav om like mange ekstra servere eller faste arbeidsstasjoner på hvert sted.\nEn utlånt enhet skal knyttes til en sak med mottakende funksjon, utleveringstidspunkt og plan for retur. Ved retur skal enheten kontrolleres og ryddes før den merkes som tilgjengelig. Utstyr som har stått lenge uten kontakt, skal ikke lånes ut med et gammelt sikkerhetsoppsett bare fordi det starter. Nødvendig oppdatering må inngå i klargjøringen.\nFor enheter med fysisk skade skal operatøren registrere skadebeskrivelse uten å spekulere i hvem som har skyld. HRH avgjør videre behandling hvis skaden kan ha påvirket informasjonssikkerheten. En maskin med ukjent lagringsmedium skal holdes separat til medium og tilgang er avklart. Rask reparasjon fritar ikke leverandøren fra å sikre et forsvarlig dataspor.\nNår en reservekomponent brukes ved en hendelse, skal bestilling av erstatning være sendt innen tre virkedager etter uttaket. Det kreves dokumentert bestilling innen fristen, ikke fysisk levering innen tre dager. Leverandøren skal varsle hvis transport eller tilgjengelighet gjør at lageret forblir redusert over lengre tid.\nUtlån skal kunne spores mellom stedene. En bærbar maskin som flyttes fra Fjordhavn til Dalenga, skal registreres på den funksjonen som nå bruker den. Det skal være mulig å se at kapasiteten i poolen er redusert, uten å vise navnet til den enkelte bruker i den regionale oversikten. Periodiske kontroller skal avdekke enheter som er levert tilbake uten at saken er lukket.\n\n[[SIDE:6]]\nB6. Lokale lagre og inventarkontroll\nLagerplanen skiller mellom regional utlånspool, lokale nettverksdeler og rekvisita. Hvert lager skal ha en ansvarlig funksjon og en kontrollert oversikt over uttak. Beholdningen skal kontrolleres ved oppstart og ved bytte av lageransvarlig. Det er ikke tilstrekkelig at antallet i et regneark en gang stemte med en leveranse.\nSted | Reserveoptikker i lokal lageroversikt | Eier av lagerkontroll\nFjordhavn | 17 | Regional nettverksgruppe\nVestsund | 11 | Lokal teknisk tjeneste\nDalenga | 6 | Ambulerende driftsgruppe\nTabellen viser måltallet for lokale reserveoptikker i dette lagerkapitlet. Optikker som står i produksjon, teller ikke som reserve. Defekte enheter skal merkes og tas ut av tilgjengelig beholdning selv om de fortsatt fysisk ligger i skapet.\nVed telling skal enhetene kontrolleres mot støttet type og nødvendig kontaktflate. Et stort antall deler som ikke passer i installert utstyr gir ikke riktig beredskap. Leverandøren skal beskrive hvordan tekniske endringer oppdaterer lagerbehovet. Gamle deler kan beholdes for et begrenset historisk behov dersom de merkes med hvilke systemer de fortsatt kan brukes i.\nDet finnes også en lokal beredskapsbeskrivelse senere i bilaget. Tall som eventuelt avviker mellom delene, skal avklares skriftlig; dette bilaget etablerer ingen egen rangordning mellom lagerkapitlet og den lokale beskrivelsen. Det foreligger ikke en generell regel om at høyeste lagertall automatisk er bindende.\nLageret skal ikke brukes som uregistrert mellomstasjon for klinisk utstyr som venter på faglig kontroll. Teknisk reservedel og medisinsk utstyr har ulike ansvarslinjer. Dersom et apparat leveres til feil funksjon, skal mottaker sikre overføring til riktig kontakt og dokumentere dette i saken uten å erklære apparatet godkjent.\n\n[[SIDE:7]]\nB7. Overvåking av rom og plattform\nTekniske rom skal overvåkes for temperatur og bortfall av normal strømtilførsel. En temperatursensor skal måles minst hvert 90. sekund. Et vedvarende nivå over 27 grader Celsius i åtte sammenhengende minutter skal utløse varsel til teknisk vakt. Et enkelt høyt målepunkt skal lagres, men utløser ikke alene samme varsel.\nLeverandøren skal vise hvordan et bortfalt sensorpunkt skiller seg fra normal temperatur. Manglende data skal ikke presenteres som null grader eller som grønn tilstand. Hvis en sensor ikke har sendt data innen forventet kontrollintervall, skal overvåkingen opprette en egen teknisk undersøkelse. Utfall i målekanalen må kunne spores til ansvarlig funksjon.\nVed strømvarsel skal drift koordinere med lokal teknisk avdeling. Operatøren skal kunne se hvilke tjenester som avhenger av rommet og hvilke kontroller som er avtalt før enhetene eventuelt stenges kontrollert. Leverandøren får ikke gjennom dette bilaget ansvar for å reparere byggets strømforsyning. Ansvarsdelingen hindrer likevel ikke praktisk samarbeid under hendelsen.\nPlattformovervåking skal omfatte kapasitet, kølengde, feilrate og kritiske avhengigheter. Terskler skal begrunnes og tilpasses tjenestens arbeidsmønster. En full kø under planlagt innlesning kan være normal, mens en liten kø som ikke beveger seg kan være alvorlig. Operatørene skal ha tilstrekkelig kontekst til å unngå at alle avvik behandles som like.\nVarsler skal samles når de har samme sannsynlige tekniske årsak, men sammenstilling må bevare de opprinnelige observasjonene. Det skal være mulig å gå fra en samlet hendelse til de underliggende målepunktene. Endring av terskler skal registreres med begrunnelse, slik at en lavere alarmmengde ikke uten videre fremstilles som bedre stabilitet.\n\n[[SIDE:8]]\nB8. Måling av tjenestekvalitet\nTilgjengelighet skal måles per navngitt tjeneste ved avtalte kontrollpunkter. Målepunkt, intervall og definisjon av feil skal godkjennes før rapportperioden starter. Et teknisk svar fra en innloggingsside viser ikke nødvendigvis at en arbeidsoppgave kan fullføres. For sentrale tjenester skal kontrollen derfor suppleres med en avtalt funksjonell prøve.\nEt godkjent servicevindu er ikke en kvote for tillatt nedetid. Bilaget fastsetter ikke noen samlet tillatt nedetid i minutter per måned eller et felles tilgjengelighetskrav i prosent. Tilbyderen skal foreslå målemodell, og HRH skal ta stilling til den før operativ overtakelse. Det er ikke grunnlag for å regne servicevinduets lengde om til en vedtatt feilmargin.\nPlanlagt og uplanlagt påvirkning skal rapporteres hver for seg. Ved planlagt påvirkning skal saken vise godkjenning og faktisk tidsrom. Dersom arbeidet overskrider det godkjente tidsrommet, skal overskridelsen synliggjøres. Klassifisering som planlagt arbeid skal ikke brukes til å skjule en etterfølgende feil som oppstod under endringen.\nDatagrunnlaget skal ha tidssone og opplysninger om hvordan overgangen mellom sommer- og vintertid håndteres. Duplikate kontrollpunkter kan brukes til å kontrollere målekvalitet, men skal ikke telle som ekstra hendelser hvis de måler samme avbrudd. Rapporten skal gjøre slike sammenslåinger forståelige for HRHs kontrollfunksjon.\nVed uenighet om måling skal begge parters observasjoner bevares inntil saken er avklart. Leverandøren skal ikke endre historiske råmålinger for å få et pent resultat. Feilaktige målinger kan merkes som ugyldige med begrunnelse og sporbar beslutning. Oppsummeringen skal vise både hvilke data som er brukt og hvilke som er utelatt, slik at kvaliteten kan vurderes.\n\n[[SIDE:9]]\nB9. Rapportering og oppfølging\nMånedsrapporten skal være levert senest den åttende virkedagen i påfølgende måned. Rapporten skal dekke siste hele kalendermåned. Levering betyr at HRH har fått rapporten gjennom avtalt kanal med tilgang til underlaget, ikke bare en melding om at rapporten snart er klar. Helligdager regnes ikke som virkedager i denne fristen.\nRapporten skal vise hendelser etter alvorlighet, første respons, gjenoppretting, åpne problemspor og planlagte endringer. Antall henvendelser skal beskrives med eventuelle endringer i kanalbruk. Når portalen tas mer i bruk, kan registrerte saker øke uten at tjenesten har blitt dårligere. Leverandøren skal forklare slike brudd i sammenlignbarhet.\nDet skal finnes en oversikt over tiltak med eier, status og neste kontroll. Tiltak som avventer HRH, skal angi hvilken beslutning eller ressurs som mangler. Leverandøren skal ikke bruke avventer kunde som en ubestemt samlebetegnelse. Når flere parter må bidra, skal neste konkrete steg likevel ha én ansvarlig funksjon.\nEnergirapporten skal vise målt forbruk for de komponentene som har avtalte målepunkter. Beregninger for komponenter uten måler skal merkes som estimater med metode. En utvikling i energiforbruk skal sees sammen med endret tjenestevolum. Et lavere tall som skyldes flyttet last, er ikke nødvendigvis en reduksjon for regionen som helhet.\nHRH vil gjennomgå rapporten i et månedlig driftsmøte. Referatet skal prioritere beslutninger, avvik og oppfølging. Rapporter som avdekker akutte forhold, skal ikke holdes tilbake til møtet. Leverandøren skal bruke hendelsesprosessen når funnet krever rask handling, og senere vise i rapporten hvordan saken ble håndtert.\n\n[[SIDE:10]]\nB10. Kompetanse og praktisk opplæring\nDriftspersonell skal kjenne de lokale begrensningene før de får selvstendig vakt. Opplæringen skal dekke kontaktveier, kritiske tjenester, endringsprosessen og håndtering av opplysninger. Det skal være mulig å dokumentere at en operatør har gjennomført nødvendige deler. Deltakelse på et generelt produktkurs alene er ikke tilstrekkelig for lokal vaktkompetanse.\nK-09: Grunnopplæring for HRHs superbrukere skal gjennomføres i fire verksteder med maksimalt ti deltakere i hvert verksted. Hvert verksted skal omfatte saksregistrering, statusforståelse og øvelse i å melde en hendelse med riktig funksjonsbeskrivelse. Det skal tilbys en enkel veiledning som kan brukes etter samlingen.\nAntallsgrensen gjelder aktiv deltakelse i verkstedet, ikke hvor mange som kan lese veiledningen. Dersom flere skal læres opp, må leverandøren foreslå ekstra gjennomføringer. En opptaksvideo kan brukes som supplement, men kan ikke alene erstatte den praktiske øvelsen. Et senere skriftlig endringsbrev kan endre både gruppestørrelse og antall verksteder.\nOpplæringen skal bruke fiktive saker. Deltakerne skal ikke lime inn ekte pasientopplysninger for å gjøre øvelsen realistisk. Leverandøren skal forberede eksempler som skiller mellom teknisk observasjon og klinisk konsekvens. Formålet er at superbrukerne skal kunne gi drift et godt grunnlag uten å måtte diagnostisere den tekniske årsaken.\nEtter hvert verksted skal leverandøren samle spørsmål som ikke ble løst underveis. Svar som endrer praktisk arbeidsmåte, skal oppdateres i veiledningen med dato. Et godt fremført kurs er ikke ferdig levert hvis deltakerne sitter igjen med motstridende instrukser om hvordan de skal melde alvorlige feil. HRH godkjenner den samlede opplæringspakken.\n\n[[SIDE:11]]\nB11. Feltarbeid og hygiene\nTeknisk feltarbeid skal planlegges sammen med lokal kontakt. Operatøren skal kjenne hvilke områder som krever særskilt adgang, ledsaging eller hygienetiltak. En teknisk tilgang i saksverktøyet gir ikke fysisk adgang til behandlingsrom. Oppdrag som flytter seg til et annet rom, må vurderes på nytt hvis lokal bruk endres.\nK-12: Ordinært arbeid inne i behandlingsrom skal varsles minst fem virkedager før planlagt oppmøte. Varslet skal angi berørt romfunksjon, forventet varighet og om utstyr eller møbler må flyttes. Fristen gjelder planlagt feltarbeid, ikke første innsats ved en pågående P1-hendelse. Akutt arbeid skal koordineres gjennom lokal vaktfunksjon.\nUtstyr som tas inn i behandlingsrom, skal kunne rengjøres etter lokal instruks. Operatøren skal unngå å legge verktøy direkte på pasientnære flater. Brukt emballasje og utskiftede komponenter skal fjernes fra rommet. Ved usikkerhet om lokal prosedyre skal operatøren spørre kontaktfunksjonen før arbeidet starter, fremfor å basere seg på rutiner fra et annet sted.\nEt rom skal tilbakeleveres med en kort kontroll sammen med lokal representant når arbeidet kan ha påvirket arbeidsplassen. Kontrollen skal vise at kabler er sikret, avtalt utstyr er tilbake og funksjonen er prøvd. HRH avgjør om rommet kan tas i bruk til behandling. Leverandøren skal ikke presentere en teknisk ferdigmelding som godkjenning av smittevern.\nBesøkende driftspersonell skal registrere ankomst og avreise etter lokal ordning. Listen brukes til sikkerhet og koordinering, ikke som en erstatning for sakens tekniske dokumentasjon. Det skal fortsatt være mulig å se hvilke endringer som ble gjort, selv om et fysisk besøk var kort og ikke førte til utskifting av deler.\n\n[[SIDE:12]]\nB12. Lokal beredskapsbeskrivelse for Vestsund\nVestsund har en døgnpost i østfløyen og treningsarealer som kan være i bruk på kveldstid. Ved bortfall av resepsjonens kontaktlinje går meldinger til den lokale vaktfunksjonen. Leverandøren skal kontrollere at denne funksjonen finner oppdatert status uten å måtte logge inn på en arbeidsstasjon som er berørt av samme feil.\nDen lokale beredskapsbeskrivelsen angir ni reserveoptikker på Vestsund. Tallet gjelder samme type lokale reserveoptikker som i lagerkapitlet B6. Beskrivelsen er ikke merket som en endring eller som et historisk vedlegg. Det er derfor en reell uoverensstemmelse med tabellen på side 6, der Vestsund står med elleve.\nIngen godkjent avklaring av forskjellen mellom ni og elleve følger dokumentpakken. De to delene av bilaget har samme dokumentnivå. Leverandøren skal be HRH om skriftlig avklaring før endelig dimensjonering av dette lageret. Det er ikke tilstrekkelig å velge et tall etter hvilken side som kom sist i den samlede filen.\nVed utlevering av reservedeler skal lokal vakt bekrefte hvilken komponent som er tatt og hvilken sak den gjelder. Hvis sakssystemet er utilgjengelig, kan et midlertidig uttaksark brukes. Opplysningene skal føres inn når systemet er tilbake, og arket skal håndteres etter avtalt oppbevaringsrutine. Et midlertidig ark oppretter ikke en egen permanent lageroversikt.\nVed større hendelser kan regional hendelsesleder omdisponere utstyr mellom stedene etter samråd med HRH. Flyttingen skal vise hvilket sted som får redusert reserve. En rask løsning for Vestsund skal ikke skjule at Dalenga da står uten en nødvendig del. Beredskapsplanen skal beholde oversikt over gjenværende risiko etter en slik omdisponering.\n\n[[SIDE:13]]\nB13. Håndtering av tilbakevendende feil\nGjentatte hendelser med tilsynelatende samme symptom skal vurderes som et problemspor når sammenhengen er faglig begrunnet. Leverandøren skal ikke samle alle hendelser som nevner nettverk i ett problem bare for å redusere antall åpne saker. Det skal fremgå hvilke observasjoner som støtter en felles årsak, og hva som fortsatt kan være uavhengige feil.\nEt problemspor skal ha en ansvarlig, en beskrivelse av kjent påvirkning og en plan for videre undersøkelse. Midlertidige tiltak skal beskrives med begrensninger. Hvis en omstart reduserer symptomet, skal rapporten skille dette fra dokumentert årsaksretting. En operatør som overtar saken, skal kunne forstå hva som er prøvd uten å lese alle interne chatmeldinger.\nNår en mulig varig retting er funnet, skal den gjennom relevant test og endringsbehandling. Et problem kan stå åpent mens tiltaket prøves i en avgrenset del av miljøet. Det skal ikke lukkes utelukkende fordi feilen ikke har opptrådt i noen få rolige dager hvis den tidligere bare viste seg ved periodisk tung belastning.\nFor feil som involverer en annen leverandør, skal ansvar for neste steg være avtalt. Henvisning til en ekstern kø uten mottaksbekreftelse er ikke tilstrekkelig overføring. HRH skal kunne se hvilke opplysninger som er sendt og hva den eksterne parten er bedt om å undersøke. Fortrolig materiale skal begrenses til nødvendig teknisk grunnlag.\nLukkede problemspor skal oppsummere bekreftet årsak, gjennomført retting og hvordan effekten ble kontrollert. Hvis årsaken aldri ble sikkert bestemt, skal dette fremgå. En god oppsummering kan beskrive en begrenset sikker konklusjon. Den skal ikke fylle hull i hendelsesforløpet med en vanlig forklaring fra andre kunders miljøer.\n\n[[SIDE:14]]\nB14. Enhetslivsløp og kontrollert ombruk\nArbeidsstasjoner skal følges fra registrering til avhending. Registeret skal vise status, teknisk forvalter og tilknyttet tjenestefunksjon. HRH skal kunne skille en enhet i lager fra en aktiv enhet og en enhet som venter på sikker sletting. Serienummer er en teknisk identifikator, mens brukerens navn bare skal registreres når formålet krever det.\nFør ombruk skal enheten kontrolleres for funksjon, oppdateringsstøtte og egnethet for ny rolle. En eldre maskin kan være egnet til en enkel kontoroppgave selv om den ikke lenger passer en tung arbeidsflate. Leverandøren skal dokumentere begrunnelsen. Ombruk er ikke oppfylt bare ved at utstyret beholdes på et lager uten planlagt bruk.\nDatabærende medier skal håndteres gjennom en sporbar prosess. Bekreftelsen skal knytte utført metode til medium og resultat uten å gjengi det slettede innholdet. Hvis metoden feiler, skal enheten settes i kontrollert avviksløp. Den skal ikke overføres til ombruk fordi en operatør mener at dataene sannsynligvis ikke er interessante.\nTransport av utstyr mellom stedene skal planlegges sammen med andre hensiktsmessige leveranser når det ikke svekker beredskap. HRH ønsker færre unødvendige turer, men leverandøren skal ikke utsette et kritisk behov bare for å forbedre transportstatistikken. Rapporten skal kunne forklare når en ekstra tur var nødvendig.\nReservedeler som ikke lenger støttes, skal vurderes i et eget fornyelsesforslag. Forslaget skal vise hva som faktisk påvirkes, hvilke alternativer som finnes og konsekvensen ved å vente. Leverandøren skal ikke fremsette hele plattformen som utdatert bare fordi én komponent er vanskelig å skaffe. Avgrenset tiltak og full utskifting skal kunne sammenlignes på samme faktagrunnlag.\n\n[[SIDE:15]]\nB15. Etterkontroll av endringer\nEtter hver endring som påvirker en avtalt kritisk tjeneste, skal leverandøren kontrollere både teknisk status og den avtalte funksjonelle prøven. Kontrollen skal knyttes til endringssaken med tidspunkt og resultat. At verktøyet viser grønn utrulling, er ikke alene bevis på at den ansattes arbeidsforløp fungerer. Eventuelle begrensninger ved prøven skal dokumenteres.\nVed tilbakeføring skal årsaken og gjenstående konsekvenser fremgå. En tilbakeført endring skal ikke rapporteres som vellykket levering bare fordi tjenesten til slutt er oppe. HRH skal kunne skille mellom riktig gjennomført tilbakeføring og at det opprinnelige forbedringsmålet ble nådd. Begge deler kan være verdifulle, men de er forskjellige resultater.\nHvis feilen først oppdages dagen etter, skal hendelsen lenkes til den aktuelle endringen når observasjonene støtter sammenhengen. Lenken skal ikke brukes som endelig årsaksdom uten teknisk grunnlag. Sikker sammenheng, mulig sammenheng og avkreftet sammenheng skal kunne registreres. Dette gir et bedre grunnlag for å lære enn at alle samtidige hendelser legges på den nyeste endringen.\nEn standardendring kan få en enklere godkjenningsvei når den har kjent risiko og dokumentert tilbakeføring. HRH skal godkjenne avgrensningen på forhånd. Klassifiseringen skal revurderes hvis miljø eller forutsetninger endrer seg. En gammel standardstatus gjelder ikke ubetinget når samme handling flyttes til en ny kritisk tjeneste.\nOppfølgingsmøtet skal undersøke om endringene ga forventet nytte og om målegrunnlaget er sammenlignbart. Bedre ytelse på én testmaskin er ikke tilstrekkelig bevis på forbedring i hele regionen. Leverandøren skal legge frem hvor det ble målt, hvilken belastning som gjaldt og om andre endringer skjedde samtidig. Usikkerhet skal synliggjøres slik at neste tiltak kan planlegges fornuftig.\n\n[[SIDE:16]]\nB16. Samhandlingsflater og kontrollgrunnlag\nDriftsbilaget krever en felles oversikt over saker som venter på beslutning fra HRH. Oversikten skal forklare konsekvensen av å vente, mulig midlertidig tiltak og hvem som må svare. En frist skal bare legges inn når den har et avtalt grunnlag. Operatøren skal ikke finne på en kort frist for å få en avhengighet til å se mer presserende ut.\nLeverandøren skal ved oppstart demonstrere et sammenhengende saksforløp med syntetiske data: registrering, klassifisering, teknisk arbeid, klinisk avklaring og lukking. Demonstrasjonen skal også vise en avvist endring og en feil som sendes videre til en ekstern leverandør. En ideell sak uten avvik dekker ikke de viktigste samarbeidsrisikoene.\nHRHs kontrollfunksjon skal kunne se en sakshistorikk som skiller fakta fra operatørens vurdering. Interne notater som inneholder unødvendige personopplysninger, skal ikke eksponeres i en bred rapport. Samtidig må nødvendig beslutningshistorikk bevares. Leverandøren skal foreslå en praktisk tilgangsmodell som oppfyller begge hensynene og vise den i testen.\nEndringer i roller eller grupper skal gjennomgås når ansvar flyttes. Det skal ikke være nok å endre navnet på en kø hvis den nye gruppen mangler tilgang til nødvendig dokumentasjon. Overføring av ansvar skal ha en kontroll av verktøy, kontaktvei og kompetanse. Den gamle gruppen skal ikke bli sittende med et skjult varig ansvar fordi overføringen bare ble gjort i organisasjonskartet.\nDette er slutten av det fiktive driftsbilaget. Teksten angir operative krav og praktiske forventninger, men er ikke en signert avtale med en bestemt leverandør. Der konkurransegrunnlagets endringsbrev uttrykkelig erstatter en bestemmelse, skal den nye teksten brukes. Uavklarte forhold som ikke omtales i et slikt brev, forblir uavklart. Leverandørens senere forslag kan ikke i seg selv løse en motstrid i oppdragsgivers dokumenter."
+    },
+    {
+      "id": "healthcare-endring",
+      "title": "Helsevik Regional Helsedrift – endringsbrev 02, 18. november 2026",
+      "role": "supporting_document",
+      "file_name": "helsevik_endringsbrev_02_fiktivt.txt",
+      "raw_text": "[[SIDE:1]]\nFIKTIVT ENDRINGSBREV 02 — PUBLISERT AV HELSEVIK REGIONAL HELSEDRIFT\nDato: 18. november 2026. Dette er et oppdiktet endringsbrev til den syntetiske konkurransen om regional infrastruktur og drift. Det inneholder ingen virkelige anskaffelsesbeslutninger. Brevet er utstedt av oppdragsgiver i testhistorien og er en del av konkurransedokumentene, ikke en leverandørkommentar.\n\nE1. Virkning og presis avgrensning\nEndringsbrev 02 erstatter bare bestemmelsene som er uttrykkelig identifisert nedenfor. Konkurransegrunnlaget og driftsbilag B gjelder ellers uendret. Tilbudte arbeidsmetoder skal fortsatt skilles fra minstekrav. Når dette brevet stiller et nytt dokumentasjonskrav, skal leverandøren vise hvor i tilbudet det er besvart.\nOppdragsgiver publiserer brevet etter skriftlige spørsmål fra leverandørdialogen. Spørsmålene er sammenfattet uten å identifisere noen virkelig virksomhet. Det er svarteksten og de uttrykkelige erstatningene som gjelder. Et spørsmål som inneholder en antakelse, gjør ikke antakelsen til et godkjent krav.\nBrevet endrer lagringstid for administratoropptak, ordinært servicevindu, kontrollfrist etter akseptansetest, opplegg for superbrukeropplæring og varsel om planlagt feltarbeid. Det presiserer også grunnlaget for en demonstrasjon og oppfølging av energi. Ingen av disse endringene innfører en kalenderdato for klinisk produksjonssetting.\nKravkodene beholder lokal dokumenttilhørighet. En henvisning til K-09 nedenfor viser driftsbilag B, mens K-11 viser konkurransegrunnlaget. Leverandørens egne koder i løsningsforslaget har fortsatt ingen rettslig prioritet over oppdragsgiverens tekst. HRH vil kontrollere at endringsbrevet er forstått gjennom konkrete henvisninger i besvarelsen, ikke bare en generell erklæring om at alle dokumenter er lest.\n\n[[SIDE:2]]\nE2. Revidert oppbevaring av privilegerte økter\nKonkurransegrunnlagets K-11 på side 6 endres: Opptak av privilegerte administratorøkter skal oppbevares i 365 kalenderdager. Den tidligere verdien på 180 kalenderdager erstattes. Omfanget er fortsatt privilegerte økter for driftspersonell og underleverandører; vanlige brukersesjoner omfattes ikke.\nBakgrunnen i denne fiktive konkurransen er at HRH trenger å kunne undersøke hendelsesforløp som oppdages i en senere kontrollsyklus. Den lengre perioden endrer ikke hvilke kontrollfunksjoner som kan lese opptak. Leverandøren skal beskrive kapasitet og automatisk sletting ut fra den nye perioden, ikke beholde gamle estimater uten å forklare konsekvensen.\nTilbyderen skal vise et eksempel på hvordan en konkret sak kan finnes igjen gjennom saksreferanse og tidsrom. Eksemplet skal bruke syntetiske kontoer. Det skal også vise at en operatør som bare utfører ordinær drift, ikke får fri lesetilgang til andre operatørers opptak. Et produkt som støtter lang lagring, men har åpent standardinnsyn, oppfyller ikke hele behovet.\nDette er ikke et krav om at alle andre driftslogger skal lagres i ett år. De loggtypene har egne formål og avtalte perioder. Leverandøren skal derfor unngå å endre oppbevaring for andre data som en utilsiktet følge av dette brevet. En generell produktinnstilling må dokumenteres med hvilke datasett den faktisk påvirker.\nHRH ber om at gammel og ny verdi fremgår av endringsoversikten i tilbudet, mens løsningsbeskrivelsen bruker den gjeldende perioden. Hvis prisskjemaet trenger en justert kapasitetsforutsetning, skal dette vises åpent. Endringen er et minstekrav fra oppdragsgiver, ikke en valgfri utvidelse som kan tilbys bare som opsjon.\n\n[[SIDE:3]]\nE3. Nytt ordinært servicevindu\nKonkurransegrunnlagets K-22 på side 9 erstattes slik: Ordinært teknisk servicevindu er torsdag klokken 22.30 til fredag klokken 00.30 lokal tid. Vinduet krysser midnatt. Kravet om særskilt godkjenning fra lokal tjenesteeier ved mulig klinisk påvirkning videreføres.\nDet tidligere vinduet onsdag klokken 01.00–03.00 skal ikke brukes som gjeldende ordinært vindu. Endringen er valgt for å få bedre tilgang til regional støttefunksjon ved oppstart av arbeidet. Leverandøren skal fortsatt vurdere aktivitet på hvert sted. Et regionalt vindu betyr ikke at alle lokale tjenester kan tas ned samtidig.\nEndringsrådet skal få en oversikt over aktivitet som planlegges på begge sider av midnatt. Sakens dato skal ikke føre til at varsel bare viser torsdagen når en berørt funksjon er utilgjengelig på fredag. Kalenderinvitasjon og statusmelding skal angi både start og slutt med lokal tid, slik at ansatte på nattskift kan forstå perioden.\nServicevinduet gir ikke rett til to timers nedetid. Avtalt kontroll etter arbeidet og lokal bekreftelse skal planlegges innenfor det aktuelle oppdraget. Dersom en endring trenger lengre arbeidstid enn vinduet, må leverandøren be om egen godkjenning og vise konsekvensen for den berørte tjenesten. Det skal ikke kamufleres ved å dele ett sammenhengende avbrudd i flere saker.\nHasteprosessen i konkurransegrunnlaget videreføres. En P1-hendelse på en mandag skal håndteres når den oppstår, og skal ikke utsettes til torsdag fordi dette er ordinært servicevindu. Samtidig skal nødvendige hasteendringer registreres og etterkontrolleres. Endringen av ordinært vindu endrer ingen responsfrist i driftsbilaget.\n\n[[SIDE:4]]\nE4. Dokumentkontroll etter akseptansetest\nKonkurransegrunnlagets K-36 på side 15 endres fra tolv til åtte virkedager. HRH har åtte virkedager til å sende samlet avviksprotokoll etter at komplett testprotokoll og avtalt dokumentasjon for puljen er mottatt. Første virkedag etter komplett mottak er dag én. Stillhet alene er fortsatt ikke godkjenning.\nHensikten er å korte ned tiden mellom teknisk test og beslutning om puljen kan overtas. Leverandøren skal levere en samlet pakke som gjør kontrollen praktisk mulig. Dokumenter som peker til et lukket internt system uten HRH-tilgang, regnes ikke som levert bare fordi filnavnet er listet i oversendelsen.\nHvis HRH påpeker at pakken er ufullstendig, skal partene avklare mangelen i samme sak. Fristen begynner først når den avtalte komplette leveransen foreligger. Det er ikke tillatt å spre nødvendige vedlegg over flere kanaler og deretter regne fra den første korte e-posten. Mottaket skal kunne dokumenteres gjennom avtalt kanal.\nAvviksprotokollen skal skille mellom hindringer for sikker overtakelse og mindre rettinger som kan aksepteres med en plan. Leverandøren kan foreslå klassifisering, men HRH avgjør hva som kan stå åpent. At kontrollfristen er kortere, gir ikke leverandøren adgang til å lukke uenighet som automatisk godkjent.\nEndringen påvirker ikke pilotpakkens leveringsfrist 24. februar 2027 og er ingen ny dato for klinisk produksjonssetting. De funksjonelle forutsetningene for klinisk produksjon må fortsatt være oppfylt. En fullført dokumentkontroll kan derfor være ett nødvendig beslutningsgrunnlag uten i seg selv å være endelig tillatelse til å starte klinisk drift.\n\n[[SIDE:5]]\nE5. Superbrukerverksteder i mindre grupper\nDriftsbilag B K-09 på side 10 erstattes: Grunnopplæringen skal bestå av seks verksteder med maksimalt åtte deltakere i hvert. Tidligere opplegg med fire verksteder og ti deltakere utgår. Innholdet i opplæringen videreføres med praktisk saksregistrering, statusforståelse og varsling av hendelser.\nHRH har valgt mindre grupper fordi deltakerne skal få prøve arbeidsforløp selv. Maksimal størrelse er en grense per verksted, ikke et krav om at HRH skal fylle alle plassene. Det tilbudte grunnopplegget gir dermed kapasitet til inntil 48 deltakere dersom alle seks verkstedene fylles. Ekstra gjennomføringer krever egen bestilling.\nMinst ett verksted skal ha et eksempel fra en nattfunksjon, og minst ett skal øve på en mobil enhet som er tilbake etter arbeid utenfor klinikken. Eksemplene skal fortsatt være fiktive. De skal hjelpe deltakerne å beskrive funksjonell påvirkning uten å legge ved innhold fra virkelige pasientsaker.\nVeiledningen skal vise hvor superbrukeren finner saksreferansen og hvordan vedkommende sjekker neste oppdatering. Den skal også forklare når telefon skal brukes i stedet for å vente på en vanlig portalbestilling. Leverandøren skal gi en kort øvelse som viser forskjellen mellom alvorlig feil, vanlig hendelse og ønske om nytt utstyr.\nDenne endringen setter ingen ny bemanningsnorm for avdelingene. En superbruker er en kontaktfunksjon i opplæringsopplegget og skal ikke omtales som permanent lokal driftstekniker. HRH bestemmer hvem som deltar. Leverandørens oppgave er å levere de avtalte samlingene og dokumentere innhold, deltakelse og oppfølging av ubesvarte spørsmål.\n\n[[SIDE:6]]\nE6. Varsel før ordinært feltarbeid\nDriftsbilag B K-12 på side 11 endres: Ordinært arbeid i behandlingsrom skal varsles minst tre virkedager før planlagt oppmøte. Den tidligere fristen på fem virkedager erstattes. Kravene til varselets innhold, lokal koordinering og hygiene videreføres uendret.\nEndringen skal gi en mer praktisk bestillingsflyt uten å fjerne klinikkens mulighet til å planlegge rombruk. Leverandøren skal fortsatt oppgi berørt romfunksjon og forventet varighet. Det er ikke nok å sende en melding om at en tekniker muligens kommer i løpet av uken. Avtalt tidspunkt skal bekreftes med lokal kontaktfunksjon.\nFristen er en minste varslingstid for planlagt feltarbeid, ikke en rett til å starte arbeidet etter tre dager uten lokal avtale. Hvis rommet ikke kan fristilles, må partene finne et egnet tidspunkt. Dersom det oppstår behov for en annen type inngrep enn varslet, skal den endrede påvirkningen avklares før inngrepet skjer.\nUnntaket for første innsats under en pågående P1-hendelse gjelder fortsatt. Teknikeren skal da følge lokal vaktfunksjons instrukser og dokumentere hvorfor ordinær varsling ikke var mulig. Et langvarig etterslep av planlagte oppgaver skal ikke omklassifiseres til P1 for å omgå varslingsfristen.\nLeverandøren skal vise hvordan feltoppdrag får nødvendig lokal informasjon uten å gi alle teknikere generell tilgang til sensitive romlister. Den enkelte skal få det som trengs til oppdraget. Ved ferdigmelding skal det fremgå hvilken funksjon som har kontrollert at rommet er klart til videre bruk, og hvilke gjenstående forhold HRH må ta stilling til.\n\n[[SIDE:7]]\nE7. Konkretisering av demonstrasjon og målegrunnlag\nTil demonstrasjonen av saksforløp i driftsbilag B16 skal leverandøren levere ett syntetisk eksportsett på høyst 2 GiB. Settet skal inneholde en P1-hendelse, en vanlig utstyrsbestilling, en avvist endring og en sak som overføres til ekstern part. Ingen virkelige brukeridentiteter eller pasientopplysninger skal forekomme.\nHRH skal kunne åpne settet i et isolert kontrollmiljø. Filene skal ha en kort lesebeskrivelse med feltnavn og sammenheng mellom sak og hendelser. Hensikten er å prøve sporbarhet og forståelighet, ikke å gjennomføre en ytelsestest på et stort datasett. Maksimal størrelse er derfor en leveransegrense, ikke et krav om å produsere nøyaktig 2 GiB data.\nEnergirapportering skal bygge på minst 42 sammenhengende døgn med målinger før en forbedring fremstilles som målt effekt. Perioder med større flytting av last skal merkes og forklares. Dette er et nytt krav til dokumentasjonsgrunnlag; det endrer ikke minstekapasiteten eller vektene i tildelingsmodellen.\nEt løsningsforslag kan oppgi forventet energigevinst før måleperioden er fullført, men må da merke tallet som estimat. HRH ønsker synlig usikkerhet fremfor et presist prosenttall uten grunnlag. Dersom grunnlinjen mangler for en komponent, skal den komponenten ikke skjules i en regional totalsum som gir inntrykk av komplett måling.\nLeverandøren skal vise både avgrensning og måleenhet for forbruket. Sammenligning av elektrisk energi og transportkilometer skal ikke presenteres som én felles prosent uten dokumentert omregning. Tiltak kan ha verdi selv om samlet effekt ennå ikke er målt, men de må da beskrives som gjennomførte tiltak med uavklart resultat.\n\n[[SIDE:8]]\nE8. Forhold som ikke er endret eller avklart\nTildelingskriteriene er fortsatt kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent. Ingen ny vekting av autonom drift eller antall automatiserte steg er vedtatt. Forslag fra leverandører kan omtales under relevante eksisterende kriterier, men er ikke egne kunngjorte kriterier.\nBrevet velger ingen kommunikasjonsprotokoll for de mobile kliniske vognene og bestiller ikke et nytt journalgrensesnitt. Dokumentpakken inneholder heller ingen akseptert enhetspris, avtalt månedssum eller ferdig dagmulktbestemmelse. Slike forhold kan ikke utledes av en teknisk illustrasjon eller av hva som er vanlig i andre avtaler.\nOppdragsgiver har ikke avklart uoverensstemmelsen om Vestsunds reserveoptikker mellom lagerkapitlet og den lokale beredskapsbeskrivelsen i driftsbilag B. Dette brevet endrer ingen av de to tallene og velger ikke hvilken beskrivelse som skal gjelde. Leverandøren må fortsatt stille et skriftlig avklaringsspørsmål om dette punktet.\nDe øvrige tjenestemålene og beslutningsportene videreføres. Pilotpakken er fortsatt en dokumentleveranse med egen frist. Godkjent gjenopprettingstest og signert lokal smitteverngjennomgang er fortsatt forutsetninger før beslutning om klinisk produksjon. Ingen omtale av planlagt rekkefølge mellom stedene oppretter i seg selv en produksjonsdato.\nDette er siste side i det fiktive endringsbrevet. Ingen flere svarbrev, kontraktsforhandlinger eller muntlige avklaringer er en del av testmaterialet. Ved lesing skal en konkret erstattet verdi brukes foran den gamle. Der brevet bare sier at et forhold er uavklart, skal svaret bevare usikkerheten fremfor å velge en tilsynelatende rimelig standardløsning."
+    },
+    {
+      "id": "healthcare-losning",
+      "title": "Nordlys Driftsverk – løsningsforslag for Helsevik",
+      "role": "primary_solution_document",
+      "file_name": "nordlys_helsevik_losningsforslag_fiktivt.txt",
+      "raw_text": "[[SIDE:1]]\nFIKTIVT LØSNINGSFORSLAG — NORDLYS DRIFTSVERK AS\nDette dokumentet er et syntetisk leverandørforslag til den oppdiktede konkurransen for Helsevik Regional Helsedrift. Nordlys Driftsverk AS er et oppdiktet selskap. Produktnavn og arbeidsmetoder i notatet er fiktive betegnelser. Forslaget er ikke signert kontrakt og er ikke et endringsbrev fra oppdragsgiver.\n\nL1. Tilbudt retning og avgrensning\nVi foreslår en felles driftsflate som gir operatørene sammenheng mellom tekniske observasjoner, tjenesteeiere og klinisk påvirkning. Løsningen skal redusere behovet for å lete i flere uavhengige lister under en hendelse. HRHs eksisterende systemer beholdes der de gir nødvendig funksjon. Vi foreslår ikke en full utskifting av alle kliniske applikasjoner eller medisinske apparater.\nKrav med samme kode i ulike dokumenter håndteres som separate poster i vår besvarelsesmatrise. Konkurransegrunnlagets K-01 knyttes til brukbar fillagring, mens driftsbilagets K-01 knyttes til menneskelig bekreftelse av P1. Endringsbrev 02 brukes for de fem uttrykkelig endrede bestemmelsene. Vår egen arbeidsmetode merkes som tilbudt metode og skal ikke forveksles med nye minstekrav fra HRH.\nDriftsflaten samler oversikt, ikke nødvendigvis alt innhold. En operatør skal kunne følge en hendelse til riktig kilde uten at pasientdata kopieres til en ny sentral database. Vi legger vekt på kontrollerte uttrekk og navngitte eiere. Før et nytt datainntak åpnes, skal det vises hvilket formål det har og hvem som har godkjent det.\nForslaget er skrevet for en konkurransefase. Kapasitet og bemanning nedenfor er vår tilbudte plan innen angitte forutsetninger. Priser er ikke ferdigstilt i dette notatet. HRHs godkjenning av en demonstrasjon kan ikke tas som godkjenning av alle senere utvidelser. Endringer i omfang skal behandles i den avtalte beslutningsprosessen.\n\n[[SIDE:2]]\nL2. Etableringsteam og oppgavefordeling\nDet foreslåtte etableringsteamet består av én overgangsleder, to plattformingeniører og tre lokale feltteknikere. Dette er seks personer i etableringsfasen, ikke en oppgitt fast vaktbemanning for hele kontraktsperioden. Den løpende vaktplanen skal dokumenteres separat før operativ overtakelse.\nOvergangslederen følger beslutningsporter, avhengigheter og samlet risikobilde. Plattformingeniørene etablerer målegrunnlag, tilgangskontroller og tekniske tester. Feltteknikerne verifiserer lokale registerdata, møter kontaktfunksjoner og gjennomfører avtalt praktisk arbeid. De tre rollene skal samarbeide om samme puljeplan, slik at en lokal utstyrsfeil ikke blir stående som en usynlig avhengighet i plattformsporet.\nVi vil ha en navngitt stedfortreder for overgangslederen. Stedfortrederen trenger ikke være en ekstra fulltidsressurs, men må kjenne beslutningsgrunnlaget og ha tilgang til prosjektets åpne saker. Fravær skal ikke føre til at HRH mister oversikt over hvilke forutsetninger som gjenstår. Tekniske godkjenninger skal likevel gis av riktig fagfunksjon og ikke av en prosjektleder uten nødvendig grunnlag.\nVed samtidige hendelser på flere steder vil den regionale hendelseslederen prioritere etter faktisk klinisk påvirkning sammen med HRH. Etableringsteamets lokale fordeling er ikke ment som en regel om at hvert sted bare kan få hjelp av én bestemt tekniker. Arbeid kan omfordeles, men flytting av kapasitet skal vises i planen.\nVi forutsetter at HRH utpeker tjenesteeiere og gir tilgang til avtalt inventargrunnlag. Hvis dette ikke er klart, vil vi dokumentere hvilke aktiviteter som kan fortsette og hvilke som må vente. Vi vil ikke fylle manglende eierskap med en antatt godkjenner fra en kontaktliste. En kontakt kan gi opplysninger uten å ha myndighet til å akseptere risiko.\n\n[[SIDE:3]]\nL3. Kartlegging de første ukene\nDen første kartleggingsfasen er planlagt til seks uker. Uke 1–2 brukes til inventar og avhengigheter, uke 3–4 til målegrunnlag og lokale arbeidsforløp, og uke 5–6 til verifisering av funn og forslag til puljeplan. Dette er en tilbudt arbeidsplan regnet fra avtalt prosjektstart, ikke kalenderdatoer fastsatt av HRH.\nInventaret sammenholdes med teknisk registrering og lokale observasjoner. Uoverensstemmelser skal føres som konkrete saker med kilde og kontrollbehov. Dersom to maskiner har samme visningsnavn, skal vi undersøke identiteten før poster slås sammen. Målet er et brukbart grunnlag for drift, ikke bare at summen passer med et forventet tall.\nKartleggingen av arbeidsforløp skal ta utgangspunkt i oppgaver ved resepsjon, døgnpost og ambulerende team. Vi vil spørre hva som stopper arbeidet ved teknisk feil, hvilke midlertidige tiltak som faktisk brukes og hvem som kan bekrefte normalisering. Vi vil ikke kopiere pasientinnhold for å dokumentere et vanlig forløp.\nMålegrunnlaget skal få en beskrivelse av tidspunkt, valgt kontroll og teknisk avgrensning. Tjenester med svært ulik belastning skal ikke sammenlignes gjennom ett rått gjennomsnitt. Hvis en datakilde mangler, skal vi markere gapet og foreslå hvordan det kan lukkes. Manglende måling skal ikke gjøres om til en antatt verdi i prosjektets rapport.\nVed slutten av fasen leveres et samlet funnnotat med prioriterte avhengigheter og et utkast til puljer. HRH beslutter hvilke funn som krever endret rekkefølge eller særskilt risikohåndtering. Notatet skal også vise hva som ikke er undersøkt, slik at en kort kartlegging ikke feilaktig oppfattes som full kontroll av alle kliniske integrasjoner.\n\n[[SIDE:4]]\nL4. Innsamling av driftsobservasjoner\nVi tilbyr observasjonskomponenten Fyrlys for tekniske målepunkter. Fyrlys samler tidsstempel, pseudonymisert enhetsnøkkel, måleverdi og teknisk feilkode. Komponenten skal ikke samle skjermbilder, tastetrykk eller innholdet i journalmeldinger. Beskrivelsen gjelder den tilbudte komponenten; den er ikke en påstand om hvilke data alle eksisterende systemer hos HRH allerede samler.\nEn enhetsnøkkel skal kunne kobles til riktig teknisk post av autorisert driftspersonell. Den regionale oversikten trenger som regel ikke å vise hvem som brukte enheten. Vi vil skille den tekniske tidsserien fra sakens eventuelle kontaktopplysninger. Dette gjør det mulig å se mønster uten at alle som leser en kapasitetsgraf, får innsyn i brukerens henvendelse.\nNye målepunkter skal gå gjennom en inntakskontroll med formål, eier og oppbevaring. Vi vil teste både normal måling og feil i målekanalen. En sensor som slutter å sende, skal ikke oppfattes som en tjeneste med perfekt tilstand. På samme måte skal en feilkode ikke automatisk oversettes til en bestemt klinisk konsekvens uten støtte fra tjenestekartet.\nData fra test og produksjon merkes separat. Et høyt volum fra en teknisk øvelse skal ikke telle som et reelt avbrudd i den ordinære tilgjengelighetsrapporten. Samtidig skal observasjoner fra øvelsen bevares i øvelsesrapporten. Filtrering skal derfor være etterprøvbar og ikke slette alle spor etter at en test ble gjennomført.\nFør oppstart vil vi demonstrere et lite målesett med fiktive enheter. HRH skal kunne følge et målepunkt fra kilde til oversikt og kontrollere hvordan en ugyldig verdi merkes. Demonstrasjonen vil også vise hvordan et målepunkt fjernes kontrollert når formålet opphører, uten at andre tjenester mister nødvendige observasjoner.\n\n[[SIDE:5]]\nL5. Frakoblet drift og lokal buffer\nFyrlys-kollektoren har en lokal buffer for inntil 72 timer med driftsmålinger ved brudd i forbindelsen til den regionale flaten. Etter gjenopprettet forbindelse sendes målingene med opprinnelige tidsstempler og en markering av ettersending. Bufferen er ikke en garanti for at en klinisk applikasjon kan kjøre frakoblet i 72 timer.\nVed full buffer skal den eldste usendte målingen erstattes først, og tapet skal telles. Vi vil vise antall tapte observasjoner i en egen kvalitetsindikator. En etterfylt tidsserie kan ikke presenteres som ubrutt sanntidsovervåking hvis operatørene faktisk var uten kontakt. Lokale varsler og regional innsamling skal derfor beskrives som to ulike funksjoner.\nKollektoren bruker en egen teknisk identitet med tilgang til de avtalte målepunktene. Den skal ikke få generell lesetilgang til brukermapper eller meldingsinnhold. Nøkler til transporten skal forvaltes i godkjent lager og kunne skiftes kontrollert. Vi foreslår en test der en ugyldig nøkkel gir en tydelig teknisk feil uten at systemet prøver å sende data i en ubeskyttet kanal.\nNår en lokal forbindelse gjenopprettes, skal overføringen begrenses slik at ettersending ikke fortrenger viktig løpende trafikk. Hastigheten må tilpasses den faktiske lokasjonen. Vi vil derfor måle virkningen på testmiljø og avtale grenser før utrulling. En stor buffer er ikke tilstrekkelig hvis den tømmes på en måte som skaper et nytt driftsproblem.\nVi vil teste brudd, omstart av kollektor, tidsavvik og nesten full buffer. Testen skal vise om dataene beholder rekkefølge og om duplikater håndteres. HRH får en lesbar oversikt over hvilke observasjoner som mangler. Vi vil ikke interpolere bort et hull og omtale de beregnede punktene som faktiske målinger.\n\n[[SIDE:6]]\nL6. Lagring og kontroll av gjenoppretting\nFilplattformen dimensjoneres etter HRHs krav til brukbar kapasitet, ikke rå diskstørrelse. I den tekniske skissen viser vi reserve, lokal redundans og brukerplass i separate felt. Replikert kopi får egen komponentrad. Utvidelse skal testes med en liten kontrollert datamengde slik at navnerom og tilgang forblir stabilt når kapasiteten økes.\nVi tilbyr en separat gjenopprettingskopi som kontrolleres i isolert testmiljø hver sjette uke. Kontrollen skal vise at en valgt tjeneste kan startes fra kopien, ikke bare at kopifilene er lesbare. Dette er en tilbudt tilleggskontroll mellom HRHs regionale øvelser og erstatter ikke de avtalte øvelsene i mars og oktober.\nDen isolerte kopien skal ikke ha direkte skriverett til produksjon. Hvis en test oppdager korrupsjon, skal funnet undersøkes uten at produksjonsdata overskrives. Testmiljøet merkes tydelig, og utgående forbindelser begrenses til det prøven krever. HRH skal kunne se at en vellykket prøvemelding ble behandlet i test og ikke ble sendt videre til en ekte mottaker.\nVi vil dokumentere kjeden mellom kopi, valgt tidspunkt og funksjonell prøve. For laboratoriekøen skal prøven avgrenses mot instrumentenes faglige prosess. For dokumentarkivet skal søk og gjenfinning inngå i den avtalte tekniske prøven. Forskjellen mellom tjenestene skal bevares i rapporten, slik at et godt arkivresultat ikke brukes til å erklære laboratoriekøens mål oppfylt.\nVed mislykket gjenoppretting opprettes en avvikssak med kjent påvirkning og neste test. Vi foreslår at samme feilmønster kontrolleres på flere kopier før en kopi omtales som pålitelig. Eventuell bruk av en eldre kopi må forklares med konsekvens for datatap. Valget skal tas gjennom hendelsesledelsen og ikke skjules som en vanlig nattlig jobb.\n\n[[SIDE:7]]\nL7. Foreslått rekkefølge for innføring\nVår foreslåtte innføringsrekkefølge er Vestsund først, deretter Dalenga og til slutt Fjordhavn. Rekkefølgen er en leverandørplan som HRH må godkjenne. Den fastsetter ingen produksjonsdato og endrer ingen av beslutningsportene i konkurransegrunnlaget. Lokale forhold kan gjøre at en pulje må omarbeides før vedtak.\nVestsund foreslås først fordi oppholdsskiftene gir mulighet til å prøve et avgrenset arbeidsforløp med lokale kontakter. Vi vil starte med en liten representativ gruppe og beholde en kontrollert tilbakeføring. At resepsjonen stenger på kvelden, betyr ikke at døgnposten er ledig for uvarslet arbeid. Planen skal derfor skille kontoroppgaver og døgnfunksjoner.\nDalenga foreslås som neste sted for å kontrollere at arbeidsflater som er ute med team, håndteres når de kommer tilbake. Vi vil ha en oversikt over hvilke enheter som faktisk har møtt inn og hvilke som fortsatt er ute. En ferdig status for byggets nettverk skal ikke brukes til å erklære alle bærbare enheter ferdige.\nFjordhavn tas til slutt i denne skissen fordi flere felles avhengigheter må være verifisert. Vi vil dele hovedbygget og de polikliniske fløyene i egne beslutningspakker. En vellykket pulje i en fløy gir ikke automatisk tillatelse til å flytte en døgnkritisk funksjon. De lokale tjenesteeierne skal kunne se akkurat hva deres del av planen innebærer.\nAlle puljer skal ha definerte stoppunkter. Dersom en forutsetning faller bort, skal operatørene vite om de skal stoppe, fortsette avgrenset eller tilbakeføre. Vi vil unngå en plan der prosjektledelsen må improvisere disse valgene under nattarbeid. Endelig beslutning om produksjon krever fortsatt HRHs uttrykkelige godkjenning og de spesifiserte kontrollene.\n\n[[SIDE:8]]\nL8. Kunnskapsgrunnlag og operative veiledninger\nVi tilbyr 18 operative veiledninger ved overtakelse: seks for hendelseshåndtering, sju for plattformdrift og fem for lokalt feltarbeid. Antallet gjelder selvstendige veiledninger med avgrenset oppgave, ikke antall sider eller skjermbilder. Innholdslisten skal gjennomgås med HRH under kartleggingen for å kontrollere at de viktigste arbeidsforløpene er dekket.\nHver veiledning skal ha forutsetninger, nødvendige tilganger, kontroll før start, utførelse, forventet resultat og stoppkriterium. Dersom et steg kan påvirke klinisk arbeid, skal det fremgå hvem som kan godkjenne det. Vi vil ikke legge en generell formulering om forsiktighet øverst og deretter utelate konkrete risikopunkter i de trinnene der de oppstår.\nVeiledningene skal testes av en annen operatør enn den som skrev første utkast. Testeren skal bruke fiktive saker eller godkjent testmiljø og notere hvor teksten krever muntlig forklaring. En veiledning er ikke klar bare fordi forfatteren selv kan gjennomføre oppgaven. Oppdagede hull skal rettes før den føres som overlevert.\nFeltveiledningene vil blant annet dekke kontroll av utlånsenhet, registrert uttak av reservekomponent og tilbakelevering av behandlingsrom. Plattformveiledningene vil dekke kontrollert oppstart, måling av lagring og test av gjenopprettingskopi. Hendelsesdelen vil vise klassifisering, status til klinisk koordinator og overføring til ekstern part uten å miste eierskap.\nVed endring skal veiledningen få en ny versjon med kort beskrivelse av hva som er endret. Operatørene skal kunne se hvilken versjon en hendelse ble håndtert etter. Vi vil ikke skrive over historisk tekst uten spor dersom den er nødvendig for å forstå en tidligere beslutning. Samtidig skal vanlig søk prioritere den gjeldende veiledningen, slik at gamle råd ikke dukker opp som første anbefaling.\n\n[[SIDE:9]]\nL9. Kontrollert automatisering\nVi tilbyr automatisering for utvalgte, reversible tekniske oppgaver etter HRHs godkjenning. Første kandidat er opprydding i midlertidige tekniske filer på et navngitt testområde. Kandidaten omfatter ikke sletting i brukerområder eller endring av kliniske data. Hver automatisering skal ha avgrenset identitet og et konkret stoppkriterium.\nEn ny automatisk regel skal vurderes av to operatører og kjøre i sammenligningsmodus i tre døgn før aktivering. I sammenligningsmodus beregner regelen hva den ville gjort, men utfører ingen endring. Dette er vår tilbudte arbeidsmetode, ikke et nytt eksplisitt minstekrav i oppdragsgivers dokumenter. HRH må fortsatt godkjenne bruken i den aktuelle tjenesten.\nSammenligningen skal vise både treff og foreslåtte handlinger som ville vært feil. Høy treffrate alene er ikke nok dersom de få feilene har alvorlig konsekvens. Vi vil se på hvilke situasjoner regelen ikke kjenner igjen, og om den kan stoppe trygt. Når data mangler, skal regelen ikke finne på en verdi for å komme videre til neste steg.\nEtter aktivering skal loggen vise årsak, utført handling og kontrollert resultat. En operatør skal kunne slå av regelen uten å miste historikken. Hvis automatiseringen bare reduserer operatørens klikk, skal den ikke omtales som autonom feilretting. Vi ønsker at beskrivelser av nytte kan kontrolleres mot faktisk oppgave og risiko.\nVi foreslår en kontroll av aktiv regeloversikt i det månedlige driftsmøtet. Regler som ikke lenger har eier, eller som bygger på gamle forutsetninger, skal vurderes på nytt. Det er ikke et mål å øke antall regler uansett nytte. Manuell håndtering kan være riktig for sjeldne oppgaver med stor konsekvens eller for situasjoner der datagrunnlaget er usikkert.\n\n[[SIDE:10]]\nL10. Leverandørens idé til et annet vurderingskriterium\nI dialogen foreslo Nordlys Driftsverk at «autonom driftsgrad» kunne få 20 prosent vekt i en fremtidig tildelingsmodell. Dette var et leverandørforslag og er ikke vedtatt av HRH. Vi gjengir ideen for å forklare vår faglige retning, ikke som en påstand om at den gjeldende konkurransen har et slikt kriterium.\nDen kunngjorte modellen må brukes ved besvarelsen. Vår omtale av automatisering skal derfor støtte dokumentasjon under kvalitet der den er relevant, uten at vi legger til en ny prosentsats. Et stort antall automatiserte handlinger sier uansett lite om klinisk nytte hvis handlingene er trivielle eller krever mye etterkontroll. Vi vil vise avgrenset verdi per brukstilfelle.\nEt mulig fremtidig mål kunne være tid fra oppdaget kjent feil til verifisert kontrollert tiltak. Før et slikt mål brukes, må oppdragsgiver bestemme datagrunnlag, avgrensning og håndtering av feilslåtte tiltak. Vi hevder ikke at en slik metode allerede er avtalt. Den kan heller ikke brukes til å omskrive vektene som er angitt i konkurransegrunnlaget og videreført i endringsbrevet.\nVed evaluering av vårt faktiske tilbud kan HRH kontrollere eksempel, tilgangsgrense og etterprøvbar utførelse. Vi vil vise både vellykket og avbrutt kjøring i testmiljøet. En avbrutt kjøring kan være riktig resultat hvis forutsetningen ikke var oppfylt. Resultatene skal beskrives med hva som faktisk skjedde, ikke bare en overordnet merkelapp om kunstig intelligens.\nVi oppgir ikke en garantert reduksjon i HRHs bemanning. Eventuell spart tid skal måles sammen med endret arbeidsmengde og brukes av HRH til egen prioritering. Leverandøren har ikke myndighet til å vedta hvordan kliniske eller administrative stillinger skal disponeres. Ingen formulering om automatisering i dette forslaget er en bestilling om å avvikle lokal kompetanse.\n\n[[SIDE:11]]\nL11. Miljøtiltak og økonomiske forutsetninger\nVi foreslår en plan for å beholde egnede arbeidsstasjoner lenger og samordne ikke-kritiske utstyrsleveranser. Før ombruk skal teknisk støtte og sikker tilstand kontrolleres. Det skal ikke loves en miljøgevinst for utstyr som bare flyttes til et annet lager. Vi vil vise antall enheter som faktisk tas i ny bruk og hvor mange som fortsatt venter på avklaring.\nEn foreløpig modell antyder 9–13 prosent lavere elektrisk energibruk i den delen av plattformen som inngår i modellen. Intervallet er et usikkert estimat og ingen garanti. Det bygger på planlagt konsolidering og må revideres når målegrunnlaget foreligger. Modellen omfatter ikke all energibruk ved de tre behandlingsstedene.\nVi vil følge endringsbrevets krav om minst 42 sammenhengende døgn med målinger før vi omtaler en forbedring som målt effekt. Perioden skal dekke vanlig variasjon, og særskilte hendelser skal forklares. Dersom en tjeneste flyttes ut av måleområdet, må rapporten vise dette slik at redusert lokalt forbruk ikke feilaktig tolkes som regional innsparing.\nPrisfeltene for etablering, arbeidsstasjoner og plattformdrift er ikke fylt ut i dette løsningsnotatet. Vi har derfor ingen oppgitt bindende månedssum å vise til. Kostnadsdrivere er beskrevet for å gjøre det senere prisskjemaet forståelig. Et regneeksempel uten pris er heller ikke grunnlag for å beregne HRHs faktiske betaling.\nFornyelsesforslag skal sammenligne videreføring, avgrenset oppgradering og utskifting der det er reelle alternativer. Vi vil synliggjøre usikkerhet i levetid og anskaffelsesbehov. En rimelig innkjøpspris kan ha høy driftskostnad, og en kostbar komponent kan være riktig når avbruddskonsekvensen er stor. Valget skal begrunnes i HRHs behov, ikke i et generelt mål om mest mulig nytt utstyr.\n\n[[SIDE:12]]\nL12. Eksempelforløp ved lokal nettverksfeil\nVårt demonstrasjonsforløp starter med at flere arbeidsflater ved Dalenga mister tilgang til en delt tjeneste mens lokal utskrift fortsatt virker. Operatøren registrerer observasjonen uten å konkludere med at hele bygget er uten nett. Tjenestekartet viser hvilke felles komponenter som kan forklare kombinasjonen av symptomer. Den lokale kontaktfunksjonen bekrefter hvilke oppgaver som faktisk er stoppet.\nHendelseslederen fordeler kontroll av forbindelse og plattformtilgang til forskjellige operatører. Begge fører observasjoner i samme logg. Dersom en mulig retting krever kort avbrudd for en annen funksjon, legges den konsekvensen frem før tiltaket utføres. En allerede alvorlig feil gir ikke operatørene fri adgang til å prøve alle endringer uten klinisk koordinering.\nNår en defekt reservekomponent tas fra lager, knyttes uttaket til hendelsen. Beholdningen blir redusert umiddelbart i oversikten. Bestilling av erstatning håndteres som en egen oppfølgingsoppgave med driftsbilagets frist. Demonstrasjonen skiller dermed mellom å løse den aktuelle feilen og å gjenopprette beredskapen etterpå.\nEtter retting kjøres en funksjonell prøve fra den berørte arbeidsflaten. Lokal kontakt bekrefter at oppgaven kan gjennomføres, og teknisk operatør dokumenterer at overvåkingen ser normal ut. Dersom det fortsatt er et hull i måledataene, vises dette i rapporten. Et vellykket arbeid skal ikke skjule at bevisgrunnlaget for deler av tidslinjen mangler.\nEksemplet er laget med fiktive identiteter og representerer ikke en virkelig hendelse. Det skal brukes til å vise samarbeidsform og dokumentasjon. Vi vil ikke oppgi resultatet som målt responstid i ordinær drift eller bruke det til å bevise at alle mulige nettverksfeil kan løses på samme måte. HRH skal kunne endre scenarioet for å prøve en annen relevant avhengighet.\n\n[[SIDE:13]]\nL13. Eksempelforløp ved tap av en bærbar enhet\nEn ambulerende medarbeider melder at en administrert bærbar enhet ikke kan finnes etter et oppdrag. Operatøren registrerer tidspunkt, teknisk identitet og kontaktvei uten å be om pasientopplysninger i fritekst. Saken sendes til riktig sikkerhetsfunksjon for vurdering av tiltak. En vanlig bestilling av erstatningsutstyr må ikke få den opprinnelige hendelsen til å forsvinne.\nVi vil vise hvordan nødvendige opplysninger kan deles med autorisert sikkerhetsfunksjon mens den regionale driftsrapporten bare viser kategorien og status. Tekniske tiltak skal dokumenteres med hva som faktisk er bekreftet. Et utsendt signal om sperring er ikke det samme som bekreftet gjennomført sperring på en enhet som er uten kontakt.\nHvis en utlånsenhet utleveres, skal den være kontrollert og ha riktig godkjent oppsett. Den skal knyttes til en egen utleveringspost slik at den kan spores ved retur. Operatøren skal ikke overføre alle lokale data fra en gammel mappe uten å vite at innholdet tilhører riktig bruker og er egnet til formålet. HRH bestemmer nødvendige godkjenninger.\nNår den opprinnelige enheten senere dukker opp, settes den ikke automatisk tilbake i bruk. Teknisk tilstand, mulige endringer og status for tidligere tiltak må avklares. Sikkerhetsfunksjonens vurdering skal knyttes til hendelsen. Utlånsenheten kan først merkes tilgjengelig etter kontrollert retur og klargjøring.\nEksemplet tester samtidig hendelse, personvern, utlån og etterkontroll. Vi vil bruke syntetiske enheter og kunstige tidsstempler. Det er ikke ment som en uttømmende sikkerhetsprosedyre for enhver virkelig hendelse. Det skal vise at vår driftsflate beholder en sammenhengende historie uten at hver funksjon kopierer hele innholdet inn i sitt eget uavhengige dokument.\n\n[[SIDE:14]]\nL14. Forutsetninger, forbehold og sluttstatus\nVi har ikke avklart HRHs motstridende tall for lokale reserveoptikker på Vestsund. I tilbudets avklaringsliste står derfor et spørsmål om hvilket av de to måltallene som skal gjelde. Vi vil ikke presentere en egen lagerdimensjon som om oppdragsgiver allerede har godkjent den. Begge kildehenvisningene skal følge spørsmålet.\nKommunikasjonsprotokoll for mobile kliniske vogner er heller ikke valgt i forslaget. Vi beskriver bare en måte å legge til en senere valgt forbindelse gjennom et avgrenset teknisk grensesnitt. Det gis ingen forpliktelse til en bestemt protokoll eller et nytt journalgrensesnitt som HRH ikke har bestilt. Eventuell videre avklaring må angi funksjon, ansvar og akseptkriterier.\nVi vil levere tilbudt dokumentasjon i en form HRH kan lese og eksportere. Interne produktnavn skal forklares, og avhengigheter til eventuelle lisensierte verktøy skal vises. Det skal være mulig å følge en saksreferanse uten å kjenne leverandørens organisasjonskart. Overleveringen må prøves med en mottaker som faktisk bruker HRHs avtalte tilgang.\nFør overtakelse foreslår vi et felles møte om gjenværende risiko. Møtet skal vise hvilke forhold som er rettet, hvilke som er akseptert av HRH, og hvilke som fortsatt hindrer en pulje. En god presentasjon eller en ferdig signert deltakerliste er ikke nok til å endre status. Beslutningene skal føres i en konkret logg med ansvarlig funksjon.\nDette er siste side i det fiktive løsningsforslaget. Dokumentet viser en tilbudt måte å arbeide på, ikke en ferdig gjennomført leveranse. Tall om planlagt team, lokal buffer og antall veiledninger beskriver forslaget. De skal ikke gjengis som bevis på faktisk produksjonsdrift, inngått prisavtale eller vedtatte nye tildelingskriterier. Bare det som står i dokumentpakken, kan legges til grunn i denne syntetiske testen."
+    }
+  ],
+  "saved_analysis": {
+    "customer_profile_summary": "Helsevik Regional Helsedrift er en uttrykkelig fiktiv regional helseaktør med Fjordhavn sykehus, Vestsund rehabiliteringssenter og Dalenga distriktsklinikk. Anskaffelsen omfatter felles infrastruktur og drift for 1 840 administrerte arbeidsstasjoner, 126 virtuelle servere og 38 nettverkssoner. HRH har egne tjenesteeiere for kliniske applikasjoner; kliniske apparater omfattes bare av tilkoblingskontroll og registrering av kontaktpunkt.",
+    "customer_goals_summary": "HRH ønsker færre uplanlagte avbrudd, bedre oversikt over tekniske avhengigheter og etterprøvbar hendelseshåndtering. Arbeidsforløp, gjenoppretting og tilgangskontroll skal kunne prøves og dokumenteres. Egnet utstyr skal videreføres; miljøeffekt og besparelser skal dokumenteres med målinger fremfor generelle løfter.",
+    "executive_summary": "Den fiktive konkurransen kombinerer infrastrukturkrav med et operativt driftsbilag. Endringsbrev 02 erstatter fem uttrykkelig angitte bestemmelser og går foran de gamle verdiene, men avklarer ikke motstridende lagertall for Vestsund. Kunngjort vekting er kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent. Nordlys Driftsverks separate løsningsforslag beskriver en arbeidsmetode og er ingen inngått kontrakt. Pilotpakkens dokumentfrist er skilt fra forutsetningene for klinisk produksjon. Dokumentpakken gir ikke bindende pris eller valgt protokoll for mobile kliniske vogner."
+  },
+  "cases": [
+    {
+      "id": "healthcare-factual-01",
+      "kind": "factual",
+      "question": "Hvilke samlede mengder av arbeidsstasjoner, virtuelle servere og nettverkssoner inngår ved kontraktsstart?",
+      "expected": "Inventargrunnlaget er 1 840 administrerte arbeidsstasjoner, 126 virtuelle servere og 38 nettverkssoner. Dette beskriver omfanget ved start, ikke et minimumskjøp av nytt utstyr.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Ved kontraktsstart omfatter tjenesteomfanget 1 840 administrerte arbeidsstasjoner, 126 virtuelle servere og 38 nettverkssoner. Tallene er inventargrunnlag, ikke et minimumskjøp av nye enheter.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-02",
+      "kind": "factual",
+      "question": "Hvor mange virtuelle servere har lokal tjenesteeier på Fjordhavn, og betyr det at alle disse serverne fysisk står der?",
+      "expected": "Tabellen angir 82 virtuelle servere med lokal tjenesteeier ved Fjordhavn. Tabellen beskriver eierskap, ikke nødvendigvis fysisk plassering; man kan ikke slutte at alle 82 fysisk står der.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Sted | Arbeidsstasjoner | Virtuelle servere med lokal tjenesteeier | Nettverkssoner\nFjordhavn | 1 120 | 82 | 24\nVestsund | 460 | 28 | 9\nDalenga | 260 | 16 | 5",
+          "page": 3
+        },
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Tabellen angir ikke fysisk plassering av alle virtuelle servere. En server med tjenesteeier ved Vestsund kan kjøres i felles datasenter.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-03",
+      "kind": "factual",
+      "question": "Hva betyr K-01 i konkurransegrunnlaget for filplattformens minste brukbare størrelse og senere utvidelser?",
+      "expected": "I konkurransegrunnlaget gjelder K-01 minst 96 TiB brukbar kapasitet etter lokal redundans, uten å telle kopi på annet sted. Utvidelse skal kunne skje i trinn på 12 TiB uten nytt navnerom. Dette er lagringskravet, ikke driftsbilagets P1-krav.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-01: Den delte filplattformen skal tilby minst 96 TiB brukbar kapasitet etter at lokal redundans er trukket fra. Replikert kopi på annet sted teller ikke med i denne kapasiteten. Plattformen skal kunne utvides i trinn på 12 TiB uten ny navnestruktur for brukerne.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-04",
+      "kind": "factual",
+      "question": "Krever nettverket to internettleverandører ved hvert behandlingssted, eller gjelder dobbeltføringen noe annet?",
+      "expected": "Kravet gjelder to uplinker fra kjernesvitsjlaget ved hvert sted, uavhengige i strøm og fysisk føringsvei frem til lokalt termineringspunkt. To internettleverandører per sted kreves ikke.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-07: På hvert behandlingssted skal det være to uavhengige uplinker fra kjernesvitsjlaget. Uavhengigheten gjelder strømforsyning og fysisk føringsvei fra teknisk rom til det lokale termineringspunktet. Konkurransen krever ikke to internettleverandører på hvert sted.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-05",
+      "kind": "factual",
+      "question": "Hvor lenge skal opptak under K-11 oppbevares når endringsbrevet er tatt med, og hvilke økter gjelder det?",
+      "expected": "Gjeldende periode er 365 kalenderdager for privilegerte administratorøkter utført av driftspersonell og underleverandører. Endringsbrev 02 erstatter de opprinnelige 180 dagene. Vanlige brukersesjoner omfattes ikke.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-11: Privilegerte administratorøkter skal tas opp i en egen revisjonslogg, og opptakene skal oppbevares i 180 kalenderdager.",
+          "page": 6
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Konkurransegrunnlagets K-11 på side 6 endres: Opptak av privilegerte administratorøkter skal oppbevares i 365 kalenderdager. Den tidligere verdien på 180 kalenderdager erstattes. Omfanget er fortsatt privilegerte økter for driftspersonell og underleverandører; vanlige brukersesjoner omfattes ikke.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-06",
+      "kind": "factual",
+      "question": "Uttrykt i timer: hvor mye data kan laboratoriets bestillingskø maksimalt tape, og hvor raskt må den gjenopprettes når måleperioden har startet?",
+      "expected": "Største tillatte datatap er 20 minutter, tilsvarende en tredels time. Gjenoppretting skal være innen 150 minutter, tilsvarende 2,5 timer. Måleperioden starter når HRH har erklært gjenopprettingshendelse og gjort nødvendig miljø tilgjengelig; målene gjelder køen, ikke instrumentenes behandlingstid.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-14: For laboratoriets bestillingskø er største tillatte datatap ved gjenoppretting 20 minutter, og tjenesten skal kunne gjenopprettes innen 150 minutter. Tiden regnes fra HRH har erklært gjenopprettingshendelse og gjort nødvendig gjenopprettingsmiljø tilgjengelig. Målet gjelder køens registrerte data og funksjon, ikke eksterne analyseinstrumenters behandlingstid.",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-07",
+      "kind": "factual",
+      "question": "Hva skal leveres innen fristen for pilotpakken, og hvilken dato gjelder?",
+      "expected": "Pilotpakken skal leveres innen 24. februar 2027 med testplan, kontaktmatrise, tilbakeføringsprosedyre og oversikt over åpne avvik. Dette er en dokumentleveranse, uten automatisk tillatelse til klinisk produksjon.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-18: Pilotpakken skal leveres innen 24. februar 2027. Leveransen skal inneholde testplan, kontaktmatrise, tilbakeføringsprosedyre og oversikt over åpne avvik. Datoen gjelder pakken som dokumentleveranse. Den er ikke en dato for å starte klinisk produksjon eller en automatisk godkjenning av løsningen.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-08",
+      "kind": "factual",
+      "question": "Når ligger det gjeldende ordinære servicevinduet, også etter midnatt, og hvilken lokal godkjenning kreves?",
+      "expected": "Etter endringsbrev 02 gjelder torsdag 22.30 til fredag 00.30 lokal tid, i stedet for onsdag 01.00–03.00. Mulig klinisk påvirkning krever fortsatt særskilt godkjenning fra lokal tjenesteeier.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-22: Ordinært teknisk servicevindu er onsdag klokken 01.00–03.00 lokal tid. Arbeid som kan påvirke kliniske tjenester, skal i tillegg godkjennes av lokal tjenesteeier.",
+          "page": 9
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Konkurransegrunnlagets K-22 på side 9 erstattes slik: Ordinært teknisk servicevindu er torsdag klokken 22.30 til fredag klokken 00.30 lokal tid. Vinduet krysser midnatt. Kravet om særskilt godkjenning fra lokal tjenesteeier ved mulig klinisk påvirkning videreføres.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-09",
+      "kind": "factual",
+      "question": "Hvordan fordeles de kunngjorte vektene mellom kvalitet, kostnad og miljø?",
+      "expected": "Kvalitet vektes 55 prosent, kostnad 30 prosent og miljø 15 prosent. Endringsbrevet viderefører disse vektene.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Tilbudene vurderes etter tre kunngjorte kriterier: kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent.",
+          "page": 10
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Tildelingskriteriene er fortsatt kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-10",
+      "kind": "factual",
+      "question": "I hvilke land kan tjenestedata og kopier fra gjenopprettingsøvelser lagres?",
+      "expected": "Norge eller Sverige. Kravet omfatter primærkopier, sikkerhetskopier, gjenopprettingskopier og midlertidig lagring under øvelser; administrativ organisasjon i andre land gir ikke unntak.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-31: Primærkopier, sikkerhetskopier og gjenopprettingskopier av HRHs tjenestedata skal lagres i Norge eller Sverige. Kravet gjelder også midlertidig lagring som oppstår under øvelser. En leverandør kan ha administrativ organisasjon i andre land, men dette gir ikke unntak fra oppgitte lagringssteder.",
+          "page": 12
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-11",
+      "kind": "factual",
+      "question": "Hvor mange virkedager har HRH nå til å sende avviksprotokoll etter en puljetest, og hva starter tellingen?",
+      "expected": "Gjeldende frist er åtte virkedager etter mottak av komplett testprotokoll og avtalt dokumentasjon for puljen; første virkedag etter komplett mottak er dag én. Endringsbrevet erstatter tolv dager. Ufullstendig levering starter ikke fristen, og stillhet er ikke godkjenning.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "K-36: Etter gjennomført akseptansetest har HRH tolv virkedager til å sende samlet avviksprotokoll for den testede puljen.",
+          "page": 15
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Konkurransegrunnlagets K-36 på side 15 endres fra tolv til åtte virkedager. HRH har åtte virkedager til å sende samlet avviksprotokoll etter at komplett testprotokoll og avtalt dokumentasjon for puljen er mottatt. Første virkedag etter komplett mottak er dag én. Stillhet alene er fortsatt ikke godkjenning.",
+          "page": 4
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Fristen begynner først når den avtalte komplette leveransen foreligger.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-12",
+      "kind": "factual",
+      "question": "Når er ordinær brukerstøtte bemannet i helgene, og hva skjer med kritiske henvendelser utenfor disse tidene?",
+      "expected": "Den er bemannet alle dager, også helger, 06.30–22.30. Utenfor tidsrommet håndterer vaktordningen kritiske hendelser og henvendelser fra døgnfunksjoner; full ordinær bestillingstjeneste om natten kreves ikke.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Brukerstøtten skal være bemannet alle dager klokken 06.30–22.30. Utenfor dette tidsrommet skal en vaktordning håndtere kritiske hendelser og henvendelser fra døgnfunksjoner. Det kreves ikke full ordinær bestillingstjeneste om natten.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-13",
+      "kind": "factual",
+      "question": "Hva krever K-01 i driftsbilag B når en P1-hendelse mottas, og holder en automatisk kvittering?",
+      "expected": "En ansvarlig operatør må bekrefte innen sju minutter fra mottak i avtalt kanal og gi saksreferanse og neste kontaktpunkt for klinisk koordinator. Automatisk kvittering alene er ikke nok. Dette er driftsbilagets K-01, ikke lagringskravet i konkurransegrunnlaget.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "K-01: En P1-hendelse skal bekreftes av en ansvarlig operatør innen 7 minutter etter at den er mottatt i avtalt kanal. Automatisk kvittering alene teller ikke som bekreftelse. Operatøren skal oppgi saksreferanse og neste kontaktpunkt for klinisk koordinator.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-14",
+      "kind": "factual",
+      "question": "Hvilke to responstrinn gjelder en betydelig funksjonssvikt der alternativ arbeidsmåte fortsatt finnes?",
+      "expected": "Dette er P2: bekreftelse innen 45 minutter og første løsnings- eller omgåelsesforslag innen seks timer. Forslaget må beskrive noe den ansatte faktisk kan gjøre; bare å si at saken undersøkes er ikke tilstrekkelig.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "P2 gjelder betydelig funksjonssvikt der en avtalt alternativ arbeidsmåte fortsatt kan brukes. P2 skal bekreftes innen 45 minutter og ha et første løsnings- eller omgåelsesforslag innen seks timer. Forslaget skal beskrive hva den ansatte faktisk kan gjøre. Et generelt svar om at saken undersøkes er ikke et omgåelsesforslag.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-15",
+      "kind": "factual",
+      "question": "Hvor ofte skal klinisk koordinator få status under en pågående alvorlig P1-hendelse?",
+      "expected": "Minst hvert 25. minutt mens påvirkningen vedvarer. Statusen skal skille bekreftede observasjoner fra det som undersøkes og angi neste oppdatering.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Klinisk koordinator skal få status minst hvert 25. minutt så lenge påvirkningen vedvarer. Status skal angi bekreftede observasjoner, hva som undersøkes og når neste oppdatering kommer.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-16",
+      "kind": "factual",
+      "question": "Hvilke måneder skal regionens to beredskapsøvelser holdes, og hva skal de hver især prøve?",
+      "expected": "Mars: gjenoppretting av en valgt kritisk tjeneste. Oktober: bortfall av lokal kontakt med ett behandlingssted og bruk av alternativ kommunikasjonsvei. Det er to regionale øvelser per år; konkret tjeneste og sted velges i planleggingsmøte.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Det skal gjennomføres to regionale beredskapsøvelser per år, én i mars og én i oktober. Marsøvelsen skal omfatte gjenoppretting av en valgt kritisk tjeneste. Oktoberøvelsen skal omfatte bortfall av lokal kontakt med ett behandlingssted og bruk av alternativ kommunikasjonsvei. Valg av konkret tjeneste og sted besluttes i planleggingsmøte.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-17",
+      "kind": "factual",
+      "question": "Hva skal ligge i den regionale utlånspoolen, og er dette et lagerkrav som gjelder separat for hvert sted?",
+      "expected": "Den regionale poolen skal ha 26 bærbare arbeidsstasjoner og 14 mobile etikettskrivere, klargjort og registrert med tilstand. Det er én regional pool, atskilt fra lokale nettverksdeler, ikke samme antall ekstra enheter på hvert sted.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Den regionale utlånspoolen skal bestå av 26 bærbare arbeidsstasjoner og 14 mobile etikettskrivere. Utstyret skal være klargjort med godkjent grunnoppsett og registrert med tilstand. Utlånspoolen er atskilt fra lokal lagerbeholdning av nettverksdeler. Den skal ikke telles som et krav om like mange ekstra servere eller faste arbeidsstasjoner på hvert sted.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-18",
+      "kind": "factual",
+      "question": "Må en brukt reservekomponent være fysisk erstattet på lager innen 72 timer, eller hva er den faktiske oppfølgingsfristen?",
+      "expected": "Erstatningsbestillingen må være sendt innen tre virkedager etter uttaket. Det er en bestillingsfrist i virkedager, ikke krav om fysisk levering innen 72 sammenhengende timer eller innen tre dager.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Når en reservekomponent brukes ved en hendelse, skal bestilling av erstatning være sendt innen tre virkedager etter uttaket. Det kreves dokumentert bestilling innen fristen, ikke fysisk levering innen tre dager.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-19",
+      "kind": "factual",
+      "question": "Hva er samplingskravet for temperatur i tekniske rom, og når skal høy temperatur varsles?",
+      "expected": "Måling minst hvert 90. sekund, altså minst én gang per halvannet minutt. Varsel til teknisk vakt ved over 27 grader Celsius i åtte sammenhengende minutter. Et enkelt høyt målepunkt lagres, men er ikke nok til samme varsel.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "En temperatursensor skal måles minst hvert 90. sekund. Et vedvarende nivå over 27 grader Celsius i åtte sammenhengende minutter skal utløse varsel til teknisk vakt. Et enkelt høyt målepunkt skal lagres, men utløser ikke alene samme varsel.",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-20",
+      "kind": "factual",
+      "question": "Hva er leveringsfristen for månedsrapporten, og hvilken periode skal den dekke?",
+      "expected": "Senest åttende virkedag i påfølgende måned, for siste hele kalendermåned. HRH må ha fått rapporten gjennom avtalt kanal med underlagstilgang; en beskjed om at den snart er klar er ikke levering. Helligdager er ikke virkedager.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Månedsrapporten skal være levert senest den åttende virkedagen i påfølgende måned. Rapporten skal dekke siste hele kalendermåned. Levering betyr at HRH har fått rapporten gjennom avtalt kanal med tilgang til underlaget, ikke bare en melding om at rapporten snart er klar. Helligdager regnes ikke som virkedager i denne fristen.",
+          "page": 9
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-21",
+      "kind": "factual",
+      "question": "Hvor mange superbrukerverksteder og hvor mange plasser per verksted skal grunnopplæringen nå ha?",
+      "expected": "Gjeldende opplegg er seks verksteder med maksimalt åtte deltakere hver, til sammen inntil 48 plasser hvis alle fylles. Dette erstatter fire verksteder med ti deltakere. Ekstra gjennomføringer krever egen bestilling.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "K-09: Grunnopplæring for HRHs superbrukere skal gjennomføres i fire verksteder med maksimalt ti deltakere i hvert verksted.",
+          "page": 10
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Driftsbilag B K-09 på side 10 erstattes: Grunnopplæringen skal bestå av seks verksteder med maksimalt åtte deltakere i hvert. Tidligere opplegg med fire verksteder og ti deltakere utgår.",
+          "page": 5
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Det tilbudte grunnopplegget gir dermed kapasitet til inntil 48 deltakere dersom alle seks verkstedene fylles. Ekstra gjennomføringer krever egen bestilling.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-22",
+      "kind": "factual",
+      "question": "Hvilken minste varslingstid gjelder nå for ordinært arbeid i behandlingsrom, og gjelder den også første innsats ved en P1?",
+      "expected": "Etter endringsbrevet minst tre virkedager før planlagt oppmøte, i stedet for fem. Lokal avtale og øvrige krav gjelder fortsatt; første innsats ved pågående P1 har fortsatt unntak og må koordineres med lokal vaktfunksjon.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "K-12: Ordinært arbeid inne i behandlingsrom skal varsles minst fem virkedager før planlagt oppmøte.",
+          "page": 11
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Driftsbilag B K-12 på side 11 endres: Ordinært arbeid i behandlingsrom skal varsles minst tre virkedager før planlagt oppmøte. Den tidligere fristen på fem virkedager erstattes. Kravene til varselets innhold, lokal koordinering og hygiene videreføres uendret.",
+          "page": 6
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Unntaket for første innsats under en pågående P1-hendelse gjelder fortsatt. Teknikeren skal da følge lokal vaktfunksjons instrukser og dokumentere hvorfor ordinær varsling ikke var mulig.",
+          "page": 6
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-23",
+      "kind": "factual",
+      "question": "Hvor lenge kan Fyrlys holde driftsmålinger lokalt når forbindelsen brytes, og betyr dette at journalsystemet kan kjøre like lenge uten nett?",
+      "expected": "Den tilbudte kollektoren kan bufre driftsmålinger i inntil 72 timer, altså tre døgn. Etter kontaktbruddet sendes de med opprinnelig tidsstempel og ettersendingsmarkering. Dette gir ingen garanti for frakoblet klinisk applikasjonsdrift.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Fyrlys-kollektoren har en lokal buffer for inntil 72 timer med driftsmålinger ved brudd i forbindelsen til den regionale flaten. Etter gjenopprettet forbindelse sendes målingene med opprinnelige tidsstempler og en markering av ettersending. Bufferen er ikke en garanti for at en klinisk applikasjon kan kjøre frakoblet i 72 timer.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-24",
+      "kind": "factual",
+      "question": "Hvordan fordeler Nordlys personene i etableringsteamet, og er dette en permanent vaktbemanning?",
+      "expected": "Forslaget har én overgangsleder, to plattformingeniører og tre lokale feltteknikere, totalt seks personer i etableringsfasen. Det er ikke oppgitt som fast vaktbemanning for hele kontrakten; den løpende vaktplanen skal dokumenteres separat.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Det foreslåtte etableringsteamet består av én overgangsleder, to plattformingeniører og tre lokale feltteknikere. Dette er seks personer i etableringsfasen, ikke en oppgitt fast vaktbemanning for hele kontraktsperioden. Den løpende vaktplanen skal dokumenteres separat før operativ overtakelse.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-25",
+      "kind": "factual",
+      "question": "Hvilke opplysninger samler den tilbudte observasjonskomponenten, og samler den skjermbilder eller journalinnhold?",
+      "expected": "Fyrlys samler tidsstempel, pseudonymisert enhetsnøkkel, måleverdi og teknisk feilkode. Den skal ikke samle skjermbilder, tastetrykk eller innhold i journalmeldinger. Svaret gjelder leverandørens tilbudte komponent, ikke alle eksisterende HRH-systemer.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Fyrlys samler tidsstempel, pseudonymisert enhetsnøkkel, måleverdi og teknisk feilkode. Komponenten skal ikke samle skjermbilder, tastetrykk eller innholdet i journalmeldinger. Beskrivelsen gjelder den tilbudte komponenten; den er ikke en påstand om hvilke data alle eksisterende systemer hos HRH allerede samler.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-26",
+      "kind": "factual",
+      "question": "I hvilken rekkefølge foreslår leverandøren å innføre løsningen på de tre stedene, og er rekkefølgen allerede vedtatt?",
+      "expected": "Forslaget er Vestsund, så Dalenga, til slutt Fjordhavn. Det er en leverandørplan som krever HRHs godkjenning; den fastsetter ingen produksjonsdato og endrer ikke beslutningsportene.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Vår foreslåtte innføringsrekkefølge er Vestsund først, deretter Dalenga og til slutt Fjordhavn. Rekkefølgen er en leverandørplan som HRH må godkjenne. Den fastsetter ingen produksjonsdato og endrer ingen av beslutningsportene i konkurransegrunnlaget.",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-27",
+      "kind": "factual",
+      "question": "Hvor mange operative veiledninger tilbyr Nordlys ved overtakelse, fordelt på fagområder?",
+      "expected": "18 selvstendige veiledninger: seks for hendelseshåndtering, sju for plattformdrift og fem for lokalt feltarbeid. Tallene gjelder veiledninger, ikke sider eller skjermbilder, og beskriver leverandørens tilbud.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Vi tilbyr 18 operative veiledninger ved overtakelse: seks for hendelseshåndtering, sju for plattformdrift og fem for lokalt feltarbeid. Antallet gjelder selvstendige veiledninger med avgrenset oppgave, ikke antall sider eller skjermbilder.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-28",
+      "kind": "factual",
+      "question": "Hvor lang kartlegging tilbyr leverandøren, og hvordan brukes de tre delperiodene?",
+      "expected": "Seks uker fra avtalt prosjektstart: uke 1–2 inventar og avhengigheter, uke 3–4 målegrunnlag og lokale arbeidsforløp, uke 5–6 verifisering av funn og forslag til puljeplan. Dette er tilbudt relativ arbeidsplan, ikke HRH-fastlagte kalenderdatoer.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Den første kartleggingsfasen er planlagt til seks uker. Uke 1–2 brukes til inventar og avhengigheter, uke 3–4 til målegrunnlag og lokale arbeidsforløp, og uke 5–6 til verifisering av funn og forslag til puljeplan. Dette er en tilbudt arbeidsplan regnet fra avtalt prosjektstart, ikke kalenderdatoer fastsatt av HRH.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-29",
+      "kind": "factual",
+      "question": "Hvor ofte vil Nordlys kontrollere en separat gjenopprettingskopi, og kan denne kontrollen erstatte de regionale øvelsene?",
+      "expected": "Hver sjette uke i isolert testmiljø, med oppstart av en valgt tjeneste fra kopien. Det er en tilbudt tilleggskontroll som ikke erstatter de regionale øvelsene i mars og oktober.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Vi tilbyr en separat gjenopprettingskopi som kontrolleres i isolert testmiljø hver sjette uke. Kontrollen skal vise at en valgt tjeneste kan startes fra kopien, ikke bare at kopifilene er lesbare. Dette er en tilbudt tilleggskontroll mellom HRHs regionale øvelser og erstatter ikke de avtalte øvelsene i mars og oktober.",
+          "page": 6
+        }
+      ]
+    },
+    {
+      "id": "healthcare-factual-30",
+      "kind": "factual",
+      "question": "Hvilken kontroll tilbyr Nordlys før en ny automatisk regel aktiveres, og får regelen endre noe under utprøvingen?",
+      "expected": "To operatører skal vurdere regelen, deretter tre døgn i sammenligningsmodus der handlinger bare beregnes, ikke utføres. Dette er tilbudt arbeidsmetode som fortsatt krever HRHs godkjenning i tjenesten, ikke et nytt minstekrav fra HRH.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "En ny automatisk regel skal vurderes av to operatører og kjøre i sammenligningsmodus i tre døgn før aktivering. I sammenligningsmodus beregner regelen hva den ville gjort, men utfører ingen endring. Dette er vår tilbudte arbeidsmetode, ikke et nytt eksplisitt minstekrav i oppdragsgivers dokumenter. HRH må fortsatt godkjenne bruken i den aktuelle tjenesten.",
+          "page": 9
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-01",
+      "kind": "negative",
+      "question": "Hvilken kommunikasjonsprotokoll har HRH valgt mellom de mobile kliniske vognene og sporingsløsningen?",
+      "expected": "Kan ikke oppgi en valgt protokoll: oppdragsgiver har ikke valgt den, og endringsbrevet foretar heller ikke et valg. Ingen bestemt standard skal fylles inn ut fra bransjekunnskap eller leverandørens grensesnittskisse.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Oppdragsgiver har ikke valgt kommunikasjonsprotokoll mellom vognene og fremtidig sporingsløsning.",
+          "page": 5
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Brevet velger ingen kommunikasjonsprotokoll for de mobile kliniske vognene og bestiller ikke et nytt journalgrensesnitt.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-02",
+      "kind": "negative",
+      "question": "Hva er den avtalte, bindende månedssummen i kroner for hele driftsleveransen?",
+      "expected": "Det finnes ingen avtalt bindende månedssum i pakken. Prisstruktur og målegrunnlag er beskrevet, men prisfeltene er ikke utfylt og ingen prisavtale er vedlagt. Ikke beregn et beløp fra inventartall eller antatte enhetspriser.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Det er ikke publisert noen ferdig pris i denne dokumentpakken.",
+          "page": 11
+        },
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Prisfeltene for etablering, arbeidsstasjoner og plattformdrift er ikke fylt ut i dette løsningsnotatet. Vi har derfor ingen oppgitt bindende månedssum å vise til.",
+          "page": 11
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-03",
+      "kind": "negative",
+      "question": "På hvilken kalenderdato er klinisk produksjonssetting ved Fjordhavn bindende besluttet?",
+      "expected": "Ingen slik kalenderdato er fastsatt. Datoen 24. februar 2027 gjelder pilotpakken som dokumentleveranse. Klinisk produksjon forutsetter godkjent gjenopprettingstest og signert lokal smitteverngjennomgang før beslutning; leverandørens rekkefølge gir heller ingen dato.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Datoen gjelder pakken som dokumentleveranse. Den er ikke en dato for å starte klinisk produksjon eller en automatisk godkjenning av løsningen.",
+          "page": 8
+        },
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Klinisk produksjonssetting kan først besluttes etter at tjenesteeier har godkjent en gjennomført gjenopprettingstest og en lokal smitteverngjennomgang er signert. Det er ikke fastsatt noen kalenderdato for klinisk produksjonssetting.",
+          "page": 8
+        },
+        {
+          "document_id": "healthcare-losning",
+          "quote": "Rekkefølgen er en leverandørplan som HRH må godkjenne. Den fastsetter ingen produksjonsdato og endrer ingen av beslutningsportene i konkurransegrunnlaget.",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-04",
+      "kind": "negative",
+      "question": "Hvor mange lokale reserveoptikker er endelig påkrevd på Vestsund når alle dokumentene er lest?",
+      "expected": "Kan ikke velge ett endelig antall. Lagerkapitlet sier elleve og lokal beredskapsbeskrivelse sier ni for samme type deler; delene har samme nivå uten avgjørende rangordning. Endringsbrevet avklarer ikke motstriden. Be om skriftlig avklaring, uten å velge høyeste, nyeste side eller et gjennomsnitt.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Sted | Reserveoptikker i lokal lageroversikt | Eier av lagerkontroll\nFjordhavn | 17 | Regional nettverksgruppe\nVestsund | 11 | Lokal teknisk tjeneste\nDalenga | 6 | Ambulerende driftsgruppe",
+          "page": 6
+        },
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Den lokale beredskapsbeskrivelsen angir ni reserveoptikker på Vestsund. Tallet gjelder samme type lokale reserveoptikker som i lagerkapitlet B6.",
+          "page": 12
+        },
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Ingen godkjent avklaring av forskjellen mellom ni og elleve følger dokumentpakken. De to delene av bilaget har samme dokumentnivå.",
+          "page": 12
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Dette brevet endrer ingen av de to tallene og velger ikke hvilken beskrivelse som skal gjelde.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-05",
+      "kind": "negative",
+      "question": "Hvilken navngitt sikkerhetssertifisering må samtlige driftsunderleverandører ha som minstekrav?",
+      "expected": "Ingen bestemt sertifisering for samtlige underleverandører er navngitt som minstekrav i pakken. Kravet om oversikt over underleverandører og deres funksjoner gir ikke grunnlag for å legge til en bestemt standard eller et sertifikat.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Leverandøren skal vedlegge en oversikt over driftsunderleverandører og deres faktiske funksjon. Oversikten skal ikke bare liste merkenavn.",
+          "page": 12
+        },
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Ingen bestemt sertifisering av samtlige underleverandører er navngitt i konkurransegrunnlaget; tilbudte sertifikater kan beskrives som dokumentasjon, men skal ikke omtales som allerede vedtatte minstekrav.",
+          "page": 12
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-06",
+      "kind": "negative",
+      "question": "Hvilken egen prosentvekt er vedtatt for autonom driftsgrad etter Nordlys sitt forslag om 20 prosent?",
+      "expected": "Kan ikke oppgi en vedtatt egen vekt: 20 prosent var leverandørens idé, ikke et vedtatt kriterium. Endringsbrevet innfører ingen egen vekting av autonom drift; gjeldende modell er fortsatt kvalitet 55, kostnad 30 og miljø 15 prosent.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-losning",
+          "quote": "I dialogen foreslo Nordlys Driftsverk at «autonom driftsgrad» kunne få 20 prosent vekt i en fremtidig tildelingsmodell. Dette var et leverandørforslag og er ikke vedtatt av HRH.",
+          "page": 10
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Tildelingskriteriene er fortsatt kvalitet 55 prosent, kostnad 30 prosent og miljø 15 prosent. Ingen ny vekting av autonom drift eller antall automatiserte steg er vedtatt.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-07",
+      "kind": "negative",
+      "question": "Hvor mange minutter utilgjengelighet per måned er kontraktsmessig tillatt når det nye servicevinduet regnes med?",
+      "expected": "En månedlig tillatt nedetidskvote kan ikke oppgis eller regnes ut fra servicevinduet. Bilaget angir verken en samlet minuttsats per måned eller et felles prosentkrav, og servicevinduet er ikke tillatelse til to timers nedetid.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-drift",
+          "quote": "Et godkjent servicevindu er ikke en kvote for tillatt nedetid. Bilaget fastsetter ikke noen samlet tillatt nedetid i minutter per måned eller et felles tilgjengelighetskrav i prosent.",
+          "page": 8
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Servicevinduet gir ikke rett til to timers nedetid.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-08",
+      "kind": "negative",
+      "question": "Hvilken leveransefrist og hvilke akseptkriterier gjelder det obligatoriske nye FHIR-grensesnittet mot journalsystemet?",
+      "expected": "Premisset støttes ikke: pakken pålegger ikke et nytt FHIR-grensesnitt og inneholder ingen bestilling, leveransefrist eller akseptkriterier for det. En langsiktig arkitekturambisjon er ikke en slik leveranseforpliktelse.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Regionens langsiktige arkitekturplan omtaler mer standardisert informasjonsutveksling. Konkurransen pålegger ikke leverandøren å levere et nytt FHIR-grensesnitt til journalsystemet. Det er heller ikke vedlagt bestilling eller akseptkriterier for et slikt grensesnitt.",
+          "page": 14
+        },
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Brevet velger ingen kommunikasjonsprotokoll for de mobile kliniske vognene og bestiller ikke et nytt journalgrensesnitt.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-09",
+      "kind": "negative",
+      "question": "Hvor mange GiB personlig lagringskvote er hver enkelt ansatt garantert i den delte filplattformen?",
+      "expected": "Ingen personlig kvote er angitt eller garantert. Plattformens samlede brukbare kapasitet kan ikke gjøres om til en ansattkvote: fordeling per ansatt er uttrykkelig ikke fastsatt, og antall administrerte enheter er ikke et kvotevedtak.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-grunnlag",
+          "quote": "Kapasitet per ansatt eller per pasient er ikke angitt i denne anskaffelsen; slik fordeling skal eventuelt vedtas i et senere tjenesteeiermøte etter behovskartlegging.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "healthcare-negative-10",
+      "kind": "negative",
+      "question": "Hvor stor dagmulkt i kroner er avtalt dersom leverandøren retter en feil for sent?",
+      "expected": "Det finnes ingen avtalt dagmulktbestemmelse eller beløp i pakken. Respons- og oppfølgingsfrister gir ikke grunnlag for å oppfinne en økonomisk sanksjon; dette må avklares i avtalegrunnlaget.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "healthcare-endring",
+          "quote": "Dokumentpakken inneholder heller ingen akseptert enhetspris, avtalt månedssum eller ferdig dagmulktbestemmelse. Slike forhold kan ikke utledes av en teknisk illustrasjon eller av hva som er vanlig i andre avtaler.",
+          "page": 8
+        }
+      ]
+    }
+  ]
+}

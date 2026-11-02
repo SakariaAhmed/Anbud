@@ -106,3 +106,11 @@ test("unreadable register prevents an ambiguous-ID answer even with whole docume
   assert.match(await collect(result.stream), /Kravregisteret kunne ikke leses sikkert/u);
   assert.equal(state.prompts.length, 0, "No answer model may invent an ID after the authoritative read fails.");
 });
+
+test("automatic analysis and session history cannot bypass weak factual retrieval", async () => {
+  const analysis = { customer_profile_summary: "Kommunen trenger trygg drift.", customer_goals_summary: "", high_level_solution_design: "", executive_summary: "", customer_goals: [], customer_profile: [], prioritized_requirements: [], implicit_requirements: [], likely_evaluation_criteria: [], expected_solution_direction: [], signal_words: [], risks: [], ambiguities: [], value_opportunities: [], positioning_recommendations: [] };
+  const state = scenario(["En oppdiktet pris."]);
+  const result = await streamProjectChat(input({ customerDocument: document("large", "Generell bakgrunn uten kontraktspris. ".repeat(4000)), customerAnalysis: analysis, sessionSummary: "Vi har snakket om drift.", question: "Hva er den eksakte årlige kontraktsprisen?" }));
+  assert.match(await collect(result.stream), /ikke nok kildegrunnlag/u);
+  assert.equal(state.prompts.length, 0);
+});

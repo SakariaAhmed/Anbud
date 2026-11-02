@@ -8,15 +8,18 @@ import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isolatedApplicationEnvironment, systemTestStatusPath } from "./system-test-runtime.mjs";
+import { assertOwnedSystemTestStack, dockerEngineSocketPath, isolatedApplicationEnvironment, ownedContainerCreateArguments, startContainerThroughEngine, systemTestPorts, systemTestStatusPath } from "./system-test-runtime.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const frontend = path.join(root, "apps/frontend");
 const statusPath = systemTestStatusPath();
 const command = process.argv[2] ?? "start";
 const liveAi = process.argv.includes("--live-ai");
+// Optional real parser/OCR runtime: an existing local runner-docling image, used
+// offline. Without it the stack keeps its fast parser-only default.
+const doclingImage = process.argv.find(argument => argument.startsWith("--docling-image="))?.slice("--docling-image=".length);
 const node = process.execPath;
-const ports = { postgres: 55448, postgrest: 55449, blob: 55450, app: 4338, browserLogin: 4339 };
+const ports = systemTestPorts();
 
 function run(binary, args, options = {}) {
   const result = spawnSync(binary, args, { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000, ...options });
@@ -74,7 +77,7 @@ if (command === "stop") {
   const state = JSON.parse(readFileSync(path.join(status.directory, "state.json"), "utf8"));
   const privatePath = path.join(status.directory, "environment.json");
   const runtime = JSON.parse(readFileSync(privatePath, "utf8"));
-  if (!status.running || status.baseUrl !== "http://127.0.0.1:4338" || runtime.env.DATA_API_URL !== "http://127.0.0.1:55449") throw new Error("Only the owned loopback system-test stack may be restarted.");
+  assertOwnedSystemTestStack(status, runtime);
   const queued = await fetch(`${runtime.env.DATA_API_URL}/project_jobs?select=id,status&status=in.(queued,running)`, { headers: { authorization: `Bearer ${runtime.env.DATA_API_SERVICE_ROLE_KEY}` } });
   if (!queued.ok || (await queued.json()).length) throw new Error("Finish pending local jobs before enabling a model endpoint.");
   // This endpoint is the parent's budget-enforcing local proxy. No upstream
@@ -136,28 +139,43 @@ if (command === "stop") {
     writeFileSync(target, Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n"), { mode: 0o600 });
     return target;
   };
-  function container(suffix, image, args = [], values = {}, extra = []) {
+  const engineSocket = dockerEngineSocketPath(run("docker", ["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]));
+  async function container(suffix, image, args = [], values = {}, publish = [], options = {}) {
     const name = `anbud-system-test-${id}-${suffix}`;
     const file = dockerEnv(`${suffix}.env`, values);
     state.containers.push(name); save();
-    run("docker", ["run", "--rm", "-d", "--name", name, "--network", state.network, "--env-file", file, ...extra, image, ...args], { timeout: 600_000 });
+    run("docker", ownedContainerCreateArguments({ name, network: options.network ?? state.network, envFile: file, publish, label: `anbud.system-test=${id}`, image, args, ...options }), { timeout: 600_000 });
+    await startContainerThroughEngine(engineSocket, name);
     return name;
   }
   try {
     run("docker", ["network", "create", state.network]); save();
-    const pg = container("pg", "pgvector/pgvector:pg17", [], { POSTGRES_PASSWORD: password }, ["-p", `127.0.0.1:${ports.postgres}:5432`]);
+    const pg = await container("pg", "pgvector/pgvector:pg17", [], { POSTGRES_PASSWORD: password }, [`127.0.0.1:${ports.postgres}:5432`]);
     await waitFor(() => spawnSync("docker", ["exec", pg, "pg_isready", "-U", "postgres"], { stdio: "ignore" }).status === 0, "PostgreSQL");
     const sql = statement => run("docker", ["exec", "-i", pg, "psql", "-U", "postgres", "-X", "-q", "-v", "ON_ERROR_STOP=1"], { input: statement });
     sql(`create role anon; create role authenticated; create role service_role bypassrls; create role authenticator login password '${password}'; grant anon, authenticated, service_role to authenticator;`);
     sql(`set anbud.allow_destructive_schema_rebuild=on;\n${readFileSync(path.join(root, "database/schema.sql"), "utf8")}`);
-    container("api", "postgrest/postgrest:v14.17", [], { PGRST_DB_URI: `postgres://authenticator:${password}@${pg}:5432/postgres`, PGRST_DB_SCHEMAS: "public", PGRST_DB_ANON_ROLE: "anon", PGRST_JWT_SECRET: jwtSecret }, ["-p", `127.0.0.1:${ports.postgrest}:3000`]);
-    container("blob", "mcr.microsoft.com/azure-storage/azurite:3.35.0", ["azurite-blob", "--blobHost", "0.0.0.0", "--skipApiVersionCheck", "--disableProductStyleUrl", "--silent"], { AZURITE_ACCOUNTS: `anbudtest:${blobKey}` }, ["-p", `127.0.0.1:${ports.blob}:10000`]);
+    await container("api", "postgrest/postgrest:v14.17", [], { PGRST_DB_URI: `postgres://authenticator:${password}@${pg}:5432/postgres`, PGRST_DB_SCHEMAS: "public", PGRST_DB_ANON_ROLE: "anon", PGRST_JWT_SECRET: jwtSecret }, [`127.0.0.1:${ports.postgrest}:3000`]);
+    await container("blob", "mcr.microsoft.com/azure-storage/azurite:3.35.0", ["azurite-blob", "--blobHost", "0.0.0.0", "--skipApiVersionCheck", "--disableProductStyleUrl", "--silent"], { AZURITE_ACCOUNTS: `anbudtest:${blobKey}` }, [`127.0.0.1:${ports.blob}:10000`]);
     await waitFor(async () => { try { return (await fetch(env.DATA_API_URL, { signal: AbortSignal.timeout(1500) })).ok; } catch { return false; } }, "PostgREST");
     const require = createRequire(path.join(frontend, "package.json"));
     const { BlobServiceClient } = require("@azure/storage-blob");
     await waitFor(async () => { try { await BlobServiceClient.fromConnectionString(blobConnection).getContainerClient(env.AZURE_STORAGE_CONTAINER).createIfNotExists(); return true; } catch { return false; } }, "Azurite");
+    if (doclingImage) {
+      // Offline, without credentials or any host mount: the command streams each
+      // file through `docker exec`, keeping the app's real CLI arguments intact.
+      const parser = await container("docling", doclingImage, ["infinity"], { HOME: "/home/node" }, [], { network: "none", user: "1001:1001", entrypoint: "sleep" });
+      Object.assign(env, {
+        DOCLING_INGESTION: "on", DOCLING_FORMATS: "pdf,docx", DOCLING_ENHANCEMENT_MODE: "async", DOCLING_ASYNC_AUTO_RUN: "off",
+        DOCLING_CLI_COMMAND: path.join(root, "scripts/system-test-docling-command.mjs"), DOCLING_ARTIFACTS_PATH: "/opt/docling-models", DOCLING_OCR: "auto",
+        DOCLING_NUM_THREADS: "2", DOCLING_TABLE_MODE: "accurate", DOCLING_LARGE_PDF_TABLE_MODE: "fast", DOCLING_PDF_CHUNKING: "auto", DOCLING_TIMEOUT_MS: "420000",
+        ANBUD_SYSTEM_TEST_DOCLING_CONTAINER: parser, ANBUD_SYSTEM_TEST_DOCLING_FAILURE_MARKER: path.join(directory, "inject-docling-failure"),
+      });
+      const stored = JSON.parse(readFileSync(path.join(directory, "environment.json"), "utf8"));
+      writeFileSync(path.join(directory, "environment.json"), JSON.stringify({ ...stored, env }, null, 2), { mode: 0o600 });
+    }
     await startApplication(state, env);
-    const status = { running: true, directory, baseUrl: env.APP_PUBLIC_ORIGIN, browserLoginUrlFile: path.join(directory, "browser-login-url.txt"), ports, aiMode: liveAi ? "explicit model endpoint" : "disabled", createdAt: new Date().toISOString() };
+    const status = { running: true, directory, baseUrl: env.APP_PUBLIC_ORIGIN, browserLoginUrlFile: path.join(directory, "browser-login-url.txt"), ports, aiMode: liveAi ? "explicit model endpoint" : "disabled", docling: doclingImage ? { image: doclingImage, imageId: run("docker", ["image", "inspect", doclingImage, "--format", "{{.Id}}"]) } : null, createdAt: new Date().toISOString() };
     const { browserLoginToken } = JSON.parse(readFileSync(path.join(directory, "environment.json"), "utf8"));
     writeFileSync(status.browserLoginUrlFile, `http://127.0.0.1:4339/browser-login?token=${browserLoginToken}`, { mode: 0o600 });
     writeFileSync(statusPath, JSON.stringify(status, null, 2));

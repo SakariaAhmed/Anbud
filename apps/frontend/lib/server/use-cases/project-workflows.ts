@@ -1,6 +1,8 @@
 import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
+import { createCustomerAnalysisPartialPublisher, readCustomerAnalysisRevision } from "@/lib/server/repositories/analysis-partials";
+
 import { formatJobProgress } from "@/lib/project-job-progress";
 import { runWithElapsedProgress } from "@/lib/server/use-cases/elapsed-progress";
 
@@ -21,6 +23,8 @@ import {
 } from "@/lib/server/document-ledger";
 import { selectProjectDocuments } from "@/lib/server/domain/project-documents";
 import {
+  DOCUMENT_ENHANCEMENT_FAILURE_ERROR,
+  DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE,
   hasReadableRequirementDocumentContent,
   isHistoricalSolutionDocument,
   isRequirementDocument,
@@ -63,7 +67,7 @@ import {
   saveSolutionEvaluation,
 } from "@/lib/server/repositories/analyses";
 import { assertExecutiveSummaryEvaluationReady } from "@/lib/server/executive-summary-readiness";
-import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState } from "@/lib/server/repositories/data-store";
+import { getDocumentDetail, listProjectDocumentsForAnalysis, saveDocumentIngestionResult, publishDocumentReadiness, updateDocumentProcessingState, setDocumentEnhancementState } from "@/lib/server/repositories/data-store";
 import { getProjectGenerationContext, getProjectSnapshotAfterCommit, getProjectSourceRevision, updateProjectMetadataFromInference } from "@/lib/server/repositories/data-store";
 import { listProjectServiceDescriptions } from "@/lib/server/repositories/service-descriptions";
 
@@ -109,6 +113,8 @@ export type ProjectWorkflowInput =
       kind: "document_docling_enhancement";
       projectId: string;
       documentId: string;
+      sourceRevision?: number;
+      failureSourceRevision?: number;
     }
   | { kind: "customer_analysis"; projectId: string; model?: string; automaticRequestId?: string; automaticSourceRevision?: number }
   | {
@@ -135,6 +141,7 @@ export type ProjectWorkflowPhaseHandler = (phase: string) => void;
 
 export interface ProjectWorkflowHandlers {
   onDocumentClass?: (value: ProjectDocumentDetail["file_format"]) => void;
+  onDocumentEnhancementStarted?: (documentId: string, sourceRevision: number) => void;
   setProgress: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
   assertActive?: () => void;
@@ -411,7 +418,12 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         ),
       };
     case "document_docling_enhancement":
+      if (input.failureSourceRevision !== undefined && (!Number.isSafeInteger(input.failureSourceRevision) || Number(input.failureSourceRevision) < 0)) throw new Error("Ugyldig kildeversjon for automatisk dokumentforbedring.");
+      if (input.failureSourceRevision !== undefined && input.sourceRevision !== undefined) throw new Error("Dokumentforbedring kan ikke være både automatisk og et nytt forsøk.");
+      if (input.sourceRevision !== undefined && (!Number.isSafeInteger(input.sourceRevision) || Number(input.sourceRevision) < 0)) throw new Error("Ugyldig kildeversjon for dokumentforbedring.");
       return {
+        ...(input.sourceRevision !== undefined ? { sourceRevision: Number(input.sourceRevision) } : {}),
+        ...(input.failureSourceRevision !== undefined ? { failureSourceRevision: Number(input.failureSourceRevision) } : {}),
         kind: "document_docling_enhancement",
         projectId,
         documentId: requiredWorkflowString(
@@ -1055,6 +1067,10 @@ async function runDocumentDoclingEnhancementWorkflow(
 ): Promise<DocumentDoclingEnhancementJobResult> {
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
+  if (input.sourceRevision !== undefined && input.sourceRevision !== document.chunk_source_revision) throw new Error("Dokumentgrunnlaget er endret siden forbedringen ble bestilt.");
+  // Automatic jobs may read a newer eligible revision. From this point onward,
+  // failures and publication are fenced to what this attempt actually read.
+  if (input.failureSourceRevision !== undefined) handlers.onDocumentEnhancementStarted?.(input.documentId, document.chunk_source_revision);
   handlers.onDocumentClass?.(document.file_format);
   handlers.onPhase?.("filhenting");
 
@@ -1063,16 +1079,24 @@ async function runDocumentDoclingEnhancementWorkflow(
       ? "enhanced_ready"
       : "basic_ready";
 
-  if (!document.file_base64 || document.parser_used === "docling") {
-    return {
-      document: projectJobDocumentSummary(document),
-      document_id: input.documentId,
-      status: document.processing_status,
-      parser_used: document.parser_used,
-      project: await getProjectSnapshotAfterCommit(input.projectId),
-      skipped: true,
-    };
-  }
+  const skippedResult = async (): Promise<DocumentDoclingEnhancementJobResult> => {
+    let currentDocument = document;
+    if (input.failureSourceRevision !== undefined && document.processing_status === "basic_ready") {
+      assertWorkflowActive(handlers);
+      const message = "Dokumentforbedring ble hoppet over med gjeldende dokument og oppsett.";
+      if (await setDocumentEnhancementState({ projectId: input.projectId, documentId: input.documentId,
+        sourceRevision: document.chunk_source_revision, message, error: document.processing_error ?? null })) {
+        currentDocument = { ...document, processing_message: message };
+      }
+    }
+    return { document: projectJobDocumentSummary(currentDocument), document_id: input.documentId,
+      status: currentDocument.processing_status, parser_used: currentDocument.parser_used,
+      project: await getProjectSnapshotAfterCommit(input.projectId), skipped: true };
+  };
+
+  if (!document.file_base64 && input.sourceRevision !== undefined) throw new Error("Originalfilen er ikke tilgjengelig for dokumentforbedring.");
+  if (!document.file_base64 || document.parser_used === "docling"
+    || (input.failureSourceRevision !== undefined && document.processing_status === "enhanced_ready")) return skippedResult();
 
   const shouldEnhance = shouldRunDoclingEnhancement({
     fileFormat: document.file_format,
@@ -1085,104 +1109,140 @@ async function runDocumentDoclingEnhancementWorkflow(
     fileSizeBytes: document.file_size_bytes,
   });
 
-  if (!shouldEnhance) {
-    return {
-      document: projectJobDocumentSummary(document),
-      document_id: input.documentId,
-      status: document.processing_status,
-      parser_used: document.parser_used,
-      project: await getProjectSnapshotAfterCommit(input.projectId),
-      skipped: true,
-    };
-  }
+  if (!shouldEnhance && input.sourceRevision !== undefined) throw new Error("Dokumentforbedring kan ikke starte med gjeldende oppsett. Kontakt administrator.");
+  if (!shouldEnhance) return skippedResult();
 
   handlers.setProgress(formatJobProgress(58, "Forbedrer dokumentstruktur med Docling ...", 88));
   assertWorkflowActive(handlers);
-  await updateDocumentProcessingState({
+  handlers.onDocumentEnhancementStarted?.(input.documentId, document.chunk_source_revision ?? 0);
+  if (!await setDocumentEnhancementState({
     projectId: input.projectId,
     documentId: input.documentId,
-    status: readyStatus,
+    sourceRevision: document.chunk_source_revision ?? 0,
     message: "Dokumentet er RAG-klart. Docling-forbedring pågår i bakgrunnen ...",
     error: null,
-    parserUsed: document.parser_used,
-  });
+  })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
 
-  const buffer = Buffer.from(document.file_base64, "base64");
-  const enhanced = await extractTextFromBuffer({
-    buffer,
-    fileName: document.file_name,
-    contentType: document.content_type,
-    role: document.role,
-    useDocling: true,
-    useDoclingOcr: shouldUseDoclingOcr({
-      fileFormat: document.file_format,
-      rawText: document.raw_text,
-      sourceMapLength: document.structure_map.length,
-      fileSizeBytes: document.file_size_bytes,
-    }),
-  }).catch((error) => {
-    rethrowAuthoritativeLeaseLoss(error);
-    return null;
-  });
-  handlers.onPhase?.("docling_parser");
-
-  if (
-    !isUsableDoclingResult(enhanced) ||
-    !isDoclingResultWorthReplacing({
-      currentRawText: document.raw_text,
-      enhancedRawText: enhanced.rawText,
-    })
-  ) {
-    assertWorkflowActive(handlers);
-    await updateDocumentProcessingState({
+  // The basic version stays published and usable throughout. A failure here is
+  // recorded on that document, never as a failed document.
+  const recordEnhancementFailure = async () => {
+    const failure = {
+      processing_status: readyStatus,
+      processing_message: DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE,
+      processing_error: DOCUMENT_ENHANCEMENT_FAILURE_ERROR,
+    } as const;
+    if (!await setDocumentEnhancementState({
       projectId: input.projectId,
       documentId: input.documentId,
-      status: readyStatus,
-      message:
-        "Dokumentet er RAG-klart. Docling-forbedring ga ikke bedre tekstgrunnlag.",
-      error: null,
-      parserUsed: document.parser_used,
+      sourceRevision: document.chunk_source_revision ?? 0,
+      message: failure.processing_message,
+      error: failure.processing_error,
+    })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
+    return failure;
+  };
+
+  try {
+    const buffer = Buffer.from(document.file_base64, "base64");
+    const enhanced = await extractTextFromBuffer({
+      buffer,
+      fileName: document.file_name,
+      contentType: document.content_type,
+      role: document.role,
+      useDocling: true,
+      useDoclingOcr: shouldUseDoclingOcr({
+        fileFormat: document.file_format,
+        rawText: document.raw_text,
+        sourceMapLength: document.structure_map.length,
+        fileSizeBytes: document.file_size_bytes,
+      }),
+    }).catch((error) => {
+      rethrowAuthoritativeLeaseLoss(error);
+      return null;
     });
+    handlers.onPhase?.("docling_parser");
+
+    // Docling was explicitly requested. Without its result it failed or found no
+    // text, which is different from returning text that is not worth using.
+    if (!isUsableDoclingResult(enhanced)) {
+      assertWorkflowActive(handlers);
+      const failure = await recordEnhancementFailure();
+      return {
+        document: projectJobDocumentSummary({ ...document, ...failure }),
+        document_id: input.documentId,
+        status: readyStatus,
+        parser_used: document.parser_used,
+        project: await getProjectSnapshotAfterCommit(input.projectId),
+        skipped: true,
+      };
+    }
+
+    if (
+      !isDoclingResultWorthReplacing({
+        currentRawText: document.raw_text,
+        enhancedRawText: enhanced.rawText,
+      })
+    ) {
+      assertWorkflowActive(handlers);
+      if (!await setDocumentEnhancementState({
+        projectId: input.projectId,
+        documentId: input.documentId,
+        sourceRevision: document.chunk_source_revision ?? 0,
+        message:
+          "Dokumentet er RAG-klart. Docling-forbedring ga ikke bedre tekstgrunnlag.",
+        error: null,
+      })) throw new Error("Dokumentgrunnlaget er endret under forbedringen.");
+
+      return {
+        document: projectJobDocumentSummary(document),
+        document_id: input.documentId,
+        status: readyStatus,
+        parser_used: document.parser_used,
+        project: await getProjectSnapshotAfterCommit(input.projectId),
+        skipped: true,
+      };
+    }
+
+    handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
+    assertWorkflowActive(handlers);
+    const enhancedDocument = await saveDocumentIngestionResult({
+      expectedSourceRevision: document.chunk_source_revision ?? 0,
+      requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
+      projectId: input.projectId,
+      documentId: input.documentId,
+      role: document.role,
+      supportingSubtype: document.supporting_subtype,
+      title: document.title,
+      fileName: enhanced.fileName,
+      fileFormat: enhanced.fileFormat,
+      contentType: enhanced.contentType,
+      rawText: enhanced.rawText,
+      structureMap: enhanced.sourceMap,
+      parserUsed: enhanced.parserUsed,
+      pageCountFallback: document.page_count,
+      status: "enhanced_ready",
+      message: "Dokumentet er forbedret med Docling og klart for RAG.",
+    });
+    handlers.onPhase?.("docling_indeksering");
 
     return {
-      document: projectJobDocumentSummary(document),
+      document: projectJobDocumentSummary(enhancedDocument),
       document_id: input.documentId,
-      status: readyStatus,
-      parser_used: document.parser_used,
+      status: enhancedDocument.processing_status,
+      parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
       project: await getProjectSnapshotAfterCommit(input.projectId),
-      skipped: true,
+      skipped: false,
     };
+  } catch (error) {
+    rethrowAuthoritativeLeaseLoss(error);
+    assertWorkflowActive(handlers);
+    const current = await getDocumentDetail(input.projectId, input.documentId);
+    if (current.chunk_source_revision === document.chunk_source_revision) {
+      await recordEnhancementFailure().catch((persistenceError) => {
+        rethrowAuthoritativeLeaseLoss(persistenceError);
+      });
+    }
+    throw error;
   }
-
-  handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
-  assertWorkflowActive(handlers);
-  const enhancedDocument = await saveDocumentIngestionResult({
-    requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
-    projectId: input.projectId,
-    documentId: input.documentId,
-    role: document.role,
-    supportingSubtype: document.supporting_subtype,
-    title: document.title,
-    fileName: enhanced.fileName,
-    fileFormat: enhanced.fileFormat,
-    contentType: enhanced.contentType,
-    rawText: enhanced.rawText,
-    structureMap: enhanced.sourceMap,
-    parserUsed: enhanced.parserUsed,
-    pageCountFallback: document.page_count,
-    status: "enhanced_ready",
-    message: "Dokumentet er forbedret med Docling og klart for RAG.",
-  });
-  handlers.onPhase?.("docling_indeksering");
-
-  return {
-    document: projectJobDocumentSummary(enhancedDocument),
-    document_id: input.documentId,
-    status: enhancedDocument.processing_status,
-    parser_used: enhancedDocument.parser_used ?? enhanced.parserUsed,
-    project: await getProjectSnapshotAfterCommit(input.projectId),
-    skipped: false,
-  };
 }
 
 /**
@@ -1205,6 +1265,7 @@ export async function generateCustomerAnalysis(input: {
   const sourceSnapshot = await readStableProjectSourceSnapshot({
     readSourceRevision: () => getProjectSourceRevision(input.projectId),
     readValue: async () => {
+      const analysisRevision = await readCustomerAnalysisRevision(input.projectId);
       const [projectDocuments, serviceCandidates, previousAnalysis] = await Promise.all([
         listProjectDocumentsForAnalysis(input.projectId),
         listProjectServiceDescriptions(input.projectId, {
@@ -1212,10 +1273,15 @@ export async function generateCustomerAnalysis(input: {
         }),
         getFreshCustomerAnalysis(input.projectId),
       ]);
-      return { projectDocuments, serviceCandidates, previousAnalysis };
+      const currentAnalysisRevision = await readCustomerAnalysisRevision(input.projectId);
+      if (analysisRevision !== currentAnalysisRevision ||
+        (previousAnalysis && previousAnalysis.revision !== analysisRevision)) {
+        throw new WorkflowPreconditionError("Kundeanalysen er endret. Prøv igjen.");
+      }
+      return { projectDocuments, serviceCandidates, previousAnalysis, analysisRevision };
     },
   });
-  const { projectDocuments, serviceCandidates, previousAnalysis } =
+  const { projectDocuments, serviceCandidates, previousAnalysis, analysisRevision } =
     sourceSnapshot.value;
   const { projectDocuments: analysisDocuments } =
     splitServiceDescriptionDetails(projectDocuments);
@@ -1245,6 +1311,15 @@ export async function generateCustomerAnalysis(input: {
     );
   }
 
+  const onCompletedField = !section ? createCustomerAnalysisPartialPublisher({
+    projectId: input.projectId,
+    sourceRevision: sourceSnapshot.sourceRevision,
+    expectedAnalysisRevision: analysisRevision,
+    documents: [customerDocument, ...supportingDocuments],
+    serviceCandidates,
+    automaticRequestId: input.automaticRequestId,
+    assertActive: input.assertActive,
+  }) : undefined;
   const documentCount = 1 + supportingDocuments.length;
   const result = await runWithElapsedProgress(
     {
@@ -1269,6 +1344,7 @@ export async function generateCustomerAnalysis(input: {
             model: input.model,
           })
         : analyzeCustomerDocuments({
+            onCompletedField,
             projectName: customerDocument.title,
             customerDocument,
             supportingDocuments,
@@ -1289,6 +1365,7 @@ export async function generateCustomerAnalysis(input: {
     result,
     {
       expectedSourceRevision: sourceSnapshot.sourceRevision,
+      expectedAnalysisRevision: analysisRevision,
       ...(input.automaticRequestId ? { expectedAnalysisRevision: null, automaticRequestId: input.automaticRequestId } : {}),
       previousAnalysis,
       updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],

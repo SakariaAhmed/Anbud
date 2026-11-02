@@ -20,6 +20,7 @@ import {
   retrievedSnippetContext,
   summarizeCustomerAnalysis,
   summarizeSolutionEvaluation,
+  solutionEvaluationRetrievalTerms,
 } from "@/lib/server/ai/context";
 
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
@@ -97,6 +98,7 @@ import { requirementCoverageSystemPrompt } from "@/lib/server/prompts/requiremen
 import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 
 import { assertRequirementCoverageIntegrity } from "@/lib/server/requirements/evaluation-coverage-integrity";
+import { criterionCoverageLostGoodRating, normalizeCriterionCoverage, reconcileCriterionCoverage } from "@/lib/server/ai/criterion-coverage";
 
 import { assertRequirementLedgerQualityForEvaluation } from "@/lib/server/requirements/ledger-quality";
 import { splitMarkdownTableRow } from "@/lib/server/requirements/markdown-table";
@@ -2406,6 +2408,7 @@ async function createCustomerAnalysisV3Completion<T>(input: {
   system: string;
   user: string;
   model?: string;
+  onCompletedField?: (key: string, value: unknown) => Promise<void>;
 }) {
   return runStructuredJsonResponse<T>({
     ...input,
@@ -2430,6 +2433,7 @@ type AnalyzeCustomerDocumentsInput = {
   supportingDocuments: ProjectDocumentDetail[];
   serviceCandidates?: ProjectServiceDescription[];
   model?: string;
+  onCompletedField?: (key: string, value: unknown) => Promise<void>;
 };
 
 async function analyzeCustomerDocumentsLegacy(
@@ -2641,6 +2645,7 @@ export async function analyzeCustomerDocuments(
       system: buildCustomerAnalysisV3SystemPrompt(),
       user: userPrompt,
       model: input.model ?? DOCUMENT_ANALYSIS_MODEL,
+      onCompletedField: input.onCompletedField,
     });
 
   void recordDocumentIntelligenceEvent({
@@ -3032,6 +3037,7 @@ export async function evaluateSolutionDocument(input: {
       structureSelection: hasRequirementCoverage ? "distributed" : "head",
     }),
     buildRequirementCoverageEvaluationContext(requirementCoverage),
+    buildDelimitedContext("Kriterier som skal vurderes enkeltvis", JSON.stringify(input.customerAnalysis.likely_evaluation_criteria.map((criterion, criterion_index) => ({ criterion_index, criterion })))),
     buildDelimitedContext(
       "Referanseregel for importert Bilag 2",
       [
@@ -3139,24 +3145,32 @@ export async function evaluateSolutionDocument(input: {
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
+  normalizedEvaluation.criterion_coverage = normalizeCriterionCoverage(result.criterion_coverage, {
+    criteria: input.customerAnalysis.likely_evaluation_criteria,
+    analysisRevision: input.customerAnalysis.revision,
+    sourceRevision: input.sourceRevision,
+    coverage: normalizedEvaluation.requirement_coverage!,
+    customerDocuments: [input.customerDocument, ...requirementSourceDocuments],
+    solutionDocument: input.solutionDocument,
+  });
   return reviewSolutionEvaluationEvidence(normalizedEvaluation, {
     documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
     authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
     artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
-  });
+  }, result.criterion_coverage);
 
 }
 
 /** Source review may downgrade coverage after model normalization. Keep all
  * derived summaries, scores and matched findings on the same assessment set. */
-export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1]) {
+export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1], originalCriterionCoverage: unknown = result.criterion_coverage) {
   const reviewed = reviewStructuredOutputEvidence(result, input);
   const coverage = reviewed.result.requirement_coverage;
-  if (!coverage || !reviewed.evidence.issues?.length) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  if (!coverage) return { ...reviewed.result, source_evidence: reviewed.evidence };
   let downgraded = false;
   const changedPaths = new Set<string>();
   const downgradedItems = new Set<RequirementCoverage["items"][number]>();
-  for (const issue of reviewed.evidence.issues) {
+  for (const issue of reviewed.evidence.issues ?? []) {
     const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
     const item = match ? coverage.items[Number(match[1])] : null;
     if (match && item?.assessment === "Godt") {
@@ -3169,15 +3183,69 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
       downgraded = true;
     }
   }
-  if (!downgraded) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  if (reviewed.result.criterion_coverage) {
+    const before = reviewed.result.criterion_coverage;
+    const next = reconcileCriterionCoverage(before.map((item, index) => ({ ...item,
+      review_required: item.review_required || (reviewed.evidence.issues ?? []).some(issue => issue.path.startsWith(`result.criterion_coverage.${index}.`)),
+    })), coverage, input.documents.map(item => item.document).filter((document): document is ProjectDocumentDetail => "project_id" in document));
+    next.forEach((item, index) => {
+      if (item.rationale !== before[index].rationale) changedPaths.add(`result.criterion_coverage.${index}.rationale`);
+      if (item.assessment !== before[index].assessment) changedPaths.add(`result.criterion_coverage.${index}.assessment`);
+    });
+    reviewed.result.criterion_coverage = next;
+    downgraded = criterionCoverageLostGoodRating(originalCriterionCoverage, next) || downgraded;
+  }
+  // A finding without a unique source-qualified match must never inherit one
+  // of the candidate rows' recommendation, even if no row changed this pass.
+  reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
+    if (finding.reference_match !== "coverage") return finding;
+    const match = matchFindingToCoverageItem({ finding, coverage });
+    const changed = !match || downgradedItems.has(match);
+    if (!changed) {
+      if (finding.assessment !== match.assessment) changedPaths.add(`result.document_findings.${index}.assessment`);
+      return { ...finding, assessment: match.assessment };
+    }
+    for (const field of ["assessment", "finding", "recommendation"]) changedPaths.add(`result.document_findings.${index}.${field}`);
+    return { ...finding, assessment: match?.assessment ?? "Uklart",
+      finding: match ? match.rationale : "Må avklares. Funnet kan ikke knyttes entydig til ett krav i kildegrunnlaget.",
+      recommendation: match?.recommendation ?? "Kontroller originalkilden og avklar hvilket krav funnet gjelder før besvarelsen vurderes på nytt.",
+    };
+  });
+  const finish = () => {
+    const changed = (path: string) => [...changedPaths].some(parent => path === parent || path.startsWith(`${parent}.`));
+    reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changed(reference.path));
+    reviewed.evidence.issues = reviewed.evidence.issues?.filter(issue => !changed(issue.path));
+    return { ...reviewed.result, source_evidence: reviewed.evidence };
+  };
+  if (!downgraded) return finish();
   coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
   coverage.weak = coverage.items.filter(item => item.assessment === "Dårlig").length;
   coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
   coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
   coverage.coverage_summary = buildRequirementCoverageSummary(coverage.items);
   changedPaths.add("result.requirement_coverage.coverage_summary");
+  // Global narrative was generated from the pre-review assessments. Quotation
+  // membership cannot establish that its conclusions survived the downgrade.
+  // Withhold that interpretation, retain the scoped row evidence and unchanged
+  // findings, and pass the reconciled summary to every downstream consumer.
+  const notice = "Kildekontrollen endret krav- eller kriterievurderingen. Den opprinnelige helhetsvurderingen er holdt tilbake. Avklar de usikre vurderingene før konklusjonene brukes.";
+  const summary = `${coverage.coverage_summary} ${notice}`;
+  reviewed.result.fit_to_customer_needs = summary;
+  reviewed.result.executive_summary = summary;
+  for (const field of ["strengths", "weaknesses", "generic_sections", "missing_elements", "risks_to_customer", "trust_signals", "improvement_recommendations"] as const) {
+    reviewed.result[field] = field === "improvement_recommendations" ? ["Kontroller originalkildene og oppdater de usikre kravbesvarelsene før en ny helhetsvurdering."] : [];
+    changedPaths.add(`result.${field}`);
+  }
+  reviewed.result.value_assessment = [];
+  reviewed.result.rewrite_suggestions = [];
+  reviewed.result.likely_score_assessment = { quality: notice, delivery_confidence: notice, risk: notice, competitiveness: notice };
+  for (const field of ["fit_to_customer_needs", "executive_summary", "value_assessment", "rewrite_suggestions", "likely_score_assessment"]) changedPaths.add(`result.${field}`);
   const comparison = reviewed.result.architecture_comparison;
   if (comparison) {
+    comparison.strong_critique = [];
+    comparison.pragmatic_reflections = [];
+    comparison.strategy_improvement_advice = [notice];
+    for (const field of ["strong_critique", "pragmatic_reflections", "strategy_improvement_advice"]) changedPaths.add(`result.architecture_comparison.${field}`);
     const previousScore = comparison.architect_solution_score;
     const previousWinner = comparison.winner;
     const cap = coverage.items.length ? Math.round((coverage.good + coverage.weak * 0.6 + coverage.unclear * 0.35) / coverage.items.length * 100) : 100;
@@ -3187,17 +3255,13 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
     comparison.verdict = `${coverage.coverage_summary} ${comparisonChanged ? "Sammenligningen er oppdatert" : "Poengene og vinneren er uendret"} etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
     changedPaths.add("result.architecture_comparison.verdict");
   }
-  reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
-    if (finding.reference_match !== "coverage") return finding;
-    const match = matchFindingToCoverageItem({ finding, coverage });
-    changedPaths.add(`result.document_findings.${index}.assessment`);
-    const recommendationChanged = match && downgradedItems.has(match);
-    if (recommendationChanged) changedPaths.add(`result.document_findings.${index}.recommendation`);
-    return { ...finding, assessment: match?.assessment ?? "Uklart", ...(recommendationChanged ? { recommendation: match.recommendation } : {}) };
-  });
-  reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changedPaths.has(reference.path));
-  reviewed.evidence.issues = reviewed.evidence.issues?.filter(issue => !changedPaths.has(issue.path));
-  return { ...reviewed.result, source_evidence: reviewed.evidence };
+
+  reviewed.result.evidence_review = {
+    status: "coverage_downgraded", message: notice,
+    affected_requirement_references: [...downgradedItems].map(item => item.full_reference ?? item.reference),
+    withheld_paths: [...changedPaths],
+  };
+  return finish();
 }
 
 function parseGeneratedArtifactDraft(
@@ -3393,12 +3457,12 @@ async function buildArtifactRetrievalContext(
     query: [
       input.projectName,
       input.artifactType,
+      "krav behov risiko verdi evalueringskriterier løsning gjennomføring drift kontrakt",
       input.instructions ?? "",
       input.customerAnalysis ? summarizeCustomerAnalysis(input.customerAnalysis) : "",
       input.solutionEvaluation
-        ? summarizeSolutionEvaluation(input.solutionEvaluation)
+        ? solutionEvaluationRetrievalTerms(input.solutionEvaluation)
         : "",
-      "krav behov risiko verdi evalueringskriterier løsning gjennomføring drift kontrakt",
     ]
       .filter(Boolean)
       .join("\n"),

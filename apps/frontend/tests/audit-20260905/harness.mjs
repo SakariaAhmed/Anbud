@@ -18,6 +18,7 @@ export function actual(file, names, dependencies = {}) {
   const found = new Map();
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && names.includes(node.name?.text)) found.set(node.name.text, node.getText(source).replace(/^export\s+/, ''));
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && names.includes(node.name.text)) found.set(node.name.text, `const ${node.getText(source)};`);
     ts.forEachChild(node, visit);
   }
   visit(source);
@@ -35,7 +36,7 @@ export function documentIngestionTracker(dependencies) {
     fetchProjectState: dependencies.fetchProjectState,
     DocumentProcessingFailure,
   });
-  return actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob'], {
+  return actual('components/projects/project-workspace-page.tsx', ['trackDocumentIngestionJob', 'ENHANCEMENT_WAIT_NOTICE'], {
     ...dependencies, DocumentProcessingFailure, trackDocumentProcessing, mergeProjectRefresh,
   });
 }
@@ -96,6 +97,7 @@ export function downstream() {
   sql(`insert into solution_evaluations(project_id,result_json) values(${quote(P)},'{}'); insert into executive_summaries(project_id,result_json) values(${quote(P)},'{}');`);
 }
 export const counts = () => JSON.parse(sql(`select jsonb_build_array((select count(*) from customer_analyses where project_id=${quote(P)}),(select count(*) from solution_evaluations where project_id=${quote(P)}),(select count(*) from executive_summaries where project_id=${quote(P)}))`));
+const partials = jiti(path.join(frontend, 'lib/server/repositories/analysis-partials.ts'));
 export function workflow(names, overrides = {}) {
   return actual(workflowFile, names, {
     ...history, ...snapshots, ...domain, ...services, ...readiness, WorkflowError: workflowErrors.WorkflowError,
@@ -105,6 +107,16 @@ export function workflow(names, overrides = {}) {
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
     buildIngestionRequirementRegister: jiti(path.join(frontend, 'lib/server/requirements/ingestion-register.ts')).buildIngestionRequirementRegister,
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,
+    createCustomerAnalysisPartialPublisher: partials.createCustomerAnalysisPartialPublisher,
+    readCustomerAnalysisRevision: projectId => partials.readCustomerAnalysisRevision(projectId, { client: {
+      from(table) {
+        assert.equal(table, 'customer_analyses');
+        const query = { select() { return query; }, eq(column, value) { assert.equal(column, 'project_id'); assert.equal(value, projectId); return query; },
+          async limit() { return { data: JSON.parse(sql(`select coalesce(jsonb_agg(row_to_json(a)), '[]'::jsonb) from (select revision from customer_analyses where project_id=${quote(projectId)} limit 1) a`)), error: null }; } };
+        return query;
+      },
+    } }),
+    ...jiti(path.join(frontend, 'lib/document-processing.ts')),
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()],
     getProjectSnapshotAfterCommit: async () => ({ id: P }),
     findWorkflowArtifact: async () => null, getProjectWorkflowLease: () => null,

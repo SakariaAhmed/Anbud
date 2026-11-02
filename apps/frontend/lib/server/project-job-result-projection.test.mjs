@@ -120,6 +120,7 @@ test("Docling already-parsed, not-selected, failed, no-improvement and successfu
       exports.getDocumentDetail = async () => globalThis.__jobResultProjectionWorkflow.document;
       exports.getProjectSnapshotAfterCommit = async () => null;
       exports.updateDocumentProcessingState = async () => {};
+      exports.setDocumentEnhancementState = async () => true;
       exports.saveDocumentIngestionResult = async () => {
         globalThis.__jobResultProjectionWorkflow.saves++;
         return {...globalThis.__jobResultProjectionWorkflow.document, processing_status: "enhanced_ready"};

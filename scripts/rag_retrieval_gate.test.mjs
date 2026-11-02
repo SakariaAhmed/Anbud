@@ -1,13 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { scoreRetrievalCases } from "./rag_eval.mjs";
-import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
+import { evaluateRetrievalGate, retrievalGateMode } from "./rag_retrieval_gate.mjs";
 
 function cases() {
   return [["id_lookup", 60], ["conceptual", 36], ["held_out", 20]].flatMap(([kind, count]) =>
     Array.from({ length: count }, (_, index) => ({ kind, question: `${kind} question ${index}`, expected_requirement_id: `R-${index}`, expected_texts: [`Required evidence ${kind} ${index}`], retrieved: [{ source_id: "source", reference: "Side 1", text: `Required evidence ${kind} ${index}` }] })),
   );
 }
+
+test("release mode cannot silently select regression floors for the extended suite", () => {
+  const mode = retrievalGateMode({ extendedSuite: true, releaseGate: true, recorded: true });
+  assert.equal(mode, "extended_release");
+  const rows = Array.from({ length: 20 }, (_, i) => ({ kind: "stress", question: String(i), expected_requirement_id: `K-${i}`, expected_texts: [`Evidence ${i}`], retrieved: i < 18 ? [{ text: `Evidence ${i}` }] : [] }));
+  assert.ok(!evaluateRetrievalGate(rows, "extended").failures.some(f => f.startsWith("stress:")));
+  assert.ok(evaluateRetrievalGate(rows, mode).failures.some(f => f.startsWith("stress: recall@10")));
+});
+
+test("repeated-ID proof requires every labelled source occurrence", () => {
+  const rows = cases();
+  rows[0].required_evidence = [
+    { expected_texts: ["Shared requirement"], expected_source_ids: ["source-a"], expected_page: 1 },
+    { expected_texts: ["Shared requirement"], expected_source_ids: ["source-b"], expected_page: 2 },
+  ];
+  rows[0].retrieved.push({ text: "Shared requirement", source_id: "source-a", page_start: 1, page_end: 1 });
+  assert.equal(evaluateRetrievalGate(rows).passed, false);
+  rows[0].retrieved.push({ text: "Shared requirement", source_id: "source-b", page_start: 2, page_end: 2 });
+  assert.equal(evaluateRetrievalGate(rows).passed, true);
+  rows[0].required_evidence = [];
+  assert.equal(evaluateRetrievalGate(rows).passed, false);
+});
 
 test("retrieval gate rejects a lost ID lookup even when aggregate recall remains high", () => {
   const rows = cases();

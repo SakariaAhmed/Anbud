@@ -19,6 +19,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         return { id: document.id, title: document.title, source_revision: revision,
           document_ready: isDocumentReadyForEvaluation(document), register_available: rows !== null,
           rows: (rows ?? []).map(row => ({ id: row.id, text: row.text, heading: row.heading, pages: row.pages,
+            text_origin: row.textOrigin ?? "unknown", ...(row.textEvidence ? { original_text: row.textEvidence.originalText } : {}),
             id_origin: row.idOrigin ?? "source", ...(row.originalId ? { original_id: row.originalId } : {}) })),
         };
       })),

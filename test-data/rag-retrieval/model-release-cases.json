@@ -1,5 +1,5 @@
 {
-  "version": "rag-model-release.v3",
+  "version": "rag-model-release.v4",
   "fixture": "system-test-http.v1:fictional-municipality",
   "thresholds": {
     "groundedness": 0.98,
@@ -11,61 +11,74 @@
       "id": "exit-id",
       "question": "Hva sier K-1.3 om fristen ved exit? Siter den opprinnelige ordlyden.",
       "expected": "Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager. Ikke utled at hele exit eller leverandørskiftet skal være fullført innen 30 dager.",
-      "citations_required": true
+      "citations_required": true,
+      "kind": "factual"
     },
     {
       "id": "data-location",
       "question": "Hvor skal kundedata, sikkerhetskopier og identifiserbare logger behandles? Vis kilden.",
       "expected": "Alle tre skal lagres og behandles i Norge.",
-      "citations_required": true
+      "citations_required": true,
+      "kind": "factual"
     },
     {
       "id": "operations",
       "question": "Hvem følger kritiske hendelser, og når driftes plattformen? Vis dokumentasjonen.",
       "expected": "Driftssenterets vaktleder er kontaktpunkt og følger hendelsen til godkjent avslutning. Drift hele døgnet.",
-      "citations_required": true
+      "citations_required": true,
+      "kind": "factual"
     },
     {
       "id": "missing-id",
       "question": "Hva krever K-99.9?",
       "expected": "ID-en finnes ikke i grunnlaget. Ikke tilskriv den innhold.",
-      "abstention_required": true
+      "abstention_required": true,
+      "kind": "negative"
     },
     {
       "id": "unanswerable-price",
       "question": "Hva er den eksakte årlige kontraktsprisen i kroner?",
       "expected": "Prisen er ikke oppgitt. Ikke finn på et beløp.",
-      "abstention_required": true
+      "abstention_required": true,
+      "kind": "negative"
     },
     {
       "id": "unanswerable-protocol",
       "question": "Hvilken SAML2-profil krever kunden uttrykkelig?",
       "expected": "Ingen SAML2-profil er dokumentert. Ikke kall SAML2 en manglende krav-ID.",
-      "abstention_required": true
+      "abstention_required": true,
+      "kind": "negative"
     },
     {
       "id": "generated-bilag",
       "required_source_type": "generated_artifact",
       "question": "Oppsummer hva det genererte Bilag 1-utkastet sier om exit. Skill utkastets tolkning fra primærkravene, og vis kilde.",
       "expected": "Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager. Ikke utled at hele exit eller leverandørskiftet skal være fullført innen 30 dager. Omtal generert utkast som tolkning, ikke en ny primærkilde.",
-      "citations_required": true
+      "citations_required": true,
+      "kind": "factual"
     },
     {
       "id": "exit-warm",
       "question": "Hva sier K-1.3 om fristen ved exit? Siter den opprinnelige ordlyden.",
       "expected": "Leverandøren skal levere en exitplan med eksport i åpne formater innen 30 dager. Ikke utled at hele exit eller leverandørskiftet skal være fullført innen 30 dager.",
-      "citations_required": true
+      "citations_required": true,
+      "kind": "repeat",
+      "repeat_of": "exit-id"
     },
     {
       "id": "conversation-labels",
       "question": "Skriv bare setningen: Svar \"Ja\" eller \"Nei\".",
-      "expected": "Skriv den etterspurte setningen. Dette er samtaleformatering, ikke en kildepåstand."
+      "expected": "Skriv den etterspurte setningen. Dette er samtaleformatering, ikke en kildepåstand.",
+      "kind": "conversation"
     },
     {
       "id": "planning-terms",
       "question": "Lag et tydelig merket forslag til en plan for P1-hendelser og L2-støtte i Q3 2027 med M365 E5. Ikke framstill dette som dokumenterte kundekrav.",
-      "expected": "Gi et forslag. P1, L2, Q3, M365 og E5 er tjeneste-, kalender- og produktbegreper her, ikke manglende krav-ID-er."
+      "expected": "Gi et forslag. P1, L2, Q3, M365 og E5 er tjeneste-, kalender- og produktbegreper her, ikke manglende krav-ID-er.",
+      "kind": "conversation"
     }
   ],
-  "revision_note": "Corrected ambiguous exit deadline labels after independent review of a v2 false-positive judge verdict. Same questions; v2 inputs and all original results retained. No v3 model run is claimed."
+  "revision_note": "Preserves v3 questions and expected answers. Separates factual, negative, conversational and warm-repeat metrics. Requires a distinct configured judge model and claim-level verdicts. No v4 run is claimed.",
+  "metric_policy": "distinct-factual",
+  "purpose": "development-regression; not an independent holdout"
 }

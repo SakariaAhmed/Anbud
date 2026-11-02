@@ -27,6 +27,7 @@ const jiti = createJiti(path.join(frontendRoot, "document-chunks-tests.cjs"), {
 });
 const {
   buildKeywordSearchQuery,
+  buildRetrievalRerankPool,
   documentChunkMetadataMatchesSourceFingerprint,
   documentSourceKeysForMemoryFallback,
   ensureProjectDocumentChunks,
@@ -61,6 +62,9 @@ test("exact full IDs resolve authoritative repeated rows before model reranking 
   const input = { query: "Hva sier NORD-IAM-02?", exactTerms: ["NORD-IAM-02"], documents: [first, second, solution], rerank: async ({ candidates }) => candidates.map((_, i) => i).reverse() };
   const result = await retrieveDocumentSnippetsWithMetadata(input);
   assert.deepEqual(result.snippets.slice(0, 2).map(row => [row.sourceId, row.requirementId]), [[first.id, "NORD-IAM-02"], [second.id, "NORD-IAM-02"]]);
+  const bounded = await retrieveDocumentSnippetsWithMetadata({ ...input, limit: 1 });
+  assert.equal(bounded.telemetry.requirementLookupTruncated, true);
+  assert.equal(bounded.telemetry.quality.sufficient, false, "One returned occurrence cannot imply that the ID is unique.");
   const updated = source(first.id, "Leverandøren skal ha beredskap i Norge.");
   updated.chunk_source_revision = 2;
   const fresh = await retrieveDocumentSnippetsWithMetadata({ ...input, documents: [updated] });
@@ -636,12 +640,19 @@ test("a reranker reorders the candidate pool; invalid or missing answers keep th
   const seen = [];
   const reordered = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async ({ candidates }) => {
     seen.push(candidates.length);
-    return [2, 2, 99, -1, 1.5];
+    return [2, 2];
   } });
   assert.deepEqual(seen, [3]);
   assert.equal(reordered.telemetry.usedModelRerank, true);
   assert.deepEqual(reordered.snippets.map((snippet) => snippet.reference),
-    [heuristic[2], heuristic[0], heuristic[1]]);
+    [heuristic[2]]);
+  const none = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => [] });
+  assert.deepEqual(none.snippets, []);
+  assert.equal(none.telemetry.usedModelRerank, true);
+  assert.equal(none.telemetry.quality.sufficient, false);
+  const invalid = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => [2, 99, -1, 1.5] });
+  assert.deepEqual(invalid.snippets.map(snippet => snippet.reference), heuristic);
+  assert.equal(invalid.telemetry.usedModelRerank, false);
   const kept = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => null });
   assert.equal(kept.telemetry.usedModelRerank, false);
   assert.deepEqual(kept.snippets.map((snippet) => snippet.reference), heuristic);
@@ -698,4 +709,77 @@ test("actual overlapping retrieval chunks remain verifiable as original source e
     assert.ok(snippet.originalQuote); assert.ok(raw_text.includes(snippet.originalQuote));
     assert.ok(bindDocumentSourceEvidence(source, snippet.originalQuote), snippet.originalQuote.slice(0, 40));
   }
+});
+
+
+test("rerank pooling retains SQL fusion and semantic paraphrases beyond lexical distractors", () => {
+  const candidates = Array.from({ length: 80 }, (_, index) => ({
+    sourceType: "project_document", sourceId: "source", documentTitle: "Bilag", kind: null,
+    reference: `Del ${index}`, chunkIndex: index, text: `Utdrag ${index}`,
+    headingPath: [], pageStart: null, pageEnd: null, similarity: 0.9 - index / 100,
+    semanticRank: index + 1, keywordRank: index + 1, rrfScore: 1 / (60 + index + 1),
+    retrievalSource: "hybrid", lexicalScore: 0, score: 0,
+  }));
+  const semanticHit = { ...candidates[70], text: "Lokal mellomlagring bevarer målinger ved nettverksbrudd.",
+    keywordRank: null, semanticRank: 1, similarity: 0.99, rrfScore: 0.01 };
+  candidates[70] = semanticHit;
+  const sqlHit = candidates[28];
+  const ranked = [...candidates.filter(candidate => candidate !== sqlHit && candidate !== semanticHit)];
+  ranked.splice(43, 0, sqlHit);
+  ranked.splice(70, 0, semanticHit);
+  const pool = buildRetrievalRerankPool({ ranked, retrievalRankings: [candidates] });
+  assert.ok(pool.includes(sqlHit), "SQL fusion rank 29 survives lexical rank 44");
+  assert.ok(pool.includes(semanticHit), "a semantic hit with no keyword vote reaches the model");
+  assert.ok(ranked.slice(0, 8).every(candidate => pool.includes(candidate)), "lexical leaders are retained");
+  assert.ok(pool.length <= 48);
+  assert.equal(new Set(pool.map(candidate => candidate.chunkIndex)).size, pool.length);
+  assert.deepEqual(pool, ranked.filter(candidate => pool.includes(candidate)), "pool retains deterministic heuristic order");
+  assert.deepEqual(buildRetrievalRerankPool({ ranked, retrievalRankings: [candidates] }), pool);
+  assert.deepEqual(buildRetrievalRerankPool({ ranked, retrievalRankings: [] }), ranked.slice(0, 32), "memory fallback retains its original pool");
+});
+
+test("rerank channel quotas fuse votes across subqueries rather than reusing one query's ranks", () => {
+  const candidates = Array.from({ length: 80 }, (_, index) => ({
+    sourceType: "project_document", sourceId: "source", documentTitle: "Bilag", kind: null,
+    reference: `Del ${index}`, chunkIndex: index, text: `Passasje ${index}`, headingPath: [],
+    pageStart: null, pageEnd: null, similarity: 0.8, semanticRank: index + 1,
+    keywordRank: index + 1, rrfScore: 1 / (60 + index + 1), retrievalSource: "hybrid", lexicalScore: 0, score: 0,
+  }));
+  const first = candidates.slice(0, 40);
+  const second = candidates.slice(40).map((candidate, index) => ({ ...candidate, semanticRank: index + 1, rrfScore: 1 / (61 + index) }));
+  const pool = buildRetrievalRerankPool({ ranked: candidates, retrievalRankings: [first, second] });
+  assert.ok(pool.includes(candidates[40]), "the second query's strongest semantic candidate is preserved");
+  assert.ok(pool.includes(candidates[55]), "the second query receives SQL fusion slots");
+  assert.equal(pool.length, 48, "disjoint channels obey the hard ceiling");
+  assert.equal(new Set(pool.map(candidate => candidate.chunkIndex)).size, pool.length);
+});
+
+test("retrieval passes a SQL hit beyond the lexical cutoff to the reranker and preserves fallback", async () => {
+  resetDocumentChunksTestRuntime();
+  const passages = Array.from({ length: 64 }, (_, index) => index === 28
+    ? "Lokal mellomlagring bevarer målingene ved nettverksbrudd."
+    : `Data skyen forbindelse nede gjelder driftsrapport nummer ${index}.`);
+  const document = projectDocument({ raw_text: passages.join("\n\n"), structure_map: [] });
+  setDocumentChunksTestRetrievalRows(passages.map((text, index) => ({
+    ...storedSnippetRow(document, text, `Del ${index}`, `stored-${index}`), chunk_index: index,
+  })));
+  const input = { query: "Hva skjer med data når forbindelsen til skyen er nede?", documents: [document], limit: 12 };
+  const baseline = await retrieveDocumentSnippetsWithMetadata(input);
+  const diagnostics = [];
+  const reranked = await retrieveDocumentSnippetsWithMetadata({ ...input,
+    onCandidateRanking: diagnostic => diagnostics.push(diagnostic),
+    rerank: async ({ candidates }) => {
+      const index = candidates.findIndex(candidate => candidate.chunkIndex === 28);
+      assert.ok(index >= 0, "the SQL hit reaches the injected reranker");
+      assert.ok(candidates.length <= 48);
+      return [index];
+    },
+  });
+  assert.ok(diagnostics.find(diagnostic => diagnostic.stage === "fused").candidates.findIndex(candidate => candidate.chunkIndex === 28) >= 32);
+  assert.equal(reranked.snippets[0].text, passages[28]);
+  assert.equal(reranked.telemetry.usedModelRerank, true);
+  const fallback = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => null });
+  assert.deepEqual(fallback.snippets, baseline.snippets);
+  const invalid = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => [48] });
+  assert.deepEqual(invalid.snippets, baseline.snippets);
 });

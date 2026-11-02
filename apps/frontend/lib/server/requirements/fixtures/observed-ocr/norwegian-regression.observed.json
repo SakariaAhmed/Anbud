@@ -1,0 +1,69 @@
+{
+  "notice": "Synthetic fixture only. This records a parser failure observed on an image-only PDF generated for this repository; it is not tender evidence and says nothing about real customer documents or OCR quality.",
+  "observed_failure": "At a03b7a8a the stored register for this actual OCR output had no rows, although the labelled requirements below are present in raw_text.",
+  "captured": {
+    "date": "2026-11-02",
+    "route": "POST multipart /api/projects/[id]/documents through the local owned stack",
+    "source_commit": "a03b7a8a"
+  },
+  "source_pdf": {
+    "path": "test-data/ocr/norwegian-regression.pdf",
+    "sha256": "cf26825184366ab362cc9b4059e3ae5afca9926b8b9889228c43306e45821f87"
+  },
+  "parser": {
+    "parser_used": "docling",
+    "image": "anbud-ocr-norwegian:production-cached-models",
+    "image_id": "sha256:c07ed9aa23b4282059853cfeeb6bc06a57cf6b13e10bf4ff9bc2f94b107ff531",
+    "docling_slim": "2.99.0",
+    "docling_core": "2.95.0",
+    "docling_parse": "6.2.0",
+    "ocr": "tesseract nor,eng",
+    "version_gap": "Older than the Docling version pinned in the current Dockerfile; this output is not proof for that version."
+  },
+  "document": {
+    "file_name": "norwegian-regression.pdf",
+    "file_format": "pdf",
+    "page_count": 1,
+    "raw_text": "FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 måneder. Krav K-43: Leverandøren holder fire kurs. Kontrollkode: VERIFIKASJON-84 Dette dokumentet inneholder kun testdata.",
+    "structure_map": [
+      {
+        "reference": "Støttedokument – Docling text 1, side 1",
+        "text": "FIKTIV OCR-VERIFISERING Nordlys Testkommune Krav K-42: Sikkerhetslogger lagres i 14 måneder. Krav K-43: Leverandøren holder fire kurs. Kontrollkode: VERIFIKASJON-84 Dette dokumentet inneholder kun testdata.",
+        "kind": "docling_text",
+        "parser": "docling",
+        "page": 1,
+        "docling_ref": "#/texts/0"
+      }
+    ]
+  },
+  "expected_rows": [
+    {
+      "id": "K-42",
+      "text": "Sikkerhetslogger lagres i 14 måneder.",
+      "original_span": {
+        "start": 55,
+        "end": 92,
+        "text": "Sikkerhetslogger lagres i 14 måneder."
+      },
+      "locator": {
+        "page": 1,
+        "docling_ref": "#/texts/0",
+        "reference": "Støttedokument – Docling text 1, side 1"
+      }
+    },
+    {
+      "id": "K-43",
+      "text": "Leverandøren holder fire kurs.",
+      "original_span": {
+        "start": 104,
+        "end": 134,
+        "text": "Leverandøren holder fire kurs."
+      },
+      "locator": {
+        "page": 1,
+        "docling_ref": "#/texts/0",
+        "reference": "Støttedokument – Docling text 1, side 1"
+      }
+    }
+  ]
+}

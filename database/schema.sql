@@ -11,6 +11,7 @@ begin
 end $$;
 
 drop table if exists project_analysis_requests cascade;
+drop table if exists customer_analysis_partials cascade;
 drop table if exists generated_artifacts cascade;
 drop table if exists project_jobs cascade;
 drop table if exists project_job_claim_control cascade;
@@ -8131,4 +8132,316 @@ revoke all on function public.automatic_customer_analysis_preflight() from publi
 grant execute on function public.automatic_customer_analysis_preflight() to service_role;
 
 commit;
+notify pgrst, 'reload schema';
+-- Incomplete previews are deliberately separate from authoritative analyses.
+create table public.customer_analysis_partials (
+  job_id uuid primary key references public.project_jobs(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  generation_id uuid not null,
+  lease_token uuid not null,
+  source_revision bigint not null check (source_revision >= 0),
+  expected_analysis_revision uuid,
+  automatic_request_id uuid,
+  source_document_ids uuid[] not null,
+  fields jsonb not null default '{}'::jsonb check (jsonb_typeof(fields) = 'object'),
+  field_digests jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default clock_timestamp()
+);
+create index customer_analysis_partials_project_idx on public.customer_analysis_partials(project_id);
+alter table public.customer_analysis_partials enable row level security;
+revoke all on public.customer_analysis_partials from public, anon, authenticated;
+grant select, insert, update, delete on public.customer_analysis_partials to service_role;
+
+create or replace function public.save_customer_analysis_partial(
+  p_project_id uuid, p_job_id uuid, p_lease_token uuid, p_payload jsonb
+) returns void language plpgsql security invoker set search_path = '' as $$
+declare
+  v_job public.project_jobs%rowtype;
+  v_partial public.customer_analysis_partials%rowtype;
+  v_source bigint;
+  v_revision uuid;
+  v_field text := p_payload->>'field';
+  v_generation uuid := (p_payload->>'generation_id')::uuid;
+begin
+  select source_revision into v_source from public.projects where id=p_project_id for update;
+  if not found then raise exception 'Project does not exist'; end if;
+  select * into v_job from public.project_jobs where id=p_job_id and project_id=p_project_id for update;
+  if not found or v_job.status <> 'running' or v_job.lease_token is distinct from p_lease_token
+    or v_job.locked_at is null or v_job.locked_at < clock_timestamp()-interval '15 minutes' then
+    raise exception 'PROJECT_JOB_LEASE_LOST: preview lease is no longer authoritative';
+  end if;
+  if v_job.kind <> 'customer_analysis' or v_job.result_checkpoint is not null then
+    raise exception 'PARTIAL_ANALYSIS_NOT_ALLOWED';
+  end if;
+  if exists(select 1 from public.project_jobs where project_id=p_project_id
+    and kind in ('customer_analysis','high_level_design') and submission_sequence > v_job.submission_sequence) then
+    raise exception 'PROJECT_JOB_SUPERSEDED';
+  end if;
+  if jsonb_typeof(p_payload->'expected_source_revision') is distinct from 'number'
+    or (p_payload->>'expected_source_revision')::bigint is distinct from v_source then
+    raise exception 'PROJECT_SOURCE_REVISION_CHANGED';
+  end if;
+  select revision into v_revision from public.customer_analyses where project_id=p_project_id;
+  if not (p_payload ? 'expected_analysis_revision')
+    or v_revision is distinct from (p_payload->>'expected_analysis_revision')::uuid then
+    raise exception 'CUSTOMER_ANALYSIS_CHANGED';
+  end if;
+  if p_payload->>'automatic_request_id' is not null and not exists(
+    select 1 from public.project_analysis_requests where project_id=p_project_id
+      and request_id=(p_payload->>'automatic_request_id')::uuid and status='scheduled' and source_revision=v_source
+  ) then raise exception 'AUTOMATIC_ANALYSIS_CANCELLED'; end if;
+  if v_generation is null or v_field is null or not (v_field = any(array[
+    'customer_profile_summary','customer_goals_summary','high_level_solution_design','high_level_architecture_mermaid',
+    'customer_profile','customer_goals','implicit_requirements','prioritized_requirements','ambiguities',
+    'risks','risks_for_us','risks_for_customer','likely_evaluation_criteria','signal_words','expected_solution_direction',
+    'recommended_services','value_opportunities','positioning_recommendations','executive_summary']))
+    or jsonb_typeof(p_payload->'value') is distinct from 'object'
+    or p_payload->'value'->'encrypted' is distinct from 'true'::jsonb
+    or ((p_payload->'value') - 'encrypted' - 'payload') <> '{}'::jsonb
+    or coalesce(p_payload->'value'->>'payload','') not like 'enc:v1:%'
+    or coalesce(p_payload->>'digest','') !~ '^[0-9a-f]{64}$' then
+    raise exception 'INVALID_ANALYSIS_PARTIAL';
+  end if;
+  if jsonb_typeof(p_payload->'source_document_ids') is distinct from 'array'
+    or jsonb_array_length(p_payload->'source_document_ids')=0
+    or exists(select 1 from jsonb_array_elements_text(p_payload->'source_document_ids') s(id)
+      where not exists(select 1 from public.documents d where d.id=s.id::uuid and d.project_id=p_project_id)) then
+    raise exception 'INVALID_ANALYSIS_PARTIAL_SOURCES';
+  end if;
+  insert into public.customer_analysis_partials(job_id,project_id,generation_id,lease_token,source_revision,
+    expected_analysis_revision,automatic_request_id,source_document_ids)
+    values(p_job_id,p_project_id,v_generation,p_lease_token,v_source,v_revision,
+      (p_payload->>'automatic_request_id')::uuid,
+      array(select jsonb_array_elements_text(p_payload->'source_document_ids')::uuid))
+    on conflict(job_id) do nothing;
+  select * into v_partial from public.customer_analysis_partials where job_id=p_job_id for update;
+  if v_partial.generation_id is distinct from v_generation or v_partial.lease_token is distinct from p_lease_token
+    or v_partial.source_revision is distinct from v_source or v_partial.expected_analysis_revision is distinct from v_revision
+    or v_partial.automatic_request_id is distinct from (p_payload->>'automatic_request_id')::uuid
+    or v_partial.source_document_ids is distinct from array(select jsonb_array_elements_text(p_payload->'source_document_ids')::uuid) then
+    raise exception 'ANALYSIS_PARTIAL_GENERATION_CHANGED';
+  end if;
+  if v_partial.fields ? v_field then
+    if v_partial.field_digests->>v_field is distinct from p_payload->>'digest' then
+      raise exception 'ANALYSIS_PARTIAL_FIELD_CHANGED';
+    end if;
+    return; -- Idempotent retry retains the original ciphertext and value.
+  end if;
+  update public.customer_analysis_partials set fields=fields || jsonb_build_object(v_field,p_payload->'value'),
+    field_digests=field_digests || jsonb_build_object(v_field,p_payload->>'digest'), updated_at=clock_timestamp()
+    where job_id=p_job_id;
+end;
+$$;
+
+create or replace function public.read_customer_analysis_partial(p_project_id uuid)
+returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_source bigint;
+  v_revision uuid;
+  v_job public.project_jobs%rowtype;
+  v_partial public.customer_analysis_partials%rowtype;
+begin
+  select source_revision into v_source from public.projects where id=p_project_id for share;
+  if not found then return null; end if;
+  select * into v_job from public.project_jobs where project_id=p_project_id
+    and kind in ('customer_analysis','high_level_design') order by submission_sequence desc limit 1 for share;
+  if not found or v_job.kind <> 'customer_analysis' or v_job.status not in ('running','failed')
+    or v_job.result_checkpoint is not null then return null; end if;
+  select * into v_partial from public.customer_analysis_partials where job_id=v_job.id;
+  if not found then return null; end if;
+  if v_job.status='running' and (v_job.lease_token is distinct from v_partial.lease_token
+    or v_job.locked_at is null or v_job.locked_at < clock_timestamp()-interval '15 minutes') then return null; end if;
+  select revision into v_revision from public.customer_analyses where project_id=p_project_id;
+  if v_partial.source_revision is distinct from v_source or v_partial.expected_analysis_revision is distinct from v_revision then return null; end if;
+  if v_partial.automatic_request_id is not null and not exists(
+    select 1 from public.project_analysis_requests where project_id=p_project_id and request_id=v_partial.automatic_request_id
+      and status in ('scheduled','failed') and source_revision=v_source
+  ) then return null; end if;
+  return jsonb_build_object('status','incomplete','job_id',v_job.id,'job_status',v_job.status,
+    'source_revision',v_source,'updated_at',v_partial.updated_at,'fields',v_partial.fields);
+end;
+$$;
+
+-- A failed original attempt retains its preview. Restart, takeover and final
+-- completion discard it; a restarted stream must never mix old/new sections.
+create or replace function public.invalidate_customer_analysis_partial_job()
+returns trigger language plpgsql security invoker set search_path = '' as $$
+begin
+  if new.status not in ('running','failed') or
+    (new.status='running' and new.lease_token is distinct from old.lease_token) or
+    (new.status='failed' and old.status <> 'running') then
+    delete from public.customer_analysis_partials where job_id=new.id;
+  end if;
+  return new;
+end;
+$$;
+create trigger invalidate_customer_analysis_partial_job after update of status,lease_token on public.project_jobs
+for each row execute function public.invalidate_customer_analysis_partial_job();
+revoke execute on function public.save_customer_analysis_partial(uuid,uuid,uuid,jsonb) from public,anon,authenticated;
+revoke execute on function public.read_customer_analysis_partial(uuid) from public,anon,authenticated;
+revoke execute on function public.invalidate_customer_analysis_partial_job() from public,anon,authenticated;
+grant execute on function public.save_customer_analysis_partial(uuid,uuid,uuid,jsonb) to service_role;
+grant execute on function public.read_customer_analysis_partial(uuid) to service_role;
+
+-- A deadline abandons a running enhancement workflow, which may no longer write.
+-- Its terminal transition records the failure on the document version that
+-- workflow read, in one transaction: a stale lease changes nothing, and a newer
+-- source keeps its own state. Only the visible outcome changes, never the
+-- status, parser, revision, chunks or register of the usable version.
+create or replace function public.fail_document_enhancement_job(
+  p_job_id uuid, p_lease_token uuid, p_project_id uuid, p_document_id uuid, p_source_revision bigint,
+  p_job_message text, p_job_error text, p_document_message text, p_document_error text, p_terminal_metadata jsonb
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_job public.project_jobs%rowtype;
+  v_recorded boolean;
+begin
+  perform 1 from public.projects where id = p_project_id for no key update;
+  select * into v_job from public.project_jobs where id = p_job_id and project_id = p_project_id for update;
+  if not found or v_job.status <> 'running' or v_job.lease_token is distinct from p_lease_token then
+    raise exception using errcode = 'P0001', message = 'PROJECT_JOB_LEASE_LOST: enhancement job lease is no longer authoritative';
+  end if;
+  if v_job.kind <> 'document_docling_enhancement' then
+    raise exception 'Only a document enhancement job can record an enhancement failure';
+  end if;
+  update public.documents
+  set processing_message = p_document_message, processing_error = p_document_error, updated_at = clock_timestamp()
+  where id = p_document_id and project_id = p_project_id and chunk_source_revision = p_source_revision
+    and processing_status in ('basic_ready', 'enhanced_ready') and parser_used is distinct from 'docling';
+  v_recorded := found;
+  update public.project_jobs
+  set status = 'failed', message = p_job_message, error = p_job_error, result_json = null,
+      terminal_metadata = coalesce(p_terminal_metadata, '{}'::jsonb),
+      completed_at = clock_timestamp(), locked_at = null, lease_token = null, updated_at = clock_timestamp()
+  where id = p_job_id;
+  return jsonb_build_object('document_failure_recorded', v_recorded);
+end;
+$$;
+revoke execute on function public.fail_document_enhancement_job(uuid,uuid,uuid,uuid,bigint,text,text,text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fail_document_enhancement_job(uuid,uuid,uuid,uuid,bigint,text,text,text,text,jsonb) to service_role;
+notify pgrst, 'reload schema';
+
+-- Retry eligibility, job coalescing and visible state share the publication lock.
+create or replace function public.enqueue_document_enhancement_retry(
+  p_project_id uuid, p_job jsonb, p_source_revision bigint
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_document public.documents%rowtype;
+  v_job public.project_jobs%rowtype;
+  v_result jsonb;
+begin
+  perform 1 from public.projects where id = p_project_id for update;
+  if not found then raise exception 'Project does not exist'; end if;
+  if (p_job->>'project_id')::uuid is distinct from p_project_id
+    or p_job->>'kind' is distinct from 'document_docling_enhancement'
+    or p_job->>'status' is distinct from 'queued'
+    or (p_job->'input_json'->>'projectId')::uuid is distinct from p_project_id
+    or p_job->'input_json'->>'kind' is distinct from 'document_docling_enhancement' then
+    raise exception 'Invalid enhancement retry job';
+  end if;
+  select * into v_document from public.documents
+    where project_id = p_project_id and id = (p_job->'input_json'->>'documentId')::uuid for update;
+  if not found or p_source_revision is null or v_document.chunk_source_revision is distinct from p_source_revision then
+    raise exception 'DOCUMENT_ENHANCEMENT_RETRY_STALE';
+  end if;
+  if v_document.processing_status is distinct from 'basic_ready' or v_document.parser_used = 'docling' then
+    raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
+  end if;
+  p_job := jsonb_set(p_job, '{input_json,sourceRevision}', to_jsonb(p_source_revision));
+  select * into v_job from public.project_jobs
+    where project_id = p_project_id and kind = 'document_docling_enhancement'
+      and input_json->>'documentId' = p_job->'input_json'->>'documentId' and status in ('queued','running')
+    order by submission_sequence desc limit 1;
+  if found then
+    -- Original ingestion jobs may predate revision-tagged recovery. Never clear
+    -- their recorded failure: a pre-read failure cannot restore it safely.
+    if not (v_job.input_json ? 'sourceRevision') or v_job.input_json->>'sourceRevision' is null then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: active attempt has no captured source revision';
+    end if;
+    if v_job.status = 'running' and nullif(btrim(v_document.processing_error), '') is not null then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: failing attempt is still terminating';
+    end if;
+    if v_job.input_json ? 'sourceRevision' and (v_job.input_json->>'sourceRevision')::bigint is distinct from p_source_revision then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_STALE';
+    end if;
+    if v_job.status = 'queued' then
+      update public.documents set processing_error = null,
+        processing_message = 'Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.', updated_at=clock_timestamp()
+        where id=v_document.id and project_id=p_project_id;
+    end if;
+    return to_jsonb(v_job);
+  end if;
+  if nullif(btrim(v_document.processing_error), '') is null then
+    raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE';
+  end if;
+  v_result := public.enqueue_project_job_serialized(p_project_id, p_job);
+  update public.documents set processing_error = null,
+    processing_message = 'Dokumentforbedringen er satt i kø. Grunnversjonen kan brukes imens.',
+    updated_at = clock_timestamp()
+    where id = v_document.id and project_id = p_project_id;
+  return v_result;
+end;
+$$;
+revoke execute on function public.enqueue_document_enhancement_retry(uuid,jsonb,bigint) from public,anon,authenticated;
+grant execute on function public.enqueue_document_enhancement_retry(uuid,jsonb,bigint) to service_role;
+notify pgrst, 'reload schema';
+
+-- Enhancement messages may describe only the still-published basic revision.
+create or replace function public.set_document_enhancement_state(
+  p_project_id uuid, p_document_id uuid, p_source_revision bigint,
+  p_message text, p_error text, p_job_id uuid default null, p_lease_token uuid default null
+) returns boolean language plpgsql security invoker set search_path = '' as $$
+begin
+  perform 1 from public.projects where id=p_project_id for no key update;
+  if not found then raise exception 'Project does not exist'; end if;
+  if p_job_id is not null or p_lease_token is not null then
+    perform 1 from public.project_jobs where id=p_job_id and project_id=p_project_id
+      and status='running' and lease_token=p_lease_token for update;
+    if not found then raise exception 'PROJECT_JOB_LEASE_LOST'; end if;
+  end if;
+  update public.documents set processing_message=p_message, processing_error=p_error, updated_at=clock_timestamp()
+    where id=p_document_id and project_id=p_project_id and chunk_source_revision=p_source_revision
+      and processing_status='basic_ready' and parser_used is distinct from 'docling';
+  return found;
+end;
+$$;
+revoke execute on function public.set_document_enhancement_state(uuid,uuid,bigint,text,text,uuid,uuid) from public,anon,authenticated;
+grant execute on function public.set_document_enhancement_state(uuid,uuid,bigint,text,text,uuid,uuid) to service_role;
+notify pgrst, 'reload schema';
+
+-- An expired or missing heartbeat is eligible for stale recovery. It cannot
+-- authorize a deadline failure, even before recovery has requeued the job.
+-- Upgrade earlier branch installations without editing the applied migration.
+create or replace function public.fail_document_enhancement_job(
+  p_job_id uuid, p_lease_token uuid, p_project_id uuid, p_document_id uuid, p_source_revision bigint,
+  p_job_message text, p_job_error text, p_document_message text, p_document_error text, p_terminal_metadata jsonb
+) returns jsonb language plpgsql security invoker set search_path = '' as $$
+declare
+  v_job public.project_jobs%rowtype;
+  v_recorded boolean;
+begin
+  perform 1 from public.projects where id = p_project_id for no key update;
+  select * into v_job from public.project_jobs where id = p_job_id and project_id = p_project_id for update;
+  if not found or v_job.status <> 'running' or v_job.lease_token is distinct from p_lease_token
+    or v_job.locked_at is null or v_job.locked_at < clock_timestamp()-interval '15 minutes' then
+    raise exception using errcode = 'P0001', message = 'PROJECT_JOB_LEASE_LOST: enhancement job lease is no longer authoritative';
+  end if;
+  if v_job.kind <> 'document_docling_enhancement' then
+    raise exception 'Only a document enhancement job can record an enhancement failure';
+  end if;
+  update public.documents
+  set processing_message = p_document_message, processing_error = p_document_error, updated_at = clock_timestamp()
+  where id = p_document_id and project_id = p_project_id and chunk_source_revision = p_source_revision
+    and processing_status in ('basic_ready', 'enhanced_ready') and parser_used is distinct from 'docling';
+  v_recorded := found;
+  update public.project_jobs
+  set status = 'failed', message = p_job_message, error = p_job_error, result_json = null,
+      terminal_metadata = coalesce(p_terminal_metadata, '{}'::jsonb),
+      completed_at = clock_timestamp(), locked_at = null, lease_token = null, updated_at = clock_timestamp()
+  where id = p_job_id;
+  return jsonb_build_object('document_failure_recorded', v_recorded);
+end;
+$$;
+revoke execute on function public.fail_document_enhancement_job(uuid,uuid,uuid,uuid,bigint,text,text,text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fail_document_enhancement_job(uuid,uuid,uuid,uuid,bigint,text,text,text,text,jsonb) to service_role;
 notify pgrst, 'reload schema';

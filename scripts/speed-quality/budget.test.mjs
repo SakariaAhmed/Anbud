@@ -4,7 +4,24 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { accountedCostUpperBound, accountedCostUpperBoundV4, openBudgetLedger, prepareRequest, validatedBudgetLimit } from "./budget.mjs";
+import { accountedCostUpperBound, accountedCostUpperBoundV4, evaluationRequestPurpose, openBudgetLedger, prepareRequest, validatedBudgetLimit } from "./budget.mjs";
+
+test("operation classification separates same-model retrieval from streamed answers without retaining cache keys", () => {
+  const key=`anbud:chat-v1:${"a".repeat(32)}`;
+  assert.equal(evaluationRequestPurpose("/v1/responses",{stream:true,prompt_cache_key:key}),"chat_answer");
+  assert.equal(evaluationRequestPurpose("/v1/responses",{stream:false,prompt_cache_key:key}),"other");
+  assert.equal(evaluationRequestPurpose("/v1/responses",{prompt_cache_key:"anbud:json-v2:retrieval-rerank:gpt-5.4-mini"}),"structured_json");
+  assert.equal(evaluationRequestPurpose("/v1/responses",{prompt_cache_key:"private arbitrary project text"}),"other");
+  assert.equal(evaluationRequestPurpose("/v1/embeddings",{}),"embedding");
+  const dir=mkdtempSync(path.join(tmpdir(),"anbud-purpose-"));
+  const file=path.join(dir,"ledger.json");const ledger=openBudgetLedger(file);
+  try {
+    ledger.reserve({reservedUsd:0.1,model:"gpt-5.4-mini",requestPurpose:"chat_answer"});
+    assert.equal(JSON.parse(readFileSync(file)).requests[0].requestPurpose,"chat_answer");
+    assert.throws(()=>ledger.reserve({reservedUsd:0.1,requestPurpose:key}),/Invalid evaluation request purpose/);
+    assert.ok(!readFileSync(file,"utf8").includes(key));
+  } finally {ledger.close();rmSync(dir,{recursive:true,force:true});}
+});
 
 test("explicit refill preserves settled history and permits at most fourteen new dollars across restarts", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "anbud-budget-refill-"));

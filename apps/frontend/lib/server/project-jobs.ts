@@ -6,6 +6,7 @@ import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-resul
 
 import { randomUUID } from "node:crypto";
 import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
+import { DOCUMENT_ENHANCEMENT_FAILURE_ERROR, DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE } from "@/lib/document-processing";
 
 import {
   normalizeArtifactInstructions,
@@ -17,6 +18,7 @@ import {
   findOldestQueuedProjectJob,
   findProjectJob,
   getQueuedProjectJobInput,
+  failDocumentEnhancementJob,
   heartbeatProjectJob,
   insertFollowUpProjectJob,
   insertProjectJob,
@@ -24,6 +26,7 @@ import {
   resetStaleRunningProjectJobs,
   updatePersistedProjectJob,
 } from "@/lib/server/repositories/jobs";
+import { revalidateProjectCaches } from "@/lib/server/repositories/repository-cache";
 import {
   evictCachedProjectJob,
   pruneTerminalProjectJobCache,
@@ -81,6 +84,7 @@ type QueueJobOptions = {
   skipEnqueue?: boolean;
   runNow?: boolean;
   autoRun?: boolean;
+  enhancementRetrySourceRevision?: number;
   idempotencyKey?: string;
   onDisposition?: (input: {
     coalesced: boolean;
@@ -425,13 +429,14 @@ function createJobPhaseTimer(jobId: string, input: ProjectWorkflowInput) {
 
   return {
     documentClass(value: DocumentFileFormat) { documentClass = value; },
+    currentDocumentClass() { return documentClass; },
     mark(phase: string) {
       const now = Date.now();
       const durationMs = now - phaseStartedAt;
       timings.push({ phase, duration_ms: durationMs });
       logJobPhase({ jobId, kind, phase, durationMs });
       recordWorkflowPerformance({ traceId: documentId ?? jobId, projectId: input.projectId,
-        jobId, documentId, documentClass, operation: documentId ? "document" : "generation", phase, durationMs });
+        jobId, jobKind: kind, documentId, documentClass, operation: documentId ? "document" : "generation", phase, durationMs });
       phaseStartedAt = now;
       lastCompletedPhase = phase;
     },
@@ -563,16 +568,24 @@ async function finishJob(
   context: JobRunContext,
   workflow: ProjectWorkflowInput,
   failureMetadata: Record<string, unknown> = {},
+  enhancementDeadline: { documentId: string; sourceRevision: number } | null = null,
 ) {
   let persisted: boolean;
   try {
-    persisted = await persistJobUpdate(jobId, patch, context, {
-      terminalMetadata: buildProjectJobTerminalMetadata(
-        workflow,
-        patch,
-        failureMetadata,
-      ),
-    });
+    const terminalMetadata = buildProjectJobTerminalMetadata(workflow, patch, failureMetadata);
+    persisted = enhancementDeadline && context.persisted
+      ? await failDocumentEnhancementJob({
+          jobId, leaseToken: context.leaseToken, projectId: workflow.projectId, ...enhancementDeadline,
+          jobMessage: patch.message ?? "", jobError: patch.error ?? "",
+          documentMessage: DOCUMENT_ENHANCEMENT_FAILURE_MESSAGE, documentError: DOCUMENT_ENHANCEMENT_FAILURE_ERROR,
+          terminalMetadata,
+        })
+      : await persistJobUpdate(jobId, patch, context, { terminalMetadata });
+    if (enhancementDeadline && persisted) {
+      // The committed outcome stands; a read cache recovers from its own failure.
+      try { revalidateProjectCaches(workflow.projectId); }
+      catch (error) { console.warn(JSON.stringify({ event: "project_job_cache_revalidation_failed", job_id: jobId, ...safeErrorTelemetry(error) })); }
+    }
   } catch (error) {
     if (context.persisted) {
       evictCachedProjectJob(
@@ -674,7 +687,7 @@ async function enqueueProjectJob(
           parentLease,
           options.idempotencyKey ?? `${input.kind}:${record.id}`,
         )
-      : await insertProjectJob(record, input);
+      : await insertProjectJob(record, input, {}, options.enhancementRetrySourceRevision);
     getStore().set(persistedRecord.id, persistedRecord);
     getLocalJobIds().delete(persistedRecord.id);
     options.onDisposition?.({
@@ -749,10 +762,11 @@ function isDocumentIngestionResult(
 function shouldQueueDoclingEnhancement(
   input: ProjectWorkflowInput,
   result: ProjectJobResult,
-): result is DocumentIngestionJobResult {
+): result is DocumentIngestionJobResult & { document: NonNullable<DocumentIngestionJobResult["document"]> } {
   return (
     input.kind === "document_ingestion" &&
     isDocumentIngestionResult(result) &&
+    Boolean(result.document) &&
     result.docling_enhancement_requested === true
   );
 }
@@ -773,13 +787,20 @@ async function runProjectJob(
   let acceptReportedTerminalMetadata = true;
   let terminalPersisted = false;
   let workflowAbandoned = false;
+  // Seed failures before the first read; the workflow replaces this with its read revision.
+  const initialEnhancementRevision = input.kind === "document_docling_enhancement"
+    ? input.sourceRevision ?? input.failureSourceRevision : undefined;
+  let enhancementInProgress: { documentId: string; sourceRevision: number } | null =
+    input.kind === "document_docling_enhancement" && initialEnhancementRevision !== undefined
+      ? { documentId: input.documentId, sourceRevision: initialEnhancementRevision } : null;
+  let enhancementDeadline: { documentId: string; sourceRevision: number } | null = null;
 
   try {
     lease.assertActive();
     const executionStartedAt = Date.now();
     const recordQueueWait = (queued: ProjectJobRecord | null | undefined) => {
       if (queued) recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
-      projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
+      projectId: input.projectId, jobId, jobKind: input.kind, documentId: "documentId" in input ? input.documentId : undefined,
       operation: "documentId" in input ? "document" : "generation", phase: "queue_wait",
       durationMs: executionStartedAt - Date.parse(queued.created_at) });
     };
@@ -820,6 +841,9 @@ async function runProjectJob(
             const completeCheckpoint = committed && !("completion_status" in committed && committed.completion_status === "evaluation_pending");
             const workflowResult = completeCheckpoint ? committed : await runProjectWorkflow(input, {
               onDocumentClass: phaseTimer.documentClass,
+              onDocumentEnhancementStarted(documentId, sourceRevision) {
+                enhancementInProgress = { documentId, sourceRevision };
+              },
               setProgress(message) {
                 assertWorkflowActive();
                 updateJob(jobId, { message, status: "running" }, context);
@@ -832,6 +856,7 @@ async function runProjectJob(
               timings: () => phaseTimer.timings(),
               totalDurationMs: () => phaseTimer.total(),
             });
+            enhancementInProgress = null;
             assertWorkflowActive();
 
             if (
@@ -843,6 +868,7 @@ async function runProjectJob(
                   kind: "document_docling_enhancement",
                   projectId: input.projectId,
                   documentId: input.documentId,
+                  failureSourceRevision: workflowResult.document.chunk_source_revision,
                 },
                 {
                   autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false),
@@ -880,7 +906,9 @@ async function runProjectJob(
     terminalPatch = {
       status: "completed",
       message: "completion_status" in result && result.completion_status === "evaluation_pending"
-        ? "Løsningsutkastet er lagret. Revurdering gjenstår." : "Ferdig.",
+        ? "Løsningsutkastet er lagret. Revurdering gjenstår."
+        : input.kind === "document_docling_enhancement" && "document" in result && result.document?.processing_error
+          ? "Dokumentforbedringen feilet. Grunnversjonen er lagret." : "Ferdig.",
       result,
       error: null,
     };
@@ -933,7 +961,9 @@ async function runProjectJob(
         error: `Jobben overskred totalfristen. Siste fullførte fase: ${phaseTimer.lastCompletedPhase()}.`,
         result: null,
       };
+      enhancementDeadline = enhancementInProgress;
     } else {
+      enhancementDeadline = enhancementInProgress;
       console.warn(
         JSON.stringify({
           event: "project_job_execution_failed",
@@ -966,6 +996,7 @@ async function runProjectJob(
             context,
             input,
             failureTerminalMetadata,
+            enhancementDeadline,
           );
         } catch (error) {
           // Callers still need to know whether abandoned work occupies this
@@ -977,8 +1008,8 @@ async function runProjectJob(
         }
         lease.stop();
         recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
-          projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
-          operation: "documentId" in input ? "document" : "generation", phase: "total",
+          projectId: input.projectId, jobId, jobKind: input.kind, documentId: "documentId" in input ? input.documentId : undefined,
+          documentClass: phaseTimer.currentDocumentClass(), operation: "documentId" in input ? "document" : "generation", phase: "total",
           durationMs: phaseTimer.total(), status: terminalPatch.status === "completed" && terminalPersisted ? "completed" : "failed" });
       }
     } finally {
@@ -1039,6 +1070,16 @@ export async function queueDocumentIngestionJob(input: {
     },
     options,
   );
+}
+
+/** A recovery request; the worker that normally runs enhancement picks it up. */
+export async function queueDocumentEnhancementRetryJob(input: { projectId: string; documentId: string; sourceRevision: number }) {
+  const job = await enqueueProjectJob(
+    { kind: "document_docling_enhancement", projectId: input.projectId, documentId: input.documentId, sourceRevision: input.sourceRevision },
+    { autoRun: envFlag("DOCLING_ASYNC_AUTO_RUN", false), enhancementRetrySourceRevision: input.sourceRevision },
+  );
+  revalidateProjectCaches(input.projectId);
+  return job;
 }
 
 export async function queueCustomerAnalysisJob(input: {

@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { contentTypeForUploadFormat } from "@/lib/server/documents";
-import { deleteDocument, getDocumentDetail, markDocumentAsPrimarySolution } from "@/lib/server/repositories/data-store";
+import { deleteDocument, getDocumentDetail, listProjectDocumentSummaries, markDocumentAsPrimarySolution } from "@/lib/server/repositories/data-store";
 import { getProjectSnapshot } from "@/lib/server/repositories/data-store";
 import { auditEvent, checkRateLimit, withTiming } from "@/lib/server/observability";
 import {
   requireProjectPermission,
 } from "@/lib/server/authorization";
-import { routeErrorResponse } from "@/lib/server/api-responses";
+import { enforceRateLimit, routeErrorResponse } from "@/lib/server/api-responses";
+import { documentEnhancementRetryDecision } from "@/lib/document-processing";
+import { queueDocumentEnhancementRetryJob } from "@/lib/server/project-jobs";
 
 export async function GET(
   request: Request,
@@ -95,7 +97,31 @@ export async function PATCH(
     await requireProjectPermission(id, "document.upload");
     const body = (await request.json().catch(() => ({}))) as {
       action?: string;
+      source_revision?: unknown;
     };
+
+    if (body.action === "retry_enhancement") {
+      const limited = await enforceRateLimit(request, "document-enhancement-retry", { limit: 12, windowMs: 60_000 }, "For mange forsøk på kort tid. Vent litt og prøv igjen.");
+      if (limited) return limited;
+      const document = (await listProjectDocumentSummaries(id)).find(item => item.id === documentId);
+      if (!document) return NextResponse.json({ error: "Fant ikke dokumentet." }, { status: 404 });
+      const decision = documentEnhancementRetryDecision(document, body.source_revision);
+      if (decision === "stale") return NextResponse.json({ error: "Dokumentet er endret siden siden ble åpnet. Last siden på nytt og prøv igjen." }, { status: 409 });
+      if (decision === "not_eligible") return NextResponse.json({ error: "Dokumentet har ingen mislykket forbedring å prøve på nytt." }, { status: 409 });
+      // The database rechecks the revision and eligibility while enqueueing and
+      // clearing the failure atomically. A failed enqueue needs no compensation.
+      let job;
+      try {
+        job = await queueDocumentEnhancementRetryJob({ projectId: id, documentId, sourceRevision: body.source_revision as number });
+      } catch (error) {
+        if (error instanceof Error && /DOCUMENT_ENHANCEMENT_RETRY_(STALE|NOT_ELIGIBLE)/u.test(error.message)) {
+          return NextResponse.json({ error: "Dokumentet er endret eller kan ikke forbedres på nytt. Last siden på nytt." }, { status: 409 });
+        }
+        throw error;
+      }
+      await auditEvent({ action: "document_enhancement_retry_requested", projectId: id, entityType: "document", entityId: documentId, metadata: { job_id: job.id, source_revision: document.chunk_source_revision } });
+      return NextResponse.json({ job }, { status: 202 });
+    }
 
     if (body.action !== "use_as_architecture_solution") {
       return NextResponse.json({ error: "Ugyldig dokumenthandling." }, { status: 400 });
