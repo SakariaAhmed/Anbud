@@ -1407,3 +1407,41 @@ failures/skips, plus parser goldens; lint, syntax, secret scan and whitespace
 checks pass. Full tests used the four disposable SQL test URLs. An application
 build and paid/SQL retrieval evaluations were not repeated for this root-runner
 change. Logs are `/private/tmp/anbud-judge-format-{before,focused,full-tests,lint,secrets}.log`.
+
+## Deadline failure rejects expired heartbeats
+
+Round 22 accepted the judge code correction (Sol 9/10, Opus 9.5/10); round 23
+accepted the aggregate-status wording correction (both 10/10). CodeRabbit then
+identified an independent lease gap in `fail_document_enhancement_job`: a running
+job with a matching token could record a deadline failure after its heartbeat
+became eligible for the normal 15-minute stale recovery, before recovery requeued
+it. A real disposable PostgreSQL regression reproduced that transition with a
+16-minute-old heartbeat.
+
+New migration `20261102170000_enhancement_deadline_lease_expiry.sql` replaces the
+RPC and is included in the fresh baseline. It rejects null `locked_at` and values
+older than 15 minutes, after acquiring the existing project/job locks and before
+either write. Status, token, source-revision, document-state and service-role
+guards remain unchanged. The repository already maps `PROJECT_JOB_LEASE_LOST`
+to a rejected terminal write. This does not expire leases globally or change the
+stale-recovery scheduler; it aligns this deadline transition with its default
+recovery cutoff. A custom recovery cutoff is not newly synchronized by this change.
+The earlier migration remains intact so previously migrated branch databases
+receive the correction through an explicit upgrade.
+
+The SQL test checks expired and null heartbeat rejection with full job/document
+row equality and zero terminal audits, subsequent requeue and replacement-lease
+success, rejection of the old token after takeover, and a 14-minute healthy
+heartbeat control. It exercises the old-function-to-new-function upgrade, repeated
+application, and the fresh baseline after reset. Existing publication/source and
+permission controls remain covered. The three focused deadline/retry/workflow
+files pass 25/25 with real disposable SQL and no skips. Schema, workflow-boundary,
+release-workflow and whitespace checks pass. No production database, paid provider,
+frozen answer, judge attempt or budget row was changed; proxies remain stopped.
+
+Full verification: 1,532 frontend + 204 root tests (1,736 total), zero failures
+or skips, plus parser goldens, with all four disposable SQL test URLs configured.
+Lint and the secret scan pass. Application build, HTTP/browser, paid retrieval
+and semantic evaluation were not repeated for this SQL-only behavior change.
+Logs: `/private/tmp/anbud-deadline-lease-{before,focused,full-tests,lint,secrets}.log`.
+The full set of 18 recommendations remains incomplete, and release is not approved.

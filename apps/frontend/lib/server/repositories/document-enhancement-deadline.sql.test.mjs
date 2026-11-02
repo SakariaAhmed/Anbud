@@ -7,12 +7,14 @@ import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const migration = readFileSync(path.join(root, "database/migrations/20261102140000_document_enhancement_deadline_failure.sql"), "utf8");
+const expiryMigration = readFileSync(path.join(root, "database/migrations/20261102170000_enhancement_deadline_lease_expiry.sql"), "utf8");
 const baseline = readFileSync(path.join(root, "database/schema.sql"), "utf8");
 const url = process.env.PROJECT_JOB_LOCK_SQL_TEST_DATABASE_URL;
 const LEASE = "22222222-2222-4222-8222-222222222222";
 
 test("the baseline contains the exact ordered migration", () => {
   assert.ok(baseline.includes(migration));
+  assert.ok(baseline.includes(expiryMigration));
 });
 
 test("postgres: the deadline transition is lease- and source-fenced and leaves the usable version untouched", { skip: !url, timeout: 180_000 }, () => {
@@ -29,7 +31,9 @@ test("postgres: the deadline transition is lease- and source-fenced and leaves t
   sql(`create database ${name};`, url);
   try {
     sql(`set client_min_messages = warning; set anbud.allow_destructive_schema_rebuild = on;\n${baseline}`);
-    sql(migration); // Rerunnable on a database that already has it.
+    sql(migration); // An installation that already applied the original function.
+    sql(expiryMigration);
+    sql(expiryMigration); // The upgrade is rerunnable.
 
     const fixture = (overrides = {}) => {
       const project = randomUUID(), document = randomUUID(), job = randomUUID();
@@ -95,6 +99,36 @@ test("postgres: the deadline transition is lease- and source-fenced and leaves t
     assert.notEqual(call(queued).status, 0, "A requeued job has no holder.");
     assert.equal(documentState(queued.document), queuedDocument);
 
+    // Recovery eligibility ends deadline authority even before recovery acquires
+    // the row. Reject without a terminal audit or any job/document mutation.
+    for (const lockedAt of ["clock_timestamp() - interval '16 minutes'", "null"]) {
+      const expired = fixture();
+      sql(`update public.project_jobs set locked_at=${lockedAt} where id='${expired.job}'`);
+      const beforeDocument = sql(`select to_jsonb(d) from public.documents d where id='${expired.document}'`);
+      const beforeJob = sql(`select to_jsonb(j) from public.project_jobs j where id='${expired.job}'`);
+      const stale = call(expired);
+      assert.notEqual(stale.status, 0, `A ${lockedAt} heartbeat must not authorize deadline failure.`);
+      assert.match(stale.stderr, /PROJECT_JOB_LEASE_LOST/u);
+      assert.equal(sql(`select to_jsonb(d) from public.documents d where id='${expired.document}'`), beforeDocument);
+      assert.equal(sql(`select to_jsonb(j) from public.project_jobs j where id='${expired.job}'`), beforeJob);
+      assert.equal(sql(`select count(*) from public.audit_events where entity_id='${expired.job}'`), "0");
+
+      // Stale recovery can still requeue, and only a newly claimed lease may end it.
+      sql(`update public.project_jobs set status='queued',locked_at=null,lease_token=null where id='${expired.job}'
+        and status='running' and (locked_at is null or locked_at < clock_timestamp()-interval '15 minutes')`);
+      assert.equal(jobState(expired.job).status, "queued");
+      const replacementLease = randomUUID();
+      sql(`update public.project_jobs set status='running',locked_at=clock_timestamp(),lease_token='${replacementLease}' where id='${expired.job}'`);
+      assert.match(call(expired).stderr, /PROJECT_JOB_LEASE_LOST/u);
+      const replacement = call(expired, { lease: replacementLease });
+      assert.equal(replacement.status, 0, replacement.stderr);
+      assert.deepEqual(JSON.parse(replacement.stdout.trim()), { document_failure_recorded: true });
+    }
+
+    const recent = fixture();
+    sql(`update public.project_jobs set locked_at=clock_timestamp()-interval '14 minutes' where id='${recent.job}'`);
+    assert.equal(call(recent).status, 0, "A matching recent lease remains authoritative.");
+
     // A newer source, a published enhancement or a document in another state keeps its own truth.
     for (const [label, setup, overrides] of [
       ["newer source", {}, { revisionDelta: 1 }],
@@ -136,6 +170,9 @@ test("postgres: the deadline transition is lease- and source-fenced and leaves t
     // A destructive reset of the same database keeps ownership of the partial previews and this function.
     sql(`set client_min_messages = warning; set anbud.allow_destructive_schema_rebuild = on;\n${baseline}`);
     assert.equal(sql(`select to_regprocedure('public.fail_document_enhancement_job(uuid,uuid,uuid,uuid,bigint,text,text,text,text,jsonb)') is not null`), "t");
+    const resetExpired = fixture();
+    sql(`update public.project_jobs set locked_at=null where id='${resetExpired.job}'`);
+    assert.match(call(resetExpired).stderr, /PROJECT_JOB_LEASE_LOST/u, "The fresh baseline also installs the expiry guard.");
   } finally {
     sql(`drop database ${name} with (force);`, url);
   }
