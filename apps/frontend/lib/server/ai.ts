@@ -3155,6 +3155,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   if (!coverage || !reviewed.evidence.issues?.length) return { ...reviewed.result, source_evidence: reviewed.evidence };
   let downgraded = false;
   const changedPaths = new Set<string>();
+  const downgradedItems = new Set<RequirementCoverage["items"][number]>();
   for (const issue of reviewed.evidence.issues) {
     const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
     const item = match ? coverage.items[Number(match[1])] : null;
@@ -3162,6 +3163,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
       item.assessment = "Uklart";
       item.rationale = "Må avklares. Kravdekningen kunne ikke bekreftes i kildegrunnlaget.";
       item.recommendation = "Kontroller originalkilden og oppdater besvarelsen før kravet vurderes på nytt.";
+      downgradedItems.add(item);
       changedPaths.add(`result.requirement_coverage.items.${match[1]}.rationale`);
       changedPaths.add(`result.requirement_coverage.items.${match[1]}.recommendation`);
       downgraded = true;
@@ -3189,7 +3191,9 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
     if (finding.reference_match !== "coverage") return finding;
     const match = matchFindingToCoverageItem({ finding, coverage });
     changedPaths.add(`result.document_findings.${index}.assessment`);
-    return { ...finding, assessment: match?.assessment ?? "Uklart" };
+    const recommendationChanged = match && downgradedItems.has(match);
+    if (recommendationChanged) changedPaths.add(`result.document_findings.${index}.recommendation`);
+    return { ...finding, assessment: match?.assessment ?? "Uklart", ...(recommendationChanged ? { recommendation: match.recommendation } : {}) };
   });
   reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changedPaths.has(reference.path));
   reviewed.evidence.issues = reviewed.evidence.issues?.filter(issue => !changedPaths.has(issue.path));

@@ -89,3 +89,38 @@ test("downgraded rows replace stale positive guidance and discard its old quotat
   assert.equal(reviewed.requirement_coverage.items[1].rationale, result.requirement_coverage.items[1].rationale);
   assert.equal(reviewed.requirement_coverage.items[1].recommendation, result.requirement_coverage.items[1].recommendation);
 });
+test("linked downgraded findings get current guidance while independent observations retain their proof", () => {
+  const { result, input } = fixture();
+  result.document_findings[0].finding = "Observasjonen er «Rammen er 1 500 kr.»";
+  result.document_findings[0].recommendation = "Ingen tiltak. «Alt er godt.»";
+  result.requirement_coverage.items[1].assessment = "Mangler";
+  result.requirement_coverage.good = 1;
+  result.requirement_coverage.missing = 1;
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  const finding = reviewed.document_findings[0];
+  assert.equal(finding.assessment, "Uklart");
+  assert.equal(finding.recommendation, reviewed.requirement_coverage.items[0].recommendation);
+  assert.equal(finding.finding, result.document_findings[0].finding);
+  assert.equal(finding.evidence, result.document_findings[0].evidence);
+  assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.recommendation"));
+  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.finding"));
+  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.evidence"));
+  assert.equal(reviewed.document_findings[1].assessment, "Mangler");
+  assert.equal(reviewed.document_findings[1].recommendation, result.document_findings[1].recommendation);
+  assert.deepEqual(reviewed.document_findings[2], result.document_findings[2]);
+  assert.equal(result.document_findings[0].recommendation, "Ingen tiltak. «Alt er godt.»", "The input snapshot is unchanged.");
+});
+test("a rationale-only rejection keeps valid requirement evidence while reconciling the row and linked guidance", () => {
+  const { result, input } = fixture();
+  result.requirement_coverage.items[0].requirement = "«Leverandøren skal oppgi kontraktsrammen.»";
+  result.requirement_coverage.items[0].evidence = "«Rammen er 1 500 kr.»";
+  result.requirement_coverage.items[0].rationale = "«Dette er ikke dokumentert i kilden.»";
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  assert.equal(reviewed.requirement_coverage.items[0].assessment, "Uklart");
+  assert.equal(reviewed.requirement_coverage.good, 1);
+  assert.equal(reviewed.requirement_coverage.unclear, 1);
+  assert.deepEqual(reviewed.source_evidence.issues, []);
+  for (const field of ["requirement", "evidence"]) assert.ok(reviewed.source_evidence.references.some(ref => ref.path === `result.requirement_coverage.items.0.${field}`));
+  assert.equal(reviewed.document_findings[0].recommendation, reviewed.requirement_coverage.items[0].recommendation);
+  assert.equal(result.requirement_coverage.items[0].rationale, "«Dette er ikke dokumentert i kilden.»");
+});
