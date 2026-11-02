@@ -30,6 +30,11 @@ begin
       and input_json->>'documentId' = p_job->'input_json'->>'documentId' and status in ('queued','running')
     order by submission_sequence desc limit 1;
   if found then
+    -- Original ingestion jobs may predate revision-tagged recovery. Never clear
+    -- their recorded failure: a pre-read failure cannot restore it safely.
+    if not (v_job.input_json ? 'sourceRevision') or v_job.input_json->>'sourceRevision' is null then
+      raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: active attempt has no captured source revision';
+    end if;
     if v_job.status = 'running' and nullif(btrim(v_document.processing_error), '') is not null then
       raise exception 'DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE: failing attempt is still terminating';
     end if;

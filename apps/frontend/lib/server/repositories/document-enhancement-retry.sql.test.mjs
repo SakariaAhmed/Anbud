@@ -51,6 +51,26 @@ test("postgres: enhancement retry serializes with publication and rolls back fai
     sql(`update project_jobs set status='failed',lease_token=null where id='${happy.job}'`);
     assert.notEqual(JSON.parse(sql(call(happy,{...happy.payload,id:randomUUID()}))).id,happy.job);
 
+    // An original ingestion job can fail, lose its worker, and be requeued
+    // without a sourceRevision. Recovery must not clear its persisted error.
+    const legacy=fixture();
+    sql(`select public.enqueue_project_job_serialized('${legacy.project}','${JSON.stringify(legacy.payload)}'::jsonb);
+      update project_jobs set status='running',lease_token='22222222-2222-4222-8222-222222222222' where id='${legacy.job}';
+      update documents set processing_error='Original parser failed',processing_message='Retry is available' where id='${legacy.document}';
+      update project_jobs set status='queued',lease_token=null where id='${legacy.job}'`);
+    const legacyState=state(legacy);
+    assert.match(run(call(legacy,{...legacy.payload,id:randomUUID()})).stderr,/DOCUMENT_ENHANCEMENT_RETRY_NOT_ELIGIBLE/);
+    assert.equal(state(legacy),legacyState,"Rejected coalescing must preserve the recovery action.");
+    assert.equal(sql(`select count(*) from project_jobs where project_id='${legacy.project}'`),'1');
+    assert.equal(sql(`select input_json ? 'sourceRevision' from project_jobs where id='${legacy.job}'`),'f');
+    // A pre-read failure of that old attempt updates only its job. The error
+    // retained above survives, so a new revision-tagged retry can now be queued.
+    sql(`update project_jobs set status='failed',error='Document read failed' where id='${legacy.job}'`);
+    assert.equal(state(legacy),legacyState);
+    const legacyRetry=JSON.parse(sql(call(legacy,{...legacy.payload,id:randomUUID()})));
+    assert.notEqual(legacyRetry.id,legacy.job);assert.equal(legacyRetry.input_json.sourceRevision,legacy.revision);
+    assert.equal(JSON.parse(state(legacy)).processing_error,null);
+
     const failed=fixture();const original=state(failed);
     const invalid={...failed.payload,id:'not-a-uuid'};
     assert.notEqual(run(call(failed,invalid)).status,0);assert.equal(state(failed),original);

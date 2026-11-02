@@ -136,7 +136,7 @@ test("a lost lease writes nothing more to the document", async t => {
 
 // The real job runner, deadline race and enhancement workflow around one slow
 // parser. Only the repositories are replaced, and the deadline is shortened.
-async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError }) {
+async function runJobToDeadline(t, { doclingScript, scheduleDelayMs = 0, hangDocumentRead = false, terminalAccepted = true, loseLeaseAfterMs = null, retrySourceRevision, readError, retainedProcessingError = null }) {
   const directory = mkdtempSync(path.join(tmpdir(), "enhancement-deadline-"));
   const command = path.join(directory, "docling.mjs");
   writeFileSync(command, `#!${process.execPath}
@@ -149,7 +149,7 @@ ${doclingScript}
   const previous = Object.fromEntries(Object.keys({ ...settings, DOCLING_CLI_COMMAND: "" }).map(key => [key, process.env[key]]));
   Object.assign(process.env, settings, { DOCLING_CLI_COMMAND: command });
   const state = globalThis.__enhancementDeadline = {
-    document: { id: "document", project_id: "project", role: "supporting_document", supporting_subtype: "kravdokument", title: "Bilag 1", file_name: "bilag.pdf", file_format: "pdf", content_type: "application/pdf", file_size_bytes: 100, file_base64: Buffer.from("%PDF-1.4 syntetisk").toString("base64"), raw_text: basicText, structure_map: [], parser_used: "pdf-parse", processing_status: "basic_ready", processing_message: null, processing_error: null, chunk_source_revision: 7, page_count: 1 },
+    document: { id: "document", project_id: "project", role: "supporting_document", supporting_subtype: "kravdokument", title: "Bilag 1", file_name: "bilag.pdf", file_format: "pdf", content_type: "application/pdf", file_size_bytes: 100, file_base64: Buffer.from("%PDF-1.4 syntetisk").toString("base64"), raw_text: basicText, structure_map: [], parser_used: "pdf-parse", processing_status: "basic_ready", processing_message: null, processing_error: retainedProcessingError, chunk_source_revision: 7, page_count: 1 },
     updates: [], saves: [], rpc: [], terminal: [], scheduleDelayMs, hangDocumentRead, terminalAccepted, loseLeaseAfterMs, retrySourceRevision, readError,
   };
   t.after(() => {
@@ -250,6 +250,15 @@ test("retry read failures and pre-read deadlines preserve a revision-fenced reco
 test("an unreadable retry source records failure through the terminal owner",async t=>{
   const state=await runJobToDeadline(t,{doclingScript:"",readError:"storage unavailable",retrySourceRevision:7});
   assert.equal(state.rpc.length,1);assert.equal(state.rpc[0].sourceRevision,7);assert.deepEqual(state.terminal,[]);
+});
+
+test("an unversioned requeued attempt cannot erase the error retained by rejected recovery", async t => {
+  const state = await runJobToDeadline(t, { doclingScript: "", readError: "storage unavailable", retainedProcessingError: "Original parser failed" });
+  assert.equal(state.rpc.length, 0);
+  assert.equal(state.terminal.length, 1);
+  assert.equal(state.terminal[0].status, "failed");
+  assert.deepEqual(state.updates, []);
+  assert.equal(state.document.processing_error, "Original parser failed");
 });
 
 test("a deadline after the workflow settled its own outcome does not rewrite it as a failure", async t => {

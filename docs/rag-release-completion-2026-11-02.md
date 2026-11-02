@@ -269,3 +269,21 @@ No new paid evaluation ran. Conceptual retrieval, stress, semantic quality,
 latency sampling, current-image HTTP proof, production and human acceptance
 remain open. These verification results establish the local code corrections,
 not release approval or completion of all 18 recommendations.
+
+## Council round 4: unversioned queued jobs
+
+Sol scored `d9596103` 8/10 and found that an original ingestion job, requeued
+after recording a parser failure, could lack `sourceRevision`. Coalescing a
+retry into it cleared the error even though a later pre-read failure could not
+restore the document failure through the terminal RPC.
+
+The retry transaction now rejects active jobs without a captured revision and
+preserves the document error. Once the old job is terminal, a fresh retry gets
+the current captured revision. Real PostgreSQL coverage exercises the original
+job's running-to-queued transition, rejected retry with unchanged document and
+job count, terminal failure, and subsequent revision-tagged retry. The focused
+run passed 16 tests with no skips; an additional real-worker/read-failure test
+passed and confirms the retained error is not erased. Affected-test lint,
+schema validation and whitespace checks passed. The full 1,700-test/build result
+above belongs to `d9596103`, before this narrow SQL correction; it was not rerun
+for this correction. Opus's round-4 review of that pin remains pending.
