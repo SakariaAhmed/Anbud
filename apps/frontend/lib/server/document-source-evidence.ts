@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { evidenceIdentity, locateSourceEvidenceQuote } from "@/lib/server/source-evidence";
+import { evidenceIdentity, locateSourceEvidenceQuote, SourceQuoteIndex } from "@/lib/server/source-evidence";
 import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail } from "@/lib/types";
 
@@ -8,10 +8,12 @@ import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail 
  * Requested page/heading values never become evidence. Repeated passages have
  * no precise locator unless the source structure identifies one unique place. */
 export function bindDocumentSourceEvidence(document: ProjectDocumentDetail | ServiceDocumentDetail, quote: string, options: { sourceType?: "project_document" | "service_document" } = {}): ChatSourceReference | null {
-  const match = locateSourceEvidenceQuote(document.raw_text, quote);
+  const index = new SourceQuoteIndex(document.raw_text);
+  const match = locateSourceEvidenceQuote(document.raw_text, quote, index);
   if (!match) return null;
   const original = match.text, at = match.start;
-  const repeated = document.raw_text.indexOf(original, at + original.length) >= 0;
+  const first = index.locate(original, { tokenBoundaries: true, normalized: true });
+  const repeated = !!first && !!index.locate(original, { tokenBoundaries: true, normalized: true, startAt: first.end });
   const sections = repeated ? [] : document.structure_map.filter(section => section.text.includes(original));
   const section = sections.length === 1 ? sections[0] : undefined;
   let page = !repeated && section?.page && Number.isSafeInteger(section.page) && section.page > 0 ? section.page : null;

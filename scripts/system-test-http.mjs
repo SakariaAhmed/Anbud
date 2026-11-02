@@ -12,6 +12,8 @@ assert.equal(status.running, true, "Start scripts/system-test-environment.mjs fi
 const privatePath = path.join(status.directory, "environment.json");
 const runtime = JSON.parse(readFileSync(privatePath, "utf8"));
 const resumeAi = process.argv.includes("--resume-ai");
+const resumeChat = process.argv.includes("--resume-chat");
+if (resumeChat && !resumeAi) throw new Error("--resume-chat requires --resume-ai and an existing persisted scenario.");
 const aiEnabled = process.argv.includes("--ai") || resumeAi;
 const allGenerators = process.argv.includes("--all-generators");
 if (allGenerators && !aiEnabled) throw new Error("All generators require explicit --ai.");
@@ -209,28 +211,42 @@ if (aiEnabled) {
   writeFileSync(path.join(status.directory, "ai-output.json"), JSON.stringify({ projectId: project.id, customerAnalysis: published.customer_analysis, artifact, artifacts: allArtifacts.artifacts, solutionEvaluation: published.solution_evaluation, executiveSummary: summaryResult.executive_summary }, null, 2), { mode: 0o600 });
   checks.push("persisted AI outputs retain customer facts, all three requirement IDs, explicit freshness and selected solution provenance");
   checks.push("deterministic evidence contract persists across requirement answers, Bilag 1, evaluation and executive summary");
-  const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: "Hva er fristen for eksport av data ved exit? Vis kilden." }));
-  const content = await chat.text();
+  const chatQuestion = "Hva er fristen for eksport av data ved exit? Vis kilden.";
+  let content;
+  if (resumeChat) {
+    const saved = await (await request(`/api/projects/${project.id}/chat`)).json();
+    assert.equal(saved.messages.filter(message => message.role === "user").at(-1)?.content, chatQuestion, "Only the original scenario's completed chat can be resumed.");
+    content = saved.messages.filter(message => message.role === "assistant").at(-1)?.content;
+    assert.equal(typeof content, "string");
+  } else {
+    const chat = await request(`/api/projects/${project.id}/chat`, json("POST", { message: chatQuestion }));
+    content = await chat.text();
+  }
   assert.ok(content.length > 100, "Chat must produce a streamed response.");
   assert.match(content, /30\s+dager/iu, "Chat must retain the documented exit deadline.");
-  assert.match(content, /K-1\.3|Bilag\s*1|løsningsnotat/iu, "Chat must name its source.");
-  checks.push("chat streaming with actual model endpoint");
+  checks.push(resumeChat ? "reused the completed persisted response from the original streamed chat" : "chat streaming with actual model endpoint");
   assert.doesNotMatch(content, /kunne ikke kildebekreftes/iu, "A correct source quote must pass deterministic validation.");
   const persistedChat = await (await request(`/api/projects/${project.id}/chat`)).json();
   const answer = persistedChat.messages.filter(message => message.role === "assistant").at(-1);
-  assert.equal(answer.content, content);
+  assert.equal(answer.content, content.trim(), "Persistence normalizes only boundary whitespace.");
   assert.ok(answer.source_references.length > 0, "Actual cited evidence must survive database decryption and reload.");
+  assert.ok(answer.source_references.some(reference => reference.source_type === "project_document" && [requirementSource.id, solutionSource.id].includes(reference.source_id) && /30\s+dager/iu.test(reference.original_quote)), "The deadline must cite its actual requirement or solution passage, not merely mention a document name.");
   for (const reference of answer.source_references) {
     assert.ok(reference.evidence_id && reference.original_quote && reference.source_fingerprint);
     assert.ok(Number.isSafeInteger(reference.citation_number) && Number.isSafeInteger(reference.source_revision));
     assert.match(content, new RegExp(`\\[Kilde ${reference.citation_number}\\]`, "u"));
+    if (reference.source_type === "project_document") {
+      assert.ok(currentDocuments.some(document => document.id === reference.source_id && document.title === reference.document_title));
+      const verified = await (await request(`/api/projects/${project.id}/source-evidence`, json("POST", { documentId: reference.source_id, quote: reference.original_quote, sourceRevision: reference.source_revision }))).json();
+      assert.equal(verified.source.classification, "documented");
+    }
   }
   checks.push("validated chat source IDs, sparse citation numbers, original quotation and revision survive actual persistence/reload");
 
 }
 runtime.sessions = { adminCookie, guestCookie };
 writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
-const result = { resumedCompletedAiWorkflows: resumeAi, projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
+const result = { resumedCompletedAiWorkflows: resumeAi, reusedCompletedChat: resumeChat, projectId: project.id, guestProjectId: guestProject.id, documents: uploaded, checks, aiMode: aiEnabled ? status.aiMode : "not exercised", skipped: [...(aiEnabled ? [] : ["AI analysis, generation, evaluation and chat output"]), "live Entra sign-in", "PDF/OCR through HTTP upload (separate image/parser evaluation)"] };
 writeFileSync(path.join(status.directory, "http-result.json"), JSON.stringify(result, null, 2));
 writeFileSync(statusPath, JSON.stringify({ ...status, projectId: project.id, documents: uploaded, httpChecks: checks.length }, null, 2));
 console.log(JSON.stringify(result, null, 2));

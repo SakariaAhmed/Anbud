@@ -59,3 +59,20 @@ test("normalized repetitions never acquire a unique short-value locator in eithe
     assert.equal(bindDocumentSourceEvidence({ ...document, raw_text, structure_map: [] }, "30 dager"), null);
   }
 });
+test("whitespace-variant repeated passages never acquire a unique page or heading in either order", () => {
+  const plain = "Leverandøren skal lagre data i Norge.";
+  const wrapped = "Leverandøren skal\nlagre data i Norge.";
+  for (const [first, second] of [[plain, wrapped], [wrapped, plain]]) {
+    const input = { ...document, raw_text: `[[SIDE:1]]\n${first}\n[[SIDE:2]]\n${second}`, structure_map: [
+      { text: first, page: 1, heading_path: ["Første"], reference: "Første · side 1" },
+      { text: second, page: 2, heading_path: ["Andre"], reference: "Andre · side 2" },
+    ] };
+    for (const quote of [plain, wrapped]) {
+      const source = bindDocumentSourceEvidence(input, quote);
+      assert.equal(source.original_quote, quote, "Original source characters are retained.");
+      assert.equal(source.page_start, null); assert.equal(source.page_end, null);
+      assert.deepEqual(source.heading_path, []);
+      assert.match(source.reference, /nøyaktig plassering ikke oppgitt/u);
+    }
+  }
+});

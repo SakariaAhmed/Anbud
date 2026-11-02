@@ -3168,11 +3168,15 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
   const changedPaths = new Set(["result.requirement_coverage.coverage_summary"]);
   const comparison = reviewed.result.architecture_comparison;
   if (comparison) {
+    const previousScore = comparison.architect_solution_score;
+    const previousWinner = comparison.winner;
     const cap = coverage.items.length ? Math.round((coverage.good + coverage.weak * 0.6 + coverage.unclear * 0.35) / coverage.items.length * 100) : 100;
     comparison.architect_solution_score = Math.min(comparison.architect_solution_score, cap);
     comparison.winner = reconcileArchitectureComparisonWinner(comparison.architect_solution_score, comparison.system_solution_score);
-    comparison.verdict = `Poengene er oppdatert etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
-    changedPaths.add("result.architecture_comparison.verdict");
+    if (comparison.architect_solution_score !== previousScore || comparison.winner !== previousWinner) {
+      comparison.verdict = `Poengene er oppdatert etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
+      changedPaths.add("result.architecture_comparison.verdict");
+    }
   }
   reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
     if (finding.reference_match !== "coverage") return finding;
@@ -3181,6 +3185,7 @@ export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResul
     return { ...finding, assessment: match?.assessment ?? "Uklart" };
   });
   reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changedPaths.has(reference.path));
+  reviewed.evidence.issues = reviewed.evidence.issues?.filter(issue => !changedPaths.has(issue.path));
   return { ...reviewed.result, source_evidence: reviewed.evidence };
 }
 

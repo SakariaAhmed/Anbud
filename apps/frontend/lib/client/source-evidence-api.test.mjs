@@ -32,3 +32,20 @@ test("source checks propagate cancellation", async t => {
   t.mock.method(globalThis, "fetch", async (_, { signal }) => { signal.throwIfAborted(); });
   await assert.rejects(verifyProjectSourceEvidence("project", source, abort.signal), error => error.name === "AbortError");
 });
+test("rate limiting reports the server wait without claiming a quotation mismatch or retrying", async t => {
+  for (const retryAfter of ["37", null, "invalid"]) {
+    let calls = 0;
+    t.mock.method(globalThis, "fetch", async () => {
+      calls++;
+      return new Response("Rate limited", { status: 429, headers: retryAfter ? { "Retry-After": retryAfter } : {} });
+    });
+    await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), error => {
+      assert.match(error.message, /For mange kildekontroller/u);
+      assert.match(error.message, retryAfter === "37" ? /Vent 37 sekunder/u : /Vent litt/u);
+      assert.doesNotMatch(error.message, /ikke bekreftes/u);
+      return true;
+    });
+    assert.equal(calls, 1);
+    t.mock.restoreAll();
+  }
+});

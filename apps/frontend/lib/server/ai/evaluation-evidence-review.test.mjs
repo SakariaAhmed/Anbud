@@ -4,7 +4,7 @@ import { createJiti } from "jiti";
 const load = createJiti(import.meta.url, { alias: { "@": new URL("../../..", import.meta.url).pathname, "server-only": "/dev/null" } });
 const { reviewSolutionEvaluationEvidence } = load("../ai.ts");
 
-test("a source downgrade updates coverage text, scores, winner and source-qualified findings together", () => {
+function fixture() {
   const documents = [{ sourceType: "project_document", document: { id: "source", role: "primary_customer_document", title: "Krav", chunk_source_revision: 1, structure_map: [], raw_text: "K-1 Leverandøren skal oppgi kontraktsrammen. K-2 Leverandøren skal oppgi fristen. Rammen er 1 500 kr. Alt er godt." } }];
   const item = (reference, full_reference, evidence) => ({ reference, full_reference, source_reference: full_reference, requirement: "Leverandøren skal oppgi kontraktsrammen.", assessment: "Godt", rationale: "Svaret er dokumentert.", evidence, recommendation: "Kontroller avtalen." });
   const result = {
@@ -16,7 +16,12 @@ test("a source downgrade updates coverage text, scores, winner and source-qualif
       { reference: "Seksjonsfunn: drift", reference_match: "section", assessment: "Godt", evidence: "", finding: "Drift er vurdert.", recommendation: "Kontroller." },
     ],
   };
-  const reviewed = reviewSolutionEvaluationEvidence(result, { documents, authoritativeRequirementRefs: ["K-1", "K-2"] });
+  return { result, input: { documents, authoritativeRequirementRefs: ["K-1", "K-2"] } };
+}
+
+test("a source downgrade updates coverage text, scores, winner and source-qualified findings together", () => {
+  const { result, input } = fixture();
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
   assert.deepEqual(reviewed.requirement_coverage.items.map(row => row.assessment), ["Uklart", "Godt"]);
   assert.equal(reviewed.requirement_coverage.good, 1); assert.equal(reviewed.requirement_coverage.unclear, 1);
   assert.match(reviewed.requirement_coverage.coverage_summary, /1 er vurdert som gode.*1 er uklare/u);
@@ -25,4 +30,26 @@ test("a source downgrade updates coverage text, scores, winner and source-qualif
   assert.deepEqual(reviewed.document_findings.map(f => f.assessment), ["Uklart", "Godt", "Godt"]);
   assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"), "Rewritten comparison text cannot inherit the original field's quotation proof.");
   assert.equal(result.requirement_coverage.good, 2, "The input snapshot is not mutated.");
+});
+
+test("a nonbinding coverage cap preserves the comparison reasoning and its proof", () => {
+  const { result, input } = fixture();
+  result.architecture_comparison.architect_solution_score = 60;
+  result.architecture_comparison.winner = "Systemløsning";
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  assert.equal(reviewed.requirement_coverage.unclear, 1);
+  assert.equal(reviewed.architecture_comparison.architect_solution_score, 60);
+  assert.equal(reviewed.architecture_comparison.winner, "Systemløsning");
+  assert.equal(reviewed.architecture_comparison.verdict, result.architecture_comparison.verdict);
+  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
+});
+
+test("a rewritten comparison drops both the replaced quotation proof and its old validation issue", () => {
+  const { result, input } = fixture();
+  result.architecture_comparison.verdict = "«Dette finnes ikke i dokumentet.»";
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  assert.match(reviewed.architecture_comparison.verdict, /Poengene er oppdatert/u);
+  assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.architecture_comparison.verdict"));
+  assert.ok(!reviewed.source_evidence.issues.some(issue => issue.path === "result.architecture_comparison.verdict"));
+  assert.ok(reviewed.source_evidence.issues.some(issue => issue.path === "result.requirement_coverage.items.0.evidence"));
 });
