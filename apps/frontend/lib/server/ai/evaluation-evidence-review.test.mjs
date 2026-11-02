@@ -89,7 +89,7 @@ test("downgraded rows replace stale positive guidance and discard its old quotat
   assert.equal(reviewed.requirement_coverage.items[1].rationale, result.requirement_coverage.items[1].rationale);
   assert.equal(reviewed.requirement_coverage.items[1].recommendation, result.requirement_coverage.items[1].recommendation);
 });
-test("linked downgraded findings get current guidance while independent observations retain their proof", () => {
+test("linked downgraded findings withhold inferred prose while original evidence retains its proof", () => {
   const { result, input } = fixture();
   result.document_findings[0].finding = "Observasjonen er «Rammen er 1 500 kr.»";
   result.document_findings[0].recommendation = "Ingen tiltak. «Alt er godt.»";
@@ -100,10 +100,10 @@ test("linked downgraded findings get current guidance while independent observat
   const finding = reviewed.document_findings[0];
   assert.equal(finding.assessment, "Uklart");
   assert.equal(finding.recommendation, reviewed.requirement_coverage.items[0].recommendation);
-  assert.equal(finding.finding, result.document_findings[0].finding);
+  assert.equal(finding.finding, reviewed.requirement_coverage.items[0].rationale);
   assert.equal(finding.evidence, result.document_findings[0].evidence);
   assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.recommendation"));
-  assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.finding"));
+  assert.ok(!reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.finding"));
   assert.ok(reviewed.source_evidence.references.some(ref => ref.path === "result.document_findings.0.evidence"));
   assert.equal(reviewed.document_findings[1].assessment, "Mangler");
   assert.equal(reviewed.document_findings[1].recommendation, result.document_findings[1].recommendation);
@@ -123,4 +123,43 @@ test("a rationale-only rejection keeps valid requirement evidence while reconcil
   for (const field of ["requirement", "evidence"]) assert.ok(reviewed.source_evidence.references.some(ref => ref.path === `result.requirement_coverage.items.0.${field}`));
   assert.equal(reviewed.document_findings[0].recommendation, reviewed.requirement_coverage.items[0].recommendation);
   assert.equal(result.requirement_coverage.items[0].rationale, "«Dette er ikke dokumentert i kilden.»");
+});
+
+test("a downgrade withholds global conclusions and sends corrected coverage to summary consumers", () => {
+  const { result, input } = fixture();
+  result.fit_to_customer_needs = "Alt er godt dekket. «Alt er godt.»";
+  result.executive_summary = "Alle krav er fullt dokumentert.";
+  result.strengths = ["Ingen mangler. «Alt er godt.»"];
+  result.weaknesses = []; result.missing_elements = []; result.risks_to_customer = [];
+  result.improvement_recommendations = ["Ingen tiltak"];
+  result.likely_score_assessment = { quality: "Perfekt", risk: "Ingen", delivery_confidence: "Høy", competitiveness: "Best" };
+  result.architecture_comparison.strong_critique = ["Ingen svakheter"];
+  const snapshot = structuredClone(result);
+  const reviewed = reviewSolutionEvaluationEvidence(result, input);
+  const { summarizeSolutionEvaluation } = load("./context.ts");
+  const downstream = JSON.parse(summarizeSolutionEvaluation(reviewed));
+  assert.equal(reviewed.evidence_review.status, "coverage_downgraded");
+  assert.deepEqual(reviewed.evidence_review.affected_requirement_references, ["A · K-1"]);
+  assert.match(downstream.executive_summary, /holdt tilbake/u);
+  assert.doesNotMatch(JSON.stringify(downstream), /Ingen tiltak|Perfekt|Alle krav er fullt dokumentert/u);
+  assert.deepEqual(reviewed.strengths, []);
+  assert.deepEqual(reviewed.architecture_comparison.strong_critique, []);
+  assert.ok(!reviewed.source_evidence.references.some(r => r.path.startsWith("result.strengths.")));
+  assert.deepEqual(result, snapshot);
+  assert.deepEqual(JSON.parse(JSON.stringify(reviewed)).evidence_review, reviewed.evidence_review);
+});
+
+test("ambiguous and unmatched findings lose stale advice even without a coverage downgrade", () => {
+  for (const ambiguous of [false, true]) {
+    const { result, input } = fixture();
+    result.requirement_coverage.items[0].evidence = "Rammen er 1 500 kr.";
+    result.document_findings[0] = { reference: "K-1", reference_match: "coverage", assessment: "Godt", finding: "Alt er dokumentert.", evidence: "", recommendation: "Ingen tiltak." };
+    if (ambiguous) result.requirement_coverage.items.push({ ...result.requirement_coverage.items[0], full_reference: "C · K-1" });
+    else result.document_findings[0].reference = "K-ikke-registrert";
+    const reviewed = reviewSolutionEvaluationEvidence(result, input);
+    assert.equal(reviewed.document_findings[0].assessment, "Uklart");
+    assert.match(reviewed.document_findings[0].recommendation, /avklar hvilket krav/u);
+    assert.match(reviewed.document_findings[0].finding, /ikke knyttes entydig/u);
+    assert.equal(reviewed.evidence_review, undefined);
+  }
 });

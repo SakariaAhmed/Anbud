@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 
 import { supplementalRetrievalFixtures } from "./rag_supplemental_fixtures.mjs";
 import { scoreRetrievalCases } from "./rag_eval.mjs";
-import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
+import { evaluateRetrievalGate, retrievalGateMode } from "./rag_retrieval_gate.mjs";
 
 // Keep stdout machine-readable; application telemetry belongs on stderr.
 console.log = (...values) => console.error(...values);
@@ -62,7 +62,7 @@ const withoutStructure = args.includes("--without-structure");
 const extendedSuite = args.includes("--extended-suite");
 const replayWithModelRerank = args.includes("--replay-with-model-rerank");
 const caseGroup = option("--case-group");
-if (caseGroup && args.includes("--gate")) throw new Error("A case subset cannot pass the complete regression gate.");
+if (caseGroup && (args.includes("--gate") || args.includes("--release-gate"))) throw new Error("A case subset cannot pass the complete regression gate.");
 if (replayWithModelRerank && (!useRecordedEmbeddings || !useModelRerank || process.env.OPENAI_BASE_URL !== "http://127.0.0.1:4340/v1")) throw new Error("Paid replay requires recorded embeddings, model reranking and the owned loopback budget proxy.");
 if (replayWithModelRerank) {
   const response = await fetch("http://127.0.0.1:4340/budget");
@@ -208,9 +208,14 @@ if (live && results.some(row => row.used_memory_fallback)) throw new Error("Stor
 async function runCase(item) {
   const startedAt = Date.now();
   const request = await retrievalRequest(item.question, item.previous_question);
-  const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
+  const diagnostics = [];
+  const retrieval = await retrieveDocumentSnippetsWithMetadata({ ...request, ...(args.includes("--diagnostics") ? { onCandidateRanking: ({ stage, candidates }) => {
+    const score = scoreRetrievalCases([{ ...item, retrieved: candidates.map(snippet => ({ source_id: snippet.sourceId, reference: snippet.reference, text: snippet.text, page_start: snippet.pageStart, page_end: snippet.pageEnd, heading_path: snippet.headingPath })) }]);
+    diagnostics.push({ stage, candidates: candidates.length, expected_rank: score.mrr ? Math.round(1 / score.mrr) : null });
+  } } : {}) });
   results.push({
     ...item,
+    ...(diagnostics.length ? { candidate_diagnostics: diagnostics } : {}),
     retrieval_latency_ms: Date.now() - startedAt,
     used_hybrid_search: retrieval.telemetry.usedHybridSearch,
     used_broadened_search: retrieval.telemetry.usedBroadenedSearch ?? false,
@@ -291,8 +296,8 @@ if (databaseUrl && !useStoredEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
-if (args.includes("--gate")) {
-  report.gate = evaluateRetrievalGate(results, extendedSuite ? "extended" : args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
+if (args.includes("--gate") || args.includes("--release-gate")) {
+  report.gate = evaluateRetrievalGate(results, retrievalGateMode({ extendedSuite, releaseGate: args.includes("--release-gate"), recorded: useRecordedEmbeddings, stored: useStoredEmbeddings }));
   if (!report.gate.passed) process.exitCode = 2;
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

@@ -70,10 +70,9 @@ export const rerankRetrievalCandidates: RetrievalReranker = async ({ query, cand
     assertProjectWorkflowActive();
     const ranking = Array.isArray(result?.ranking) ? result.ranking : null;
     if (!ranking) throw new Error("Rerank-svaret mangler ranking.");
-    return ranking
-      .map((value) => (typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value))
-      .filter((value): value is number => typeof value === "number")
-      .map((value) => value - 1);
+    const indexes = ranking.map(value => typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value);
+    if (!indexes.every(value => typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= candidates.length)) throw new Error("Rerank-svaret inneholder ugyldige utdragsnumre.");
+    return (indexes as number[]).map(value => value - 1);
   } catch (error) {
     assertProjectWorkflowActive();
     if (error instanceof ProjectJobLeaseLostError ||

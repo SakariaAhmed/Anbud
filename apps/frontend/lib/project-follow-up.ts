@@ -18,8 +18,13 @@ export function projectFollowUpItems(input: { artifacts: GeneratedArtifact[]; an
   }
   for (const [index, item] of (input.evaluation?.missing_elements ?? []).entries()) items.push({ key: `missing:${index}`, kind: "coverage", reference: "Mangler i løsningsforslaget", description: item, nextAction: "Suppler løsningsforslaget og kjør en ny vurdering." });
   for (const [index, item] of (input.analysis?.ambiguities ?? []).entries()) items.push({ key: `clarification:${index}`, kind: "clarification", reference: "Åpen avklaring", description: item, nextAction: "Avklar med kunden og oppdater dokumentgrunnlaget." });
-  for (const [index, item] of (input.analysis?.likely_evaluation_criteria ?? []).entries()) items.push({ key: `criterion:${index}`, kind: "criterion", reference: `Mulig evalueringskriterium: ${item}`,
-    description: "Kundeanalysen foreslår dette kriteriet. Det finnes ingen lagret dekningsvurdering per evalueringskriterium; dekningen er ukjent.",
-    nextAction: "Kontroller kriteriet i konkurransegrunnlaget og dokumenter hvordan tilbudet besvarer det." });
+  for (const [index, item] of (input.analysis?.likely_evaluation_criteria ?? []).entries()) {
+    const stored = input.evaluation?.criterion_coverage?.[index];
+    const current = stored?.criterion === item ? stored : undefined;
+    if (current?.assessment === "Godt" && !current.review_required) continue;
+    items.push({ key: `criterion:${current?.criterion_id ?? index}`, kind: "criterion", reference: `Mulig evalueringskriterium: ${item}`,
+      description: current ? `${current.assessment}: ${current.rationale}` : "Kundeanalysen foreslår dette kriteriet. Det finnes ingen lagret dekningsvurdering per evalueringskriterium; dekningen er ukjent.",
+      nextAction: "Kontroller kriteriet i konkurransegrunnlaget og dokumenter hvordan tilbudet besvarer det." });
+  }
   return items;
 }

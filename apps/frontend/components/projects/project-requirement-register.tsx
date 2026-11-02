@@ -49,6 +49,8 @@ export function ProjectRequirementRegisterPreview({ projectId, refreshKey, proce
       {filtered.length ? filtered.map((row, index) => <article key={`${row.documentId}:${row.id}:${index}`} className="min-w-0 border-b p-3 last:border-0 [overflow-wrap:anywhere]">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><h4 className="font-semibold">{row.id}</h4>{row.id_origin !== "source" ? <span className="text-xs text-muted-foreground">{row.id_origin === "inferred" ? "Utledet ID – må kontrolleres" : "Lokal ID – mangler ID i kilden"}</span> : null}</div>
         <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{row.text}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{row.text_origin === "observed" ? "Ordlyden er funnet i originalteksten." : row.text_origin === "reconstructed" ? "Sammenstilt ordlyd – kontroller originaldokumentet." : "Ordlydens opprinnelse er ikke kontrollert for dette eldre registeret."}</p>
+        {row.original_text && row.original_text !== row.text ? <details className="mt-1 text-xs"><summary>Vis original ordlyd</summary><blockquote className="mt-1 whitespace-pre-wrap">{row.original_text}</blockquote></details> : null}
         <p className="mt-2 text-xs leading-5 text-muted-foreground">{[row.documentTitle, row.heading, row.pages.length ? `Side ${row.pages.join(", ")}` : "Side ikke oppgitt"].filter(Boolean).join(" · ")}</p>
       </article>) : <p className="p-3 text-sm text-muted-foreground">Ingen krav samsvarer med søket. Prøv en annen formulering.</p>}
     </div>

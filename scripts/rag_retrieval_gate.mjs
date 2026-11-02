@@ -35,6 +35,16 @@ const policies = {
   },
 };
 
+policies.extended_release = {
+  ...policies.extended,
+  stress: { ...policies.extended.stress, recall10: 0.95 },
+};
+
+export function retrievalGateMode({ extendedSuite, releaseGate, recorded, stored }) {
+  if (releaseGate) return extendedSuite ? "extended_release" : "release";
+  return extendedSuite ? "extended" : recorded ? "recorded" : stored ? "live" : "offline";
+}
+
 export function evaluateRetrievalGate(cases, mode = "offline") {
   const policy = policies[mode];
   if (!policy) throw new Error("Unknown retrieval gate mode.");
@@ -55,6 +65,7 @@ export function evaluateRetrievalGate(cases, mode = "offline") {
     const rows = cases.filter(item => item.kind === kind);
     const score = scoreRetrievalCases(rows);
     groups[kind] = score;
+    if (score.all_evidence_cases && score.all_evidence_recall_at_10 !== 1) failures.push(`${kind}: not all labelled occurrences were retrieved in the top 10`);
     if (rows.length < floor.cases) failures.push(`${kind}: needs at least ${floor.cases} distinct cases; got ${rows.length}`);
     if (floor.recall5 !== undefined && score.recall_at_5 < floor.recall5) failures.push(`${kind}: recall@5 ${score.recall_at_5} < ${floor.recall5}`);
     if (floor.recall10 !== undefined && score.recall_at_10 < floor.recall10) failures.push(`${kind}: recall@10 ${score.recall_at_10} < ${floor.recall10}`);

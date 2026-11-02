@@ -61,6 +61,9 @@ test("exact full IDs resolve authoritative repeated rows before model reranking 
   const input = { query: "Hva sier NORD-IAM-02?", exactTerms: ["NORD-IAM-02"], documents: [first, second, solution], rerank: async ({ candidates }) => candidates.map((_, i) => i).reverse() };
   const result = await retrieveDocumentSnippetsWithMetadata(input);
   assert.deepEqual(result.snippets.slice(0, 2).map(row => [row.sourceId, row.requirementId]), [[first.id, "NORD-IAM-02"], [second.id, "NORD-IAM-02"]]);
+  const bounded = await retrieveDocumentSnippetsWithMetadata({ ...input, limit: 1 });
+  assert.equal(bounded.telemetry.requirementLookupTruncated, true);
+  assert.equal(bounded.telemetry.quality.sufficient, false, "One returned occurrence cannot imply that the ID is unique.");
   const updated = source(first.id, "Leverandøren skal ha beredskap i Norge.");
   updated.chunk_source_revision = 2;
   const fresh = await retrieveDocumentSnippetsWithMetadata({ ...input, documents: [updated] });
@@ -636,12 +639,19 @@ test("a reranker reorders the candidate pool; invalid or missing answers keep th
   const seen = [];
   const reordered = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async ({ candidates }) => {
     seen.push(candidates.length);
-    return [2, 2, 99, -1, 1.5];
+    return [2, 2];
   } });
   assert.deepEqual(seen, [3]);
   assert.equal(reordered.telemetry.usedModelRerank, true);
   assert.deepEqual(reordered.snippets.map((snippet) => snippet.reference),
-    [heuristic[2], heuristic[0], heuristic[1]]);
+    [heuristic[2]]);
+  const none = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => [] });
+  assert.deepEqual(none.snippets, []);
+  assert.equal(none.telemetry.usedModelRerank, true);
+  assert.equal(none.telemetry.quality.sufficient, false);
+  const invalid = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => [2, 99, -1, 1.5] });
+  assert.deepEqual(invalid.snippets.map(snippet => snippet.reference), heuristic);
+  assert.equal(invalid.telemetry.usedModelRerank, false);
   const kept = await retrieveDocumentSnippetsWithMetadata({ ...input, rerank: async () => null });
   assert.equal(kept.telemetry.usedModelRerank, false);
   assert.deepEqual(kept.snippets.map((snippet) => snippet.reference), heuristic);

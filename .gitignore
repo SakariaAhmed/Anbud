@@ -26,6 +26,8 @@ test-data/*
 !test-data/document-analysis-stress/
 !test-data/document-analysis-stress/**
 !test-data/rag-retrieval/
+!test-data/rag-release-holdout/
+!test-data/rag-release-holdout/*.json
 !test-data/rag-retrieval/conceptual-questions.json
 !test-data/tenders/
 test-data/tenders/*

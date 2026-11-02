@@ -200,6 +200,8 @@ export function summarizeCustomerAnalysis(analysis: CustomerAnalysisResult) {
 
 export function summarizeSolutionEvaluation(evaluation: SolutionEvaluationResult) {
   return JSON.stringify({
+    evidence_review: evaluation.evidence_review,
+    criterion_coverage: evaluation.criterion_coverage,
     fit_to_customer_needs: compactText(evaluation.fit_to_customer_needs, 500),
     strengths: evaluation.strengths.slice(0, 5),
     weaknesses: evaluation.weaknesses.slice(0, 5),

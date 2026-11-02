@@ -48,6 +48,8 @@ export function scoreRetrievalCases(cases) {
   let citationCount = 0;
   let latencySum = 0;
   let latencyCount = 0;
+  let allEvidenceCases = 0;
+  let allEvidenceHits = 0;
 
   const failures = [];
 
@@ -56,6 +58,16 @@ export function scoreRetrievalCases(cases) {
     const firstMatchIndex = retrieved.findIndex((snippet) =>
       expectedMatch(caseItem, snippet),
     );
+    if (Array.isArray(caseItem.required_evidence)) {
+      allEvidenceCases += 1;
+      // Each occurrence has its own source and locator label. One occurrence of
+      // a repeated ID cannot stand in for another source's requirement.
+      if (caseItem.required_evidence.length > 0 && caseItem.required_evidence.every(label =>
+        Array.isArray(label.expected_texts) && label.expected_texts.length > 0
+        && label.expected_texts.every(text => typeof text === "string" && norm(text))
+        && retrieved.slice(0, 10).some(snippet => expectedMatch(label, snippet)),
+      )) allEvidenceHits += 1;
+    }
 
     if (firstMatchIndex >= 0 && firstMatchIndex < 5) {
       recallAt5 += 1;
@@ -103,6 +115,8 @@ export function scoreRetrievalCases(cases) {
     recall_at_5: recallAt5 / total,
     recall_at_10: recallAt10 / total,
     mrr: reciprocalRankSum / total,
+    all_evidence_cases: allEvidenceCases,
+    all_evidence_recall_at_10: allEvidenceCases ? allEvidenceHits / allEvidenceCases : null,
     citation_accuracy: citationCount ? validCitations / citationCount : null,
     citation_count: citationCount,
     avg_latency_ms: latencyCount ? latencySum / latencyCount : null,

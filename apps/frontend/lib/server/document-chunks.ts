@@ -113,6 +113,7 @@ export type RetrievalQuality = {
 export type RetrievalTelemetry = {
   authoritativeRequirementIds?: string[];
   requirementLookupFailed?: boolean;
+  requirementLookupTruncated?: boolean;
   missingRequirementIds?: string[];
   query: string;
   exactTerms: string[];
@@ -127,8 +128,8 @@ export type RetrievalTelemetry = {
   quality: RetrievalQuality;
 };
 
-/** Returns indexes into `candidates`, most relevant first, or null to keep
- * the existing order. Indexes left out keep their order after the listed ones. */
+/** Returns relevant indexes, most relevant first. Empty means no relevant
+ * evidence; null means failure and preserves the heuristic fallback. */
 export type RetrievalReranker = (input: {
   query: string;
   candidates: RetrievedDocumentSnippet[];
@@ -2100,6 +2101,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   broaderExactTerms?: string[];
   /** Orders the best candidates by relevance; null keeps the heuristic order. */
   rerank?: RetrievalReranker;
+  /** Explicit diagnostic sink for offline evaluation; never logs source text. */
+  onCandidateRanking?: (value: { stage: "subquery" | "fused" | "rerank_pool"; query: string; candidates: RetrievedDocumentSnippet[] }) => void;
   /**
    * Returns each matched part with up to 4 800 characters of its section. Only
    * for callers that send whole snippets: a caller that cuts snippets to their
@@ -2276,7 +2279,9 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const queries = Array.from(new Set([query, ...(input.subqueries ?? []).map(normalizeChunkText).filter(Boolean)])).slice(0, 4);
   const [rankings, lookedUpRows] = await Promise.all([Promise.all(queries.map(async passQuery => {
     const tokens = tokenizeForRetrieval(passQuery);
-    return rerankSnippets({ candidates: await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms }), queryTokens: tokens, exactTerms });
+    const candidates = rerankSnippets({ candidates: await gatherCandidates({ query: passQuery, queryTokens: tokens, exactTerms }), queryTokens: tokens, exactTerms });
+    input.onCandidateRanking?.({ stage: "subquery", query: passQuery, candidates });
+    return candidates;
   })), lookup]);
   const candidateKey = (candidate: RetrievedDocumentSnippet) => `${candidate.sourceType}:${candidate.sourceId}:${candidate.chunkIndex ?? candidate.reference}:${hashText(candidate.text)}`;
   let rankingQuery = query;
@@ -2316,18 +2321,13 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   }
 
   let usedModelRerank = false;
+  input.onCandidateRanking?.({ stage: "fused", query: rankingQuery, candidates: ranked });
+  input.onCandidateRanking?.({ stage: "rerank_pool", query: rankingQuery, candidates: ranked.slice(0, MODEL_RERANK_CANDIDATES) });
   if (input.rerank && ranked.length > 1) {
     const pool = ranked.slice(0, MODEL_RERANK_CANDIDATES);
-    const order = Array.from(new Set(
-      (await input.rerank({ query: rankingQuery, candidates: pool })) ?? [],
-    )).filter((index) => Number.isInteger(index) && index >= 0 && index < pool.length);
-    if (order.length) {
-      const chosen = new Set(order);
-      ranked = [
-        ...order.map((index) => pool[index]),
-        ...pool.filter((_, index) => !chosen.has(index)),
-        ...ranked.slice(pool.length),
-      ];
+    const response = await input.rerank({ query: rankingQuery, candidates: pool });
+    if (response && response.every(index => Number.isInteger(index) && index >= 0 && index < pool.length)) {
+      ranked = [...new Set(response)].map(index => pool[index]);
       usedModelRerank = true;
     }
   }
@@ -2343,6 +2343,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     });
   }
   const exactRows = lookedUpRows.filter(hasUncoveredText);
+  const requirementLookupTruncated = exactRows.length > limit;
   if (exactRows.length) {
     // Deterministic lookups are outside the model rerank contract. Every
     // occurrence stays visible instead of silently choosing a repeated ID.
@@ -2354,6 +2355,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const authoritativeShapes = new Set([...authoritativeRequirementIds].map(id => id.replace(/\d+/gu, "#")));
   const missingRequirementIds = requirementIds.filter(id => (!isAmbiguousRequirementIdentifier(id) || authoritativeRequirementIds.has(id) || authoritativeShapes.has(id.replace(/\d+/gu, "#"))) && !lookedUpRows.some(row => row.requirementId === id));
   if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: requirementLookupFailed ? "Et kravregister kunne ikke leses sikkert. Kontroller dokumentgrunnlaget før du bruker svaret." : "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
+  if (requirementLookupTruncated) quality = { ...quality, sufficient: false, confidence: "low", reason: "Krav-ID-en har flere forekomster enn søket kan vise samtidig. Avgrens til dokument og kapittel." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {
     const document = snippet.sourceType === "project_document"
@@ -2373,6 +2375,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const telemetry = {
     authoritativeRequirementIds: [...authoritativeRequirementIds],
     requirementLookupFailed,
+    requirementLookupTruncated,
     missingRequirementIds,
     query,
     exactTerms,

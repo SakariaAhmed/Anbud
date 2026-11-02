@@ -1,0 +1,711 @@
+{
+  "version": "municipal-v1",
+  "purpose": "independent synthetic holdout; not production population proof",
+  "documents": [
+    {
+      "id": "doc-konkurransegrunnlag",
+      "title": "Konkurransegrunnlag for sak, arkiv og migrering – Havreneset kommune (fiktivt)",
+      "role": "primary_customer_document",
+      "file_name": "havreneset-konkurransegrunnlag-fiktivt.pdf",
+      "raw_text": "FIKTIVT TESTDOKUMENT. Havreneset kommune, alle leverandører, systemer, personer, datoer og tall i dette dokumentet er oppdiktet og brukes bare som syntetisk testdata.\n\n[[SIDE:1]]\nKONKURRANSEGRUNNLAG\nAnskaffelse av skytjeneste for sak og arkiv, migrering av historiske arkiver og tilhørende plattformdrift\nOppdragsgiver: Havreneset kommune, Dokumentsenteret\nSaksnummer: 2027/0418\nKunngjort: 11. januar 2027\n\n1. Orientering om oppdragsgiver\nHavreneset kommune er en fiktiv kystkommune med omtrent 38 400 innbyggere og rundt 3 100 ansatte fordelt på sentraladministrasjon, oppvekst, helse og omsorg, plan og bygg, kommunalteknikk, kultur og det kommunale havnevesenet. Kommunen er organisert i seks kommunalområder og har 41 tjenestesteder, hvorav 17 ligger utenfor kommunesenteret. Dokumentsenteret har 14 årsverk og et faglig ansvar for postmottak, journalføring, arkivdanning og innsynsbehandling.\n\nKommunens arkivlandskap har vokst frem over flere tiår. I dag finnes det fjorten kildesystemer med arkivverdig eller dokumentasjonspliktig innhold, og flere av dem har passert leverandørens støtteperiode. Kommunen har dessuten papirarkiver på flere lokasjoner. Kommunestyret i den fiktive kommunen vedtok i desember 2026 en digitaliseringsplan der ett felles sak- og arkivsystem skal erstatte de spredte løsningene. Samlet bestand er kartlagt til om lag 9,9 millioner dokumenter og 21,7 TB. Kartleggingen er publisert som eget vedlegg til dette konkurransegrunnlaget.\n\n2. Formålet med anskaffelsen\nAnskaffelsen skal gi kommunen én sikker plattform der saksbehandlere finner dokumenter uavhengig av hvilket historisk system de stammer fra. Oppdragsgiver ønsker å redusere antall aktive arkivsystemer, fjerne avhengigheten av utgåtte programvareversjoner, bedre etterlevelse av kassasjonsregler og gjøre innsynsbehandling raskere. Kommunen forventer at gjennomsnittlig tid fra innsynskrav til svar skal reduseres fra dagens ni virkedager til under tre virkedager innen utgangen av det første driftsåret.\n\nOppdraget omfatter fire delleveranser: (a) en skytjeneste for sak og arkiv med tilhørende administrasjons- og rapportverktøy, (b) migrering av historiske dokumenter og metadata fra kildesystemene, (c) drift, støtte og videreutvikling av plattformen i avtaleperioden og (d) opplæring av superbrukere og sluttbrukere. Fysisk skanning av papirarkiver kan utføres av underleverandør, men hovedleverandøren har det fulle ansvaret overfor oppdragsgiver.\n\nPlattformen skal dimensjoneres for 1 450 samtidige brukere i kontortiden.\n\nFølgende er ikke omfattet: nytt fagsystem for barnevern, utskifting av kommunens økonomisystem, fysisk ombygging av arkivlokaler og juridisk bistand knyttet til enkeltvedtak.\n\n[[SIDE:2]]\n3. Prosedyre\nAnskaffelsen gjennomføres som konkurranse med forhandling etter forutgående kunngjøring. Oppdragsgiver vil invitere inntil fem kvalifiserte leverandører til å levere tilbud og kan forhandle med de tre som rangeres høyest etter første evaluering. Oppdragsgiver forbeholder seg retten til å tildele kontrakt uten forhandling dersom det første tilbudet er klart best.\n\nAll kommunikasjon skal skje gjennom det fiktive konkurranseverktøyet Anbudstorget. Muntlige avklaringer er ikke bindende. Spørsmål besvares anonymisert, og svarene gjøres tilgjengelige for alle leverandørene som har meldt interesse. Tilbud skal skrives på norsk. Tekniske vedlegg og produktblad kan foreligge på engelsk.\n\nTabell 1: Tidsplan for konkurransen\n| Hendelse | Tidspunkt |\n| Kunngjøring av konkurransen | 11. januar 2027 |\n| Digital orientering for leverandører | 2. februar 2027 kl. 10:00 |\n| Siste frist for spørsmål | 26. februar 2027 kl. 15:00 |\n| Tilbudsfrist | 12. mars 2027 kl. 12:00 |\n| Demonstrasjon av løsning | uke 14 og 15 i 2027 |\n| Forhandlingsmøter | uke 17 og 18 i 2027 |\n| Vedståelsesfrist | 180 dager regnet fra tilbudsfristen |\n\nKontraktsignering tidfestes etter at karensperioden er over og er ikke fastsatt i tidsplanen. Alle senere frister i dette dokumentet regnes derfor fra kontraktsignering når ikke annet er oppgitt.\n\nTilbud som kommer inn etter tilbudsfristen vil bli avvist. Leverandøren bærer selv risikoen for at opplastingen i Anbudstorget blir fullført i tide. Oppdragsgiver anbefaler å starte opplastingen minst to timer før fristen.\n\n4. Kvalifikasjonskrav\n4.1 Økonomisk og finansiell kapasitet. Leverandøren skal ha hatt en årsomsetning på minst NOK 40 millioner i hvert av de to siste avsluttede regnskapsårene og en positiv egenkapital ved utgangen av det siste året. Kredittvurdering skal ikke være eldre enn tre måneder ved innlevering.\n\n4.2 Tekniske og faglige kvalifikasjoner. Leverandøren skal dokumentere tre referanseprosjekter fra de siste fem årene, der hvert prosjekt omfatter migrering av minst 500 000 dokumenter med metadata til et sak- og arkivsystem. Minst ett av referanseprosjektene skal være gjennomført for en offentlig virksomhet. Referansene skal inneholde kontaktperson som oppdragsgiver kan kontakte.\n\n4.3 Kvalitets- og informasjonssikkerhetsstyring. Den leverandøren som har driftsansvaret for plattformen, skal være sertifisert etter ISO/IEC 27001. Dersom driften utføres av en underleverandør, må sertifikatet gjelde den underleverandøren. Sertifikat fra annen uavhengig tredjepart kan aksepteres dersom leverandøren dokumenterer likeverdighet.\n\n[[SIDE:3]]\n4.4 Bruk av andre virksomheter. Leverandøren kan støtte seg på andre virksomheters kapasitet for å oppfylle kvalifikasjonskravene, men må da legge frem en forpliktelseserklæring. Oppdragsgiver kan kreve at underleverandører som skal utføre vesentlige deler av leveransen, navngis i tilbudet og oppfyller de relevante kravene.\n\n4.5 Avvisningsgrunner. Oppdragsgiver vil avvise leverandører som ikke oppfyller kvalifikasjonskravene på tilbudsfristen, som har levert vesentlig ufullstendig dokumentasjon, eller som har forbehold mot absolutte krav i kravspesifikasjonen. Mindre avvik kan avklares skriftlig.\n\n5. Tildelingskriterier\nKontrakt tildeles det tilbudet som har det beste forholdet mellom pris og kvalitet. Oppdragsgiver har fastsatt følgende tildelingskriterier med vekter:\n\nTabell 2: Tildelingskriterier\n| Kriterium | Vekt | Dokumentasjon |\n| Pris | 40 % | Utfylt prisskjema (vedlegg 4) |\n| Løsningens kvalitet | 40 % | Løsningsbeskrivelse og demonstrasjon |\n| Migreringsplan og gjennomføringsevne | 20 % | Migreringsplan, risikovurdering og bemanningsplan |\n\nPris evalueres som totalkostnad over fire år, inkludert migrering, lisenser, drift, støtte og opplæring, og poengsettes lineært med 10 poeng til laveste tilbud. Løsningens kvalitet deles i brukeropplevelse, søk og gjenfinning, arkivfunksjonalitet og sikkerhet, der hvert underkriterium teller likt. Migreringsplanen vurderes etter hvor realistisk og etterprøvbar den er, herunder hvordan datakvalitet, avvik og kontroll av fullstendighet håndteres.\n\nDersom oppdragsgiver gjennomfører demonstrasjoner, skal scenarioene publiseres senest ti virkedager før første demonstrasjon. Demonstrasjonene skal gjennomføres på den tilbudte versjonen og ikke på prototyper.\n\n6. Kontraktsform, varighet og opsjoner\nKontrakten har en fast periode på fire år fra signering. Oppdragsgiver har ensidig rett til å forlenge i inntil fire år, delt i én toårig og to ettårige forlengelser, slik at samlet maksimal varighet blir åtte år. Estimert samlet kontraktsverdi for hele perioden, inkludert alle opsjoner, er NOK 48 millioner eksklusive merverdiavgift. Estimatet er ikke en bindende ramme eller en forpliktelse til å kjøpe for et bestemt beløp.\n\nTabell 3: Opsjoner\n| Opsjon | Innhold |\n| O-1 | Skanning av papirarkiv for inntil to lokasjoner utover grunnomfanget |\n| O-2 | Modul for politisk møtebehandling med publisering |\n| O-3 | Innbyggerinnsyn i egne saker gjennom sikker pålogging |\n| O-4 | Regionalt tjenestesamarbeid der nabokommuner kan slutte seg til |\n\nOpsjon O-3 (innbyggerinnsyn) kan utløses innen 18 måneder etter produksjonssetting. Utløsing av O-3 er betinget av at kommunestyret har vedtatt finansiering av modulen.\n\nOpsjon O-1 må utløses før skanning av grunnomfanget er avsluttet. Opsjon O-2 kan utløses når som helst i kontraktens faste periode. Opsjon O-4 forutsetter at den aktuelle nabokommunen har deltatt i kunngjøringen som navngitt fremtidig deltaker, og at det inngås en egen tilslutningsavtale.\n\n[[SIDE:4]]\n7. Kravspesifikasjon – innledning\nKravene i kapittel 8 til 11 er nummerert fortløpende fra K-01 og merket som absolutte krav eller evalueringskrav. Et absolutt krav må oppfylles, og forbehold fører til avvisning. Et evalueringskrav inngår i vurderingen av tildelingskriteriet Løsningens kvalitet. Leverandøren skal besvare hvert krav i kravmatrisen og henvise til hvor i løsningsbeskrivelsen besvarelsen er utdypet. Svar som bare gjentar kravteksten, regnes som ikke besvart.\n\nKontortid betyr i dette konkurransegrunnlaget kl. 07:00 til 17:00 på virkedager. Virkedag betyr mandag til fredag, med unntak av offentlige høytidsdager.\n\n8. Funksjonelle krav\n8.1 Saksbehandling og arkivdanning\nK-01 (Absolutt): Løsningen skal støtte hele saksforløpet fra mottak og registrering via saksbehandling og godkjenning til ekspedering og avslutning, med automatisk arkivdanning underveis.\nK-02 (Absolutt): Hver sak og hvert dokument skal ha en entydig identifikator som ikke endres ved flytting mellom enheter, saksbehandlere eller arkivdeler.\nK-03 (Evaluering): Saksbehandler bør kunne opprette saker fra maler knyttet til sakstype, der tilgangskode, klassering og oppfølgingsfrist settes med forhåndsvalgte verdier som kan overstyres.\nK-04 (Absolutt): Godkjenningsflyt skal kunne settes opp i inntil fem nivåer og skal logge hvem som har godkjent, når godkjenningen skjedde og hvilken dokumentversjon som ble godkjent.\nK-05 (Evaluering): Saksbehandler bør få varsel om frister i egen arbeidsflate og på e-post, og leder bør kunne se samlet fristoversikt for sin enhet.\nK-06 (Absolutt): Dokumenter skal kunne knyttes til flere saker uten at innholdet dupliseres.\nK-07 (Evaluering): Løsningen bør foreslå klassering ut fra innhold, men forslaget skal alltid godkjennes av en person før det får virkning.\nK-08 (Absolutt): Offentlig journal skal kunne genereres daglig med automatisk skjerming av opplysninger som er merket med tilgangskode.\n\n8.2 Søk og gjenfinning\nK-09 (Absolutt): Fritekstsøk skal dekke metadata og tekstinnhold i alle migrerte og nye dokumenter som brukeren har tilgang til. Dokumenter brukeren ikke har tilgang til, skal ikke avsløres gjennom treff, treffantall eller forhåndsvisning.\nK-10 (Evaluering): Søk bør gi treff i løpet av to sekunder for 95 prosent av søkene ved normal belastning.\nK-11 (Evaluering): Brukeren bør kunne lagre søk, filtrere på sektor, år, kildesystem og dokumenttype, og dele et lagret søk med egen enhet.\n\n8.3 Tilgangsstyring\nK-12 (Absolutt): Alle administratorer og alle brukere som logger inn utenfra kommunens nett, skal autentiseres med flerfaktorautentisering.\nK-13 (Absolutt): Løsningen skal integreres mot kommunens identitetsleverandør for pålogging og automatisk oppretting og deaktivering av brukere, slik at sluttede ansatte mister tilgang senest innen én time etter at de er deaktivert hos identitetsleverandøren.\nK-14 (Absolutt): Tilgang skal kunne styres per enhet, rolle, tilgangsgruppe og enkeltsak. Barnevern og personal skal kunne skjermes fra alle andre enheter.\nK-15 (Evaluering): Tidsbegrenset tilgang bør kunne gis ved vikariater, med automatisk bortfall på valgt dato.\nK-16 (Absolutt): Administrative endringer av roller og tilganger skal kreve minst to personer for de mest privilegerte rollene.\n\n[[SIDE:5]]\n9. Krav til drift og sikkerhet\n9.1 Tilgjengelighet og kontinuitet\nK-17 (Absolutt): Produksjonsmiljøet skal ha en tilgjengelighet på minst 99,5 % per kalendermåned i kontortiden. Planlagt vedlikehold som er varslet i henhold til K-18, regnes ikke som nedetid.\nK-18 (Absolutt): Planlagt vedlikehold skal varsles minst fem virkedager i forveien, gjennomføres utenfor kontortid og ikke overstige seks timer per kalendermåned.\nK-19 (Absolutt): Ved en alvorlig hendelse skal plattformen være gjenopprettet innen 240 minutter (RTO) fra hendelsen ble meldt.\nK-20 (Absolutt): Tap av data ved gjenoppretting skal ikke overstige ett kvarter (RPO).\nK-21 (Absolutt): Daglige sikkerhetskopier skal oppbevares i 35 dager, og månedlige sikkerhetskopier skal oppbevares i 12 måneder. Alle sikkerhetskopier skal være kryptert og oppbevares atskilt fra produksjonsmiljøet.\n\n9.2 Skanning og tekstgjenkjenning\nK-22 (Absolutt): Skannede dokumenter skal gjøres søkbare gjennom tekstgjenkjenning med minst 98 % tegnnøyaktighet målt på et kontrollutvalg.\n\n9.3 Logging og sporbarhet\nK-23 (Absolutt): Revisjonslogger for innlogging, oppslag, eksport, endring av metadata og tilgangsendringer skal oppbevares i 24 måneder og skal ikke kunne endres av administratorer.\nK-24 (Evaluering): Arkivleder bør kunne hente ut logg per sak, per bruker og per periode uten bistand fra leverandøren.\nK-25 (Absolutt): Hendelser med mistanke om uautorisert tilgang skal varsles til oppdragsgivers sikkerhetsansvarlige uten ugrunnet opphold og senest innen 24 timer etter at de er oppdaget.\n\n9.4 Plassering og behandling av data\nK-26 (Absolutt): Produksjonsdata og sikkerhetskopier skal lagres innenfor EØS. Fjernaksess til personopplysninger fra land utenfor EØS er ikke tillatt uten skriftlig forhåndsgodkjenning fra oppdragsgiver.\nK-27 (Absolutt): Leverandøren skal inngå databehandleravtale før behandling av personopplysninger starter og skal holde oversikt over alle underdatabehandlere. Bytte av underdatabehandler skal varsles minst 60 dager i forveien.\nK-28 (Absolutt): Data i testmiljøer skal være anonymisert eller syntetisk, med mindre oppdragsgiver har gitt skriftlig unntak for en bestemt prøvemigrering.\nK-29 (Absolutt): All nettverkstrafikk mellom klient og plattform skal være kryptert med TLS 1.3 eller nyere.\nK-30 (Evaluering): Leverandøren bør gjennomføre uavhengig penetrasjonstest minst én gang per år og dele et sammendrag med oppdragsgiver.\n\n[[SIDE:6]]\n9.5 Støtte og feilhåndtering\nLeverandøren skal drive en bemannet brukerstøtte i kontortiden og en vakttjeneste utenfor kontortid for kategori A og B. Feil klassifiseres av oppdragsgiver, men leverandøren kan be om omklassifisering med begrunnelse.\n\nTabell 4: Krav til respons og retting\n| Kategori | Beskrivelse | Respons i kontortid | Respons utenfor kontortid | Retting eller omgåelse |\n| A | Plattformen er utilgjengelig eller data står i fare | 30 minutter | 60 minutter | 4 timer |\n| B | Viktig funksjon er ute av drift, ingen enkel omgåelse | 2 timer | 4 timer | 1 virkedag |\n| C | Funksjon er redusert, omgåelse finnes | 1 virkedag | neste virkedag | 5 virkedager |\n| D | Mindre feil eller kosmetiske forhold | 3 virkedager | 3 virkedager | neste planlagte versjon |\n\nSvikt i oppfyllelse av tabell 4 måles månedlig. Hvis responstid for kategori A brytes mer enn to ganger i løpet av en kalendermåned, skal leverandøren legge frem en skriftlig forbedringsplan innen ti virkedager. Sanksjoner for brudd på servicenivåer er beskrevet i kapittel 13.\n\nK-31 (Absolutt): Leverandøren skal levere månedlig tjenesterapport med tilgjengelighet, antall hendelser, responstider, åpne avvik og kapasitetsutvikling.\nK-32 (Evaluering): Brukerstøtten bør kunne nås gjennom både portal og telefon, og bør gi svar på norsk.\n\n10. Krav til migrering\n10.1 Omfang\nAlle fjorten kildesystemer i kartleggingen er omfattet. Dokumenter og metadata skal overføres med bevart sammenheng mellom sak, journalpost og dokument. Originalformat skal bevares ved siden av arkivformat der kildesystemet har begge. Oppdragsgiver vil levere uttrekk fra kildesystemene i det formatet kildesystemet kan produsere, men leverandøren har ansvaret for å tolke og kvalitetssikre uttrekkene.\n\nK-33 (Absolutt): Leverandøren skal levere en detaljert migreringsplan senest åtte uker etter kontraktsignering. Planen skal beskrive rekkefølge per kildesystem, ansvarsfordeling, feltmapping, kontrollrutiner og tilbakefallsplan.\nK-34 (Absolutt): Hver migreringsbølge skal avsluttes med en fullstendighetsrapport som avstemmer antall saker, journalposter, dokumenter og filer mot kildesystemet.\nK-35 (Absolutt): Metadata som ikke lar seg mappe, skal bevares i et eget historisk felt og ikke forkastes.\nK-36 (Evaluering): Leverandøren bør tilby verktøy der arkivpersonell kan rette metadatafeil samlet, med sporbarhet på hvem som har endret hva.\nK-37 (Absolutt): Tilgangskoder og skjerming fra kildesystemet skal videreføres ved migrering. Dokumenter med uklar tilgangskode skal behandles som skjermet inntil de er vurdert.\n\n10.2 Prøvemigrering og produksjonsmigrering\nPrøvemigrering skal være gjennomført og rapportert senest 20 uker etter kontraktsignering. Prøvemigreringen skal omfatte minst ett stort og ett lite kildesystem etter oppdragsgivers valg.\n\nProduksjonsmigrering kan ikke starte før oppdragsgiver skriftlig har godkjent prøvemigreringen. Godkjenning forutsetter at avviksandelen i kontrollutvalget ikke overstiger 0,2 %.\n\nKontrollutvalget trekkes av oppdragsgiver og skal omfatte minst 5 000 dokumenter per kildesystem som inngår i prøvemigreringen. Avvik omfatter manglende dokumenter, feil kobling til sak, feil tilgangskode og feil dato. Feil i frivillige metadatafelt rapporteres, men teller ikke som avvik.\n\n[[SIDE:7]]\n10.3 Ferdigstilling og avvikling\nHele migreringen skal være fullført innen 78 uker etter kontraktsignering. Plattformen skal settes i produksjon for nye saker senest 52 uker etter kontraktsignering, slik at nye saker opprettes i ny løsning mens historisk innhold fortsatt overføres. Kildesystemer skal holdes lesbare i minst tre måneder etter at migreringen av systemet er godkjent.\n\nHovedsystemet Arkivus 7 skal avvikles 31. oktober 2028. Oppdragsgiver har en vedlikeholdsavtale som må sies opp i god tid, og leverandøren skal ta hensyn til dette i planen.\n\nK-38 (Absolutt): Leverandøren skal kunne dokumentere sjekksum eller tilsvarende kontroll for hver migrerte fil.\nK-39 (Evaluering): Leverandøren bør kunne vise fremdrift for migreringen i et dashbord som oppdragsgiver har tilgang til.\n\n10.4 Papirarkiv\nOppdragsgiver har papirarkiver som skal skannes etter samme kvalitetskrav som øvrige dokumenter. Antall hyllemeter og lokasjoner er angitt i kartleggingen. Papiroriginaler skal transporteres i låste enheter og skal være sporbare fra henting til tilbakelevering. Oppdragsgiver avgjør selv om papiroriginaler kasseres, overføres til depot eller tilbakeføres etter skanning.\n\nK-40 (Absolutt): Skanning skal skje med minimum 300 dpi. For tekniske tegninger i stort format gjelder minimum 400 dpi.\nK-41 (Absolutt): Hver skannede enhet skal knyttes til en referanse tilbake til hylle, boks og mappe på opprinnelsesstedet.\n\n11. Krav til integrasjoner, opplæring og tilbakeføring\n11.1 Integrasjoner\nTabell 5: Integrasjoner som skal være på plass ved produksjonssetting\n| Nr. | System | Formål | Protokoll | Frekvens |\n| INT-01 | Befolkningsnavet (innbyggerregister) | Oppslag av navn og adresse | REST/JSON over TLS 1.3 med gjensidige sertifikater | Sanntid |\n| INT-02 | Kommunekassen (økonomisystem) | Bilagsreferanser og fakturakobling | Avklares i designfasen | Daglig |\n| INT-03 | Matrikkelhuben (eiendomsregister) | Oppslag av gårds- og bruksnummer | SOAP over HTTPS | Hver time |\n| INT-04 | BrevBroen (ekspedering til innbyggere) | Sending og kvittering | AMQP med signerte meldinger | Sanntid |\n| INT-05 | PersonalKilden (personalsystem) | Brukere og organisasjonsstruktur | SFTP med CSV | Hver natt |\n| INT-06 | KartLaget (kartløsning) | Visning av saker i kart | REST med GeoJSON | Ved oppslag |\n\nK-42 (Absolutt): Alle integrasjoner skal overvåkes, og feil skal varsles til oppdragsgivers driftsteam innen 15 minutter.\nK-43 (Evaluering): Løsningen bør ha et dokumentert åpent programmeringsgrensesnitt for lesing av saker og dokumenter, med tilgangsstyring på samme nivå som brukergrensesnittet.\n\n11.2 Opplæring\nK-44 (Absolutt): Leverandøren skal gjennomføre opplæring av superbrukere før produksjonssetting og tilby e-læring som alle sluttbrukere kan gjennomføre i arbeidstiden.\nK-45 (Evaluering): Opplæringsmateriell bør oppdateres ved hver ny hovedversjon.\n\n11.3 Tilbakeføring ved kontraktsslutt\nK-46 (Absolutt): Ved kontraktens opphør skal leverandøren bistå ved tilbakeføring av alle data i seks måneder, med full lesetilgang i hele perioden.\nK-47 (Absolutt): Uttrekk ved opphør skal omfatte dokumenter, metadata, logger og dokumentasjon av datastrukturen i et åpent og dokumentert format.\nK-48 (Absolutt): Etter avsluttet tilbakeføring skal leverandøren slette alle kopier av oppdragsgivers data og levere skriftlig bekreftelse fra ansvarlig leder.\n\n[[SIDE:8]]\n12. Organisering og samarbeid\nLeverandøren skal stille med en prosjektleder, en løsningsarkitekt og en migreringsleder som navngis i tilbudet. Nøkkelpersonell kan ikke byttes uten oppdragsgivers godkjenning, og slik godkjenning kan ikke nektes uten saklig grunn. Oppdragsgiver stiller med en prosjektleder i 60 prosent stilling, arkivleder, sikkerhetsansvarlig og representanter fra hvert kommunalområde.\n\nDet skal holdes styringsgruppemøte minst hver sjette uke i prosjektfasen og minst to ganger per år i driftsfasen. Prosjektmøter skal holdes ukentlig. Oppdragsgiver skal behandle endringsanmodninger med vesentlig kostnadsvirkning i styringsgruppen.\n\nLeverandøren skal dokumentere minst to fullskala restitusjonstester i løpet av første driftsår. Oppdragsgiver har rett til å overvære testene.\n\n13. Sanksjoner og mislighold\nVed forsinket fullføring av produksjonsmigreringen påløper dagmulkt på 0,15 % av migreringsvederlaget per påbegynte virkedag, begrenset til 100 virkedager. Dagmulkt påløper ikke når forsinkelsen skyldes forhold oppdragsgiver har ansvaret for, og som leverandøren har varslet om uten ugrunnet opphold.\n\nDersom tilgjengelighetskravet ikke oppnås i en kalendermåned, gir det rett til prisavslag i tjenestevederlaget for den aktuelle måneden, etter en trapp som er angitt i kontraktsvilkårene. Gjentatte brudd i tre påfølgende måneder regnes som vesentlig mislighold.\n\nAnsvarsbegrensning og erstatning reguleres i kontraktsvilkårene (vedlegg 5), som ikke er gjengitt i dette konkurransegrunnlaget.\n\n14. Vedlegg\nFølgende vedlegg inngår i konkurransen: vedlegg 1 kravmatrise, vedlegg 2 kartlegging av arkivbestand, vedlegg 3 databehandleravtale, vedlegg 4 prisskjema, vedlegg 5 kontraktsvilkår og vedlegg 6 demonstrasjonsscenarioer. Vedlegg 1, 3, 4, 5 og 6 distribueres gjennom Anbudstorget til leverandører som har bedt om dem.\n\n15. Bakgrunn for kravene til søk og journal\nKommunen fikk i 2025 en intern revisjonsrapport (fiktiv) som viste at saksbehandlere i gjennomsnitt brukte 22 minutter på å finne eldre dokumenter som lå i et annet system enn det de vanligvis arbeidet i. I 11 prosent av stikkprøvene ble dokumentet ikke funnet i første forsøk. Rapporten viste også at to av tre sektorer manglet en felles rutine for skjerming av personopplysninger i offentlig journal. Kravene K-08 og K-09 må leses i lys av dette.\n\nOppdragsgiver har derfor lagt særlig vekt på at søk ikke skal bli en egen teknisk øvelse. Arkivleder ønsker å kunne vise frem søkefunksjonen på et kort møte med en virksomhetsleder uten å måtte forklare hvor innholdet stammer fra. Det er likevel viktig at brukeren kan se hvilket kildesystem et migrert dokument kommer fra, fordi dette noen ganger avgjør hvordan dokumentet skal tolkes.\n\n[[SIDE:9]]\n16. Beskrivelse av brukergrupper\nSluttbrukerne har svært ulike behov. Saksbehandlere i plan og bygg arbeider med store saker som inneholder tegninger og kart, og forventer å åpne filer på flere hundre megabyte uten å laste dem ned. Saksbehandlere i helse og omsorg arbeider ofte på delte maskiner og må kunne logge raskt av og på. Lærere bruker systemet sjelden og trenger en forenklet visning. Politikere skal bare ha lesetilgang til møtedokumenter. Arkivpersonell trenger avanserte funksjoner for masseendring, kassasjon og uttrekk.\n\nTabell 6: Brukergrupper og forventet bruk\n| Brukergruppe | Omtrentlig antall | Typisk bruk | Særlige hensyn |\n| Saksbehandlere | 1 150 | Daglig | Store filer i plan og bygg |\n| Ledere | 240 | Ukentlig | Fristoversikt og godkjenning |\n| Lærere og barnehageansatte | 980 | Noen ganger per måned | Forenklet visning |\n| Helse- og omsorgsansatte | 610 | Daglig eller ukentlig | Delte maskiner, rask pålogging |\n| Arkivpersonell | 14 | Daglig | Masseendring og kassasjon |\n| Folkevalgte | 35 | I møteperioder | Bare lesetilgang |\n| Systemadministratorer | 6 | Etter behov | Flerfaktor og tofaktorgodkjenning av roller |\n\nTabellen gir et grunnlag for vurdering av opplæring og brukergrensesnitt og er ikke en lisenskvote. Lisensmodellen skal fremgå av prisskjemaet.\n\n17. Universell utforming og språk\nBrukergrensesnittet skal være tilgjengelig på bokmål og nynorsk. Begge språkformer skal kunne velges av den enkelte bruker. Grensesnittet skal oppfylle gjeldende krav til universell utforming, og leverandøren skal legge ved en tilgjengelighetserklæring. Oppdragsgiver vil teste skjermleser, tastaturnavigasjon og kontrast under demonstrasjonene.\n\nAutomatiske e-poster til saksbehandlere kan være på bokmål. Brev til innbyggere skal kunne utformes på den målformen mottakeren har valgt, og malene skal kunne vedlikeholdes av kommunens egne superbrukere.\n\n18. Bærekraft og ansvarlig leverandørkjede\nLeverandøren skal redegjøre for energibruk i drift av plattformen og bruk av fornybar energi i datasentrene. Oppdragsgiver stiller krav om at arbeidstakere som utfører skanning på kommunens lokasjoner, har lønns- og arbeidsvilkår i tråd med gjeldende tariffavtale for bransjen. Leverandøren skal kunne dokumentere dette på forespørsel, og oppdragsgiver kan gjennomføre stikkprøver. Bærekraft inngår ikke som eget tildelingskriterium, men opplysningene er kontraktsforpliktende når de er oppgitt.\n\nTransport av papirarkiv skal planlegges slik at kjørte kilometer holdes lavt, og flere små lokasjoner kan samles i felles rute. Lagring av papiroriginaler hos underleverandør skal ikke overstige 12 uker for hver leveranse uten skriftlig samtykke.\n\n[[SIDE:10]]\n19. Endringshåndtering og videreutvikling\nPlattformen skal oppdateres minst fire ganger per år. Hver hovedversjon skal være tilgjengelig i et testmiljø minst 15 virkedager før den settes i produksjon, slik at oppdragsgiver kan verifisere arbeidsflyter og integrasjoner. Endringer som fjerner funksjonalitet, skal varsles minst seks måneder i forveien. Leverandøren skal holde en offentlig tilgjengelig liste over kjente feil for kundene sine.\n\nOppdragsgiver kan bestille tilleggsutvikling gjennom en endringsavtale. Slike endringer skal ikke redusere muligheten til å følge standard oppgraderingsløp, med mindre partene uttrykkelig har avtalt det. Konfigurasjon utført av kommunens superbrukere skal bevares ved oppgraderinger.\n\n20. Kassasjon og bevaring\nKommunen har en egen bevarings- og kassasjonsplan som er vedtatt av arkivleder. Løsningen skal kunne knytte kassasjonskoder til sakstyper og vise hvilke dokumenter som kan kasseres ved utgangen av hvert år. Kassasjon skal alltid godkjennes manuelt i to trinn, og det skal bevares en kassasjonsliste. Dokumenter fra kildesystemer som ikke har hatt kassasjonskoder, skal inntil videre behandles som bevaringsverdige.\n\nOppdragsgiver forventer at leverandøren kan vise hvordan kassasjonskoder mappes fra kildesystemene, og hvilke feil som kan oppstå når samme kode har hatt ulik betydning til ulike tider.\n\n21. Kommunens egne bidrag i prosjektet\nOppdragsgiver har ansvar for å stille tilgjengelig tekniske kontaktpersoner for hvert kildesystem, gi leverandøren nødvendige tilganger, prioritere rekkefølge på migreringsbølgene og gjennomføre akseptansetest. Oppdragsgiver skal stille med fem brukertestere fra hvert kommunalområde under akseptansetesten. Tiden til dette er budsjettert, men kommunens tilgjengelighet er begrenset i skoleferier og i juli måned.\n\nKommunen vil holde en felles oppstartsdag for prosjektgruppene og en halv dag med innføring i kommunens arkivpraksis. Leverandørens prosjektdeltakere skal signere taushetserklæring før de får tilgang til reelle data.\n\n22. Akseptansetest\nAkseptansetest gjennomføres før produksjonssetting. Testen omfatter hele saksforløpet, integrasjoner, tilgangsstyring og søk i migrert innhold. Test av integrasjoner skal utføres mot testinstanser der disse finnes. Testen består når ingen feil i kategori A eller B står åpne, og når antall åpne feil i kategori C ikke overstiger 15. Leverandøren skal rette alle åpne feil i kategori C senest 40 virkedager etter produksjonssetting, med mindre partene avtaler noe annet.\n\nOppdragsgiver kan ta i bruk løsningen for en pilotgruppe på inntil 75 brukere før den formelle akseptansetesten er bestått. Slik bruk regnes ikke som aksept av leveransen.\n\n23. Prisskjema og priselementer\nPris skal oppgis i vedlegg 4. Prisskjemaet skiller mellom migreringsvederlag, etablering, årlig tjenestevederlag, opplæring og timepriser for endringsarbeid. Prisene skal være oppgitt i norske kroner eksklusive merverdiavgift. Årlig tjenestevederlag kan reguleres én gang per år etter endringen i det fiktive Kommunale Prisindeks.\n\nReisekostnader til kommunen skal inngå i de tilbudte prisene. Oppdragsgiver godtar ikke at det legges til administrasjonsgebyr på underleverandørers fakturaer.\n\n24. Fakturering\nMigreringsvederlaget faktureres etter milepæler: 15 % ved godkjent migreringsplan, 25 % ved godkjent prøvemigrering, 40 % fordelt på fullførte migreringsbølger og de siste 20 % ved godkjent sluttrapport for hele migreringen. Årlig tjenestevederlag faktureres kvartalsvis etterskuddsvis, med første periode fra produksjonssetting. Betalingsfrist er 45 dager fra mottatt elektronisk faktura.\n\n[[SIDE:11]]\n25. Postmottak og digital inngang\nDokumentsenteret mottar i dag omtrent 1 900 henvendelser per uke. Av disse kommer 61 prosent gjennom e-post, 24 prosent gjennom skjema på kommunens nettsider, 11 prosent som digital post og 4 prosent på papir. Postmottaket er bemannet av fem personer, og fordelingen av henvendelser til riktig enhet tar i gjennomsnitt 1,8 virkedager. Kommunen ønsker at dette skal halveres innen 12 måneder etter produksjonssetting.\n\nLøsningen skal kunne motta henvendelser fra alle disse kanalene i én felles innboks. Skjemaer fra nettsidene skal kunne legges inn med strukturert informasjon, slik at avsender, tema og vedlegg registreres uten manuell avskrift. Innkommende e-post skal kunne knyttes til en eksisterende sak uten at vedlegg går tapt. Papir som kommer til postmottaket, skannes lokalt av kommunen, og leverandøren har ikke ansvar for selve skanningen av denne løpende posten.\n\nDokumentsenteret ønsker også å få frem statistikk over antall henvendelser per kanal og per enhet, med oversikt over hvor lenge henvendelsene har ligget ubehandlet. Rapporten skal kunne eksporteres til regneark. Dette er et ønske som vil bli vurdert under tildelingskriteriet Løsningens kvalitet.\n\n26. Innsynsbehandling\nKommunen behandlet 4 260 innsynskrav i 2026. Pressen sto for 38 prosent av kravene, innbyggere og organisasjoner for resten. En innsynsbehandler skal kunne se hele saken, vurdere hvert dokument, sladde utvalgte deler og sende svaret direkte fra løsningen. Sladding skal fjerne informasjonen fra det dokumentet som sendes ut, ikke bare dekke den visuelt. Original og sladdet versjon skal holdes atskilt og være sporbare.\n\nLøsningen skal foreslå hvilke dokumenter som kan være relevante for et innsynskrav, men forslaget må bekreftes av en person. Vedtak om avslag skal kunne lages fra mal med hjemmelshenvisning som saksbehandleren velger. Kommunens jurister forventer å kunne hente ut en oversikt over avslag per hjemmel og per kvartal.\n\n27. Kommunens tekniske miljø\nArbeidsstasjonene i kommunen er standardiserte og oppgraderes to ganger per år. Standard nettleser er forhåndsgodkjent av IT-avdelingen, og løsningen skal fungere i siste to hovedversjoner av de to mest brukte nettleserne i kommunen uten tilleggsprogramvare. Kommunen har et eget nett for helse og omsorg som er atskilt fra øvrig nett, og brukere på dette nettet skal nå plattformen gjennom en godkjent utgang.\n\nBåndbredden ved de minste tjenestestedene er begrenset til 50 Mbit/s. Leverandøren må derfor kunne vise hvordan store filer strømmes eller forhåndsvises uten full nedlasting. Arbeidsstasjoner på distriktskontorene er ofte delt mellom flere brukere, noe som stiller særlige krav til utlogging og mellomlagring.\n\nKommunen har et eget driftsteam på syv personer. Teamet skal ha lesetilgang til overvåkingsdata, men skal ikke ha administrativ tilgang til leverandørens infrastruktur. Oppdragsgiver forventer at kommunens driftsteam og leverandørens vakttjeneste har en felles beskrevet rutine for eskalering.\n\n[[SIDE:12]]\n28. Demonstrasjon\nDemonstrasjonen settes opp over en hel arbeidsdag. Den første delen viser saksforløpet for en byggesak fra mottatt søknad til vedtak. Den andre delen viser søk i et stort, blandet innhold med dokumenter fra flere kildesystemer. Den tredje delen viser innsynsbehandling med sladding. Den fjerde delen viser hvordan arkivpersonell finner og retter metadatafeil. Den femte delen viser administrasjon av roller og tilganger.\n\nEvalueringsgruppen består av fem personer fra kommunen. Kommunen kan bruke en ekstern rådgiver i evalueringen, men rådgiveren har ikke stemmerett. Leverandøren får 30 minutter med oppklarende spørsmål etter hver del. Det gis ikke uttelling for funksjonalitet som ikke kan vises i den tilbudte versjonen.\n\n29. Oppfølging av kvalitet i driftsfasen\nTabell 7: Kvalitetsindikatorer etter produksjonssetting\n| Indikator | Målepunkt | Mål | Hyppighet |\n| Innsynstid | Fra innsynskrav til svar | Under tre virkedager | Månedlig |\n| Fordeling i postmottak | Fra mottak til riktig enhet | Under én virkedag | Månedlig |\n| Brukertilfredshet | Spørreundersøkelse | Minst 4,0 av 5 | To ganger per år |\n| Treff på første forsøk | Stikkprøve av søk | Minst 90 prosent | Hvert kvartal |\n| Åpne feil i kategori C | Tjenesterapport | Høyst ti ved månedsslutt | Månedlig |\n\nIndikatorene brukes i kontraktsoppfølgingen og er ikke i seg selv grunnlag for sanksjoner, med mindre kontraktsvilkårene sier det. Leverandøren skal bidra med data og analyse, men kommunen eier indikatorene og kan justere dem i styringsgruppen.\n\n30. Regionalt samarbeid\nTre nabokommuner, som her kalles Kverndal, Sandøy og Ytre Bakken (alle fiktive), har bedt om å bli nevnt som mulige fremtidige deltakere. Hver av dem har mellom 4 000 og 11 000 innbyggere. De har ikke forpliktet seg, og de inngår ikke i den estimerte kontraktsverdien utover det som er tatt høyde for gjennom opsjon O-4. Hver nabokommune vil ha egne data, egne roller og et eget innsynsløp.\n\nKommunene vil ikke dele arkiv. Leverandøren skal likevel kunne vise hvordan en felles tjeneste for arkivfaglig støtte kan fungere, der arkivpersonell fra Havreneset kan få tidsbegrenset tilgang til nabokommunens arkiv etter egen beslutning i nabokommunen.\n\n31. Beredskap\nKommunen har en beredskapsplan som forutsetter at nøkkeldokumenter i kriseledelsen kan hentes frem også når kommunens eget nett er nede. Plattformen skal derfor være tilgjengelig via sikker pålogging utenfra, med samme krav til flerfaktor som ellers. Kommunen skal gjennomføre en årlig kriseøvelse, og leverandøren skal stille med kontaktperson under øvelsen uten ekstra kostnad.\n\nDersom en krisesituasjon gjør at et datasenter settes ut av spill, skal leverandøren følge den avtalte gjenopprettingsplanen og informere kommunens beredskapsleder hver time til situasjonen er under kontroll.\n\n[[SIDE:13]]\n32. Revisjon og innsyn i leverandørens kontroller\nOppdragsgiver har rett til å gjennomføre revisjon av leverandørens sikkerhetskontroller én gang per kalenderår, med varsel på minst 20 virkedager. Revisjonen kan utføres av kommunens egne ansatte eller av en uavhengig tredjepart som har signert taushetserklæring. Leverandøren skal gi tilgang til relevante retningslinjer, rapporter og personell, men er ikke forpliktet til å vise informasjon om andre kunder. Ved alvorlige sikkerhetshendelser kan oppdragsgiver kreve ekstraordinær revisjon uten varselfristen.\n\nFunn fra revisjonen klassifiseres som kritiske, vesentlige eller mindre. Kritiske funn skal lukkes eller ha en avtalt kompenserende kontroll innen 20 virkedager. Vesentlige funn følges opp i styringsgruppen med en tidsplan som partene blir enige om. Mindre funn tas med i neste månedlige tjenesterapport.\n\n33. Personellsikkerhet\nPersonell som har tilgang til oppdragsgivers data, skal være kjent med kommunens sikkerhetsinstruks og skal ha gjennomført leverandørens opplæring i informasjonssikkerhet i løpet av de siste 12 månedene. Leverandøren skal holde en oppdatert liste over hvem som har hatt tilgang til reelle data under migreringen. Listen skal gjøres tilgjengelig for kommunens sikkerhetsansvarlige på forespørsel.\n\nBruk av innleide konsulenter hos leverandøren er tillatt, men slike konsulenter skal behandles som leverandørens eget personell i alle sammenhenger som gjelder sikkerhet og taushetsplikt.\n\n34. Parallell drift og overgang for brukerne\nNår plattformen er satt i produksjon for nye saker, vil saksbehandlere i en periode arbeide med både ny plattform og historisk innhold i kildesystemene. For å unngå at brukerne må lete på to steder, skal løsningen tilby en felles søkeside med henvisninger til dokumenter som ennå ikke er overført, så langt kildesystemet tillater det. Kommunen aksepterer at dette ikke er mulig for alle kildesystemer.\n\nTabell 8: Forventet overgang per kommunalområde\n| Kommunalområde | Antall tjenestesteder | Særlige hensyn ved overgang |\n| Sentraladministrasjon | 3 | Postmottak og politisk sekretariat må være klare samtidig |\n| Oppvekst | 19 | Unngå skolestart i august og eksamen i mai og juni |\n| Helse og omsorg | 11 | Må ha opplæring tilpasset turnus |\n| Plan og bygg | 2 | Fristsaker krever at ingen saker blir hengende under overgangen |\n| Kommunalteknikk | 4 | Må kunne bruke løsningen fra nettbrett i felt |\n| Kultur og havn | 2 | Få brukere, men særlige dokumenttyper |\n\nOppdragsgiver vil publisere et internt kommunikasjonsløp og ber leverandøren bidra med innhold om hva som endrer seg for brukerne. Oppstart for hvert kommunalområde skal ha en bemannet støtteordning på stedet eller digitalt de første fem virkedagene.\n\n[[SIDE:14]]\n35. Tilbudets form\nTilbudet skal bestå av utfylt kravmatrise, løsningsbeskrivelse, migreringsplan, bemanningsplan, risikovurdering, prisskjema, signert databehandleravtale med eventuelle merknader og tilgjengelighetserklæring. Tilbudet skal være signert av person med fullmakt. Oppdragsgiver kan be om utfyllende opplysninger så lenge dette ikke gir leverandøren anledning til å endre tilbudet vesentlig.\n\nLeverandøren skal i tilbudet opplyse hvilke deler som er forretningshemmeligheter, og begrunne dette. Oppdragsgiver gjør selv en vurdering ved et eventuelt innsynskrav, og leverandøren vil få anledning til å uttale seg før innsyn gis.\n\n36. Arkivfaglig kontekst ved migrering\nEt dokument er ikke bare en fil. For arkivpersonell er det avgjørende å kunne se hvem som opprettet dokumentet, i hvilken sak det inngikk, og hvilken behandling det fikk. Migreringen skal derfor bevare opplysninger om opprinnelig saksansvarlig enhet selv om enheten er lagt ned eller slått sammen med en annen. Kommunen har gjennomført tre omorganiseringer siden 2005, og en oversikt over enhetenes navn og sammenslåinger vil bli gitt til valgt leverandør etter kontraktsignering.\n\nEldre arkivkoder skal bevares som historisk opplysning, også når de mappes til kommunens nåværende klasseringssystem. Når samme mappe har vært brukt i flere år med ulik praksis, skal leverandøren dokumentere valgene som er gjort, slik at senere innsynsbehandlere kan forstå hvorfor dokumentet er plassert der det er. Fagpersoner fra Dokumentsenteret vil delta i disse vurderingene, men det er leverandøren som skal fremskaffe analysegrunnlaget.\n\n37. Forventninger til samarbeidsformen\nKommunen ønsker en åpen dialog med valgt leverandør. Problemer skal tas opp tidlig, også når årsaken ligger hos kommunen. Kommunen legger vekt på at fagpersoner får forståelig informasjon og at rapporter skrives uten unødvendig teknisk språk. Prosjektet evalueres etter hver migreringsbølge i et kort læringsmøte, og forbedringspunkter føres inn i neste bølge. Etter avsluttet migrering lages en felles evaluering som legges frem for kommunedirektøren.\n"
+    },
+    {
+      "id": "doc-rettelse",
+      "title": "Rettelse nr. 2 og spørsmål og svar – Havreneset kommune (fiktivt)",
+      "role": "supporting_document",
+      "file_name": "havreneset-rettelse-2-fiktivt.pdf",
+      "raw_text": "FIKTIVT TESTDOKUMENT. Havreneset kommune, leverandørene og alle opplysninger i denne rettelsen er oppdiktet og brukes bare som syntetisk testdata.\n\n[[SIDE:1]]\nRETTELSE NR. 2 TIL KONKURRANSEGRUNNLAGET\nSaksnummer: 2027/0418\nPublisert i Anbudstorget: 22. februar 2027\n\n1. Status for rettelsen\nRettelse nr. 1, publisert 18. januar 2027, korrigerte bare e-postadressen til innkjøpsrådgiveren i Anbudstorget og hadde ingen betydning for kravene. Denne rettelsen nr. 2 inneholder endringer i konkurransegrunnlaget og svar på spørsmål fra leverandørene.\n\nDer denne rettelsen avviker fra konkurransegrunnlaget, gjelder rettelsen. Punkter som ikke er omtalt her, står uendret. Oppdragsgiver endrer ikke tildelingskriteriene utover det som fremgår av denne rettelsen.\n\n2. Endringer\nTabell E: Endringsoversikt\n| Punkt | Opprinnelig tekst | Ny tekst |\n| Tabell 1, Tilbudsfrist | 12. mars 2027 kl. 12:00 | 19. mars 2027 kl. 12:00 |\n| Tabell 2, Pris | 40 % | 35 % |\n| Tabell 2, Løsningens kvalitet | 40 % | 40 % (uendret) |\n| Tabell 2, Migreringsplan og gjennomføringsevne | 20 % | 25 % |\n| K-17 | minst 99,5 % per kalendermåned i kontortiden | minst 99,8 % per kalendermåned i kontortiden |\n| K-23 | oppbevares i 24 måneder | oppbevares i 36 måneder |\n| K-40 | minimum 300 dpi, 400 dpi for store tegninger | uendret krav, men ny presisering: fargeskanning gjelder kart og kartlignende vedlegg |\n\nSiste frist for spørsmål i tabell 1 står uendret, 26. februar 2027 kl. 15:00. Vedståelsesfristen er fortsatt 180 dager, regnet fra den nye tilbudsfristen.\n\nBegrunnelse for endringene: Oppdragsgiver har fått innspill om at migreringen er den største risikoen i prosjektet, og øker derfor vekten på migreringsplanen. Økt tilgjengelighetskrav følger av at kommunalområdet helse og omsorg vil ta i bruk løsningen til oppslag i vaktskifter. Lengre oppbevaring av revisjonslogger er en følge av intern revisjon.\n\n[[SIDE:2]]\n3. Spørsmål og svar\nSpørsmål 1: Kan en leverandør levere tilbud i samarbeid med en annen virksomhet?\nSvar: Ja. Felles tilbud er tillatt. Partene skal da oppgi hvem som er ansvarlig kontraktspart overfor oppdragsgiver, og alle må stille solidarisk ansvar.\n\nSpørsmål 2: Er kartleggingsrapporten (vedlegg 2) en garanti for volumene?\nSvar: Tallene er oppdragsgivers beste estimat på tidspunktet for kartleggingen. Leverandøren må selv vurdere usikkerheten. Avvik i volum på over 15 % i ett kildesystem kan gi grunnlag for en endringsavtale.\n\nSpørsmål 3: Må plattformen kjøre hos én bestemt skyleverandør?\nSvar: Nei. Oppdragsgiver stiller funksjonelle og sikkerhetsmessige krav, men krever ikke en bestemt skyleverandør.\n\nSpørsmål 4: Må demonstrasjonen vises på kommunens egne testdata?\nSvar: Nei. Oppdragsgiver leverer et syntetisk demonstrasjonssett senest ti virkedager før første demonstrasjon. Reelle data vil ikke bli brukt.\n\nSpørsmål 5: Omfatter migreringsvederlaget også innholdet i kildesystemet ØkoBilag?\nSvar: Ja. ØkoBilag er ett av de fjorten kildesystemene. Selve økonomisystemet Kommunekassen skal ikke erstattes.\n\nSpørsmål 6: Gjelder kravet til 98 % tegnnøyaktighet i K-22 også håndskrevne dokumenter?\nSvar: Nei. K-22 gjelder maskinskrevet tekst. Håndskrevne dokumenter skal bare billedlagres og indekseres med metadata.\n\nSpørsmål 7: Kan leverandøren foreslå flere faser i akseptansetesten?\nSvar: Ja, så lenge de samlede kravene til test og godkjenning oppfylles. Leverandøren beskriver forslaget i migreringsplanen.\n\nSpørsmål 8: Vil oppdragsgiver gi tilgang til et reelt testuttrekk før tilbudsfristen?\nSvar: Nei. Reelle uttrekk gis først etter at kontrakt er signert og databehandleravtale er inngått. Kartleggingen inneholder eksempler på feltstrukturer, og disse er anonymisert.\n\nSpørsmål 9: Må tilbudet inneholde en navngitt reservekandidat for nøkkelpersonell?\nSvar: Nei, men leverandøren må kunne beskrive hvordan kontinuitet i bemanningen sikres.\n\nSpørsmål 10: Kan pilotgruppen bruke løsningen før akseptansetesten er bestått?\nSvar: Ja. Dette følger av kapittel 22 i konkurransegrunnlaget. Oppdragsgiver presiserer at pilotgruppen ikke skal behandle barnevernssaker.\n\nSpørsmål 11: Teller krav merket Evaluering som forbehold dersom de ikke oppfylles?\nSvar: Nei. Evalueringskrav som ikke oppfylles, gir lavere score, men fører ikke til avvisning.\n\n4. Praktisk informasjon\nLeverandører som allerede har lastet opp tilbud, må gjennomgå dem på nytt og laste opp en ny versjon dersom endringene påvirker tilbudet. Siste opplastede versjon er den som gjelder.\n\nSpørsmål som kommer inn etter spørsmålsfristen, vil kun bli besvart dersom de kan gjøres uten forskjellsbehandling og uten at tilbudsfristen må endres.\n\nOppdragsgiver minner om at kommunens sentralbord ikke kan gi opplysninger om konkurransen. All kontakt skal gå gjennom Anbudstorget.\n\n5. Tilleggsinformasjon om den digitale orienteringen\nOrienteringen 2. februar 2027 hadde 23 deltakere fra 11 virksomheter. Lysbildene er publisert i Anbudstorget for ordens skyld. Der lysbildene avviker fra konkurransegrunnlaget eller denne rettelsen, er det konkurransegrunnlaget med rettelser som gjelder. I orienteringen ble det nevnt at kontrakt kan bli signert i løpet av våren, men dette var en uttalelse uten bindende virkning og er ikke en fastsatt dato.\n\n[[SIDE:3]]\n6. Flere spørsmål og svar fra orienteringen\nSpørsmål 12: Hvilket format forventes for kravmatrisen?\nSvar: Vedlegg 1 skal fylles ut i det tildelte regnearket og lastes opp i original filtype. Kommentarer i egne faner blir ikke evaluert.\n\nSpørsmål 13: Kan leverandøren bruke egne maler for løsningsbeskrivelsen?\nSvar: Ja, men kapitlene skal følge rekkefølgen på tildelingskriteriene. Omfanget bør ikke overstige 60 sider. Sider utover dette vil ikke bli lest.\n\nSpørsmål 14: Skal CV-er for nøkkelpersonell ligge i løsningsbeskrivelsen?\nSvar: De kan leveres som eget vedlegg, og teller ikke med i sideantallet.\n\nSpørsmål 15: Hvordan behandles svar som henviser til fremtidige produktversjoner?\nSvar: Funksjonalitet skal være tilgjengelig i den tilbudte versjonen på tilbudsfristen for å gi uttelling. Leverandøren kan beskrive produktplaner, men de vil ikke bli poengsatt.\n\nSpørsmål 16: Må leverandøren dekke kommunens reiser til referansekunder?\nSvar: Kommunen planlegger ikke slike reiser i denne konkurransen. Eventuell kontakt med referanser skjer på telefon eller digitalt.\n\nSpørsmål 17: Skal opplæringen av politikere gjennomføres av leverandøren?\nSvar: Folkevalgte får en kort innføring fra Dokumentsenteret. Leverandøren skal levere en hurtigguide som kommunen kan bruke.\n\nSpørsmål 18: Kan leverandøren velge bort opsjoner?\nSvar: Alle opsjoner skal prises. Et tilbud uten pris på en opsjon kan bli avvist.\n"
+    },
+    {
+      "id": "doc-losning",
+      "title": "Løsningsbeskrivelse fra Tindefjell Systemhus AS (fiktivt utkast)",
+      "role": "primary_solution_document",
+      "file_name": "tindefjell-losningsbeskrivelse-fiktivt.pdf",
+      "raw_text": "FIKTIVT TESTDOKUMENT. Tindefjell Systemhus AS, Lysnes Skanning AS, Havreneset kommune og alle opplysninger i dette utkastet er oppdiktet og brukes bare som syntetisk testdata.\n\n[[SIDE:1]]\nLØSNINGSBESKRIVELSE – UTKAST TIL TILBUD\nTilbyder: Tindefjell Systemhus AS\nTil: Havreneset kommune, saksnummer 2027/0418\nVersjon: 0.7, datert 15. februar 2027\n\n1. Sammendrag\nTindefjell Systemhus AS tilbyr plattformen ArkivHavn, en skybasert løsning for sak og arkiv som i dag er i bruk hos ni fiktive kommuner og fire interkommunale selskaper. Vårt tilbud kombinerer standard produktfunksjonalitet med en migreringsmetode vi har utviklet gjennom elleve større overføringer av historiske arkiver. Vi mener at en kontrollert migrering er det viktigste suksesskriteriet for Havreneset kommune.\n\nDette utkastet er skrevet på grunnlag av konkurransegrunnlaget slik det ble kunngjort 11. januar 2027. Vi har lagt til grunn prisvekt på 40 % og tilbudsfrist 12. mars 2027 i vår interne planlegging.\n\nVi har valgt å bruke Lysnes Skanning AS som underleverandør for fysisk skanning av papirarkiv. Tindefjell er hovedleverandør og eneste kontraktspart. Tindefjell Systemhus AS er sertifisert etter ISO/IEC 27001, og sertifikatet omfatter drift av ArkivHavn.\n\nPriser fremgår av prisskjemaet (vedlegg 4), som leveres som eget dokument og ikke er gjengitt i denne beskrivelsen.\n\n2. Forslag til evaluering\nVi foreslår at oppdragsgiver også bruker referansebesøk som eget tildelingskriterium med 10 % vekt, slik at evalueringen får et mer realistisk bilde av hverdagsbruk hos andre kommuner. Vi foreslår dessuten at et enkelt klimaregnskap for driften kan belønnes i evalueringen. Dette er våre forslag og ikke noe oppdragsgiver har bedt om.\n\n3. Løsningsarkitektur\nArkivHavn er bygget som en tjeneste med egne databaser for hver kunde, felles applikasjonslag og separate lagringsområder for filinnhold. Kommunen får en egen krypteringsnøkkel for filinnhold, administrert i vår nøkkeltjeneste. Plattformen kjører i containere og skaleres automatisk etter belastning.\n\nVi lagrer produksjonsdata og sikkerhetskopier i to datasentre i Norge, Tromsdal (primær) og Elvestad (sekundær), med 310 kilometer imellom. Ingen av våre driftsmedarbeidere arbeider fra land utenfor EØS.\n\nTabell 1: Miljøer som inngår\n| Miljø | Formål | Data | Tilgang |\n| Produksjon | Daglig bruk | Reelle data | Alle brukere etter rolle |\n| Akseptanse | Test av nye versjoner | Syntetiske data | Kommunens testere og Tindefjell |\n| Migreringssone | Prøvekjøring av uttrekk | Reelle data etter skriftlig unntak | Migreringsteamet |\n| Opplæring | Kurs og e-læring | Syntetiske data | Alle som deltar på kurs |\n\n[[SIDE:2]]\n4. Svar på utvalgte krav\nSvarene under utdyper kravmatrisen. Nummereringen følger konkurransegrunnlaget.\n\nSvar på K-01: ArkivHavn støtter hele saksforløpet. Saksbehandlere arbeider i én arbeidsflate med dokumentmaler, godkjenning og ekspedering. Arkivdanning skjer automatisk fordi alle handlinger knyttes til saken i bakgrunnen.\n\nSvar på K-04: Godkjenningsflyt kan settes opp i inntil syv nivåer, som er mer enn kravet. Logg viser godkjenner, tidspunkt og versjon.\n\nSvar på K-07: Klasseringsforslag vises som et forslag i registreringsbildet. Ingenting får virkning før en bruker har bekreftet forslaget. I våre referansekommuner aksepteres om lag 72 prosent av forslagene uten endring.\n\nSvar på K-09: Søket indekserer metadata og tekst, og tilgangskontroll gjennomføres før treff vises. Treffantall beregnes bare for dokumenter brukeren har rett til å se.\n\nSvar på K-10: I vår siste belastningstest svarte 97 prosent av søkene på under to sekunder ved 1 500 samtidige brukere.\n\nSvar på K-12: Flerfaktorautentisering håndheves gjennom kommunens identitetsleverandør. For brukere utenfor kommunens nett og alle administratorer kan pålogging ikke fullføres uten andre faktor.\n\nSvar på K-13: Brukerdata synkroniseres fra identitetsleverandøren hvert kvarter, slik at deaktiverte brukere mister tilgang innen kravet på én time.\n\nSvar på K-16: De mest privilegerte rollene krever at en annen administrator godkjenner endringen før den trer i kraft.\n\nSvar på K-17: Vi tilbyr 99,9 % tilgjengelighet per kalendermåned i kontortiden. Våre fire siste års målinger har ligget mellom 99,91 % og 99,97 %.\n\nSvar på K-19 og K-20: Vi tilbyr gjenoppretting innen tre timer og tap av data på høyst ti minutter, gjennom løpende replikering til det sekundære datasenteret.\n\nSvar på K-21: Sikkerhetskopier tas daglig og oppbevares i 42 dager. Månedlige kopier oppbevares i 12 måneder. Alle kopier ligger kryptert i det sekundære datasenteret.\n\nSvar på K-22: Tekstgjenkjenningen vår har i tidligere prosjekter oppnådd 98,6 % tegnnøyaktighet på maskinskrevne vedtak fra 1990-tallet. For eldre skrivemaskintekst kan nøyaktigheten være lavere, og vi vil kontrollere dette særskilt under prøvemigreringen.\n\nSvar på K-23: Revisjonslogger skrives til et uforanderlig logglager og oppbevares i 24 måneder som standard. Lengre oppbevaring kan konfigureres.\n\nSvar på K-26: Se kapittel 3. All lagring skjer i Norge og dermed innenfor EØS.\n\nSvar på K-29: All trafikk krypteres med TLS 1.3.\n\nSvar på K-35: Metadata uten tilsvarende felt lagres i et eget historisk felt som kan søkes, men ikke redigeres av vanlige brukere.\n\nSvar på K-37: Tilgangskoder mappes per kildesystem. Dokumenter uten entydig kode får koden «Til vurdering» og er bare tilgjengelige for arkivpersonell.\n\nSvar på K-44: Vi lærer opp 120 superbrukere i løpet av seks kursdager og tilbyr e-læring i fire moduler. Opplæringsmateriellet leveres på bokmål og nynorsk.\n\nSvar på K-46: Vi tilbyr tilbakeføringsbistand i inntil seks måneder etter kontraktens opphør, med full lesetilgang i hele perioden.\n\n[[SIDE:3]]\n5. Støtte og servicenivå\nBrukerstøtten vår holder til i Elvestad og er bemannet av 18 medarbeidere. Vakttjenesten betjener alle kunder utenfor kontortid. Vi tilbyr følgende servicenivå, som i flere tilfeller er bedre enn kravene:\n\nTabell 2: Tilbudt respons\n| Kategori | Respons i kontortid | Respons utenfor kontortid | Retting eller omgåelse |\n| A | 20 minutter | 45 minutter | 3 timer |\n| B | 90 minutter | 4 timer | 1 virkedag |\n| C | 1 virkedag | neste virkedag | 5 virkedager |\n| D | 3 virkedager | 3 virkedager | neste planlagte versjon |\n\nTjenesterapporten leveres innen den femte virkedagen i hver måned. Vi foreslår et kvartalsvis tjenestemøte der kommunen og vår kundeansvarlige gjennomgår rapportene og fastsetter tiltak.\n\n6. Bemanning\nTabell 3: Nøkkelpersonell og planlagt innsats\n| Rolle | Stillingsprosent måned 1–9 | Stillingsprosent måned 10–18 | Erfaring |\n| Prosjektleder | 100 % | 60 % | 14 år, fem kommunale migreringer |\n| Løsningsarkitekt | 80 % | 40 % | 11 år, ArkivHavn siden første versjon |\n| Migreringsleder | 100 % | 100 % | 9 år, leder for siste fire migreringer |\n| Sikkerhetsrådgiver | 20 % | 20 % | 16 år, sertifisert revisor |\n| Opplæringsansvarlig | 30 % | 50 % | 7 år, pedagogisk bakgrunn |\n\nNavn og CV-er følger i eget vedlegg.\n\nTindefjell garanterer at nøkkelpersonellet forblir i prosjektet gjennom hele migreringsfasen, forutsatt at oppdragsgiver leverer godkjent testuttrekk senest seks uker etter kontraktsignering. Hvis uttrekket kommer senere, vil vi fortsatt tilstrebe kontinuitet, men kan ikke garantere den.\n\n7. Migreringsmetode\nVår metode består av fem steg som gjentas for hver migreringsbølge. Steg 1 er analyse av uttrekket, der vi bruker automatiske profileringsverktøy til å kartlegge feltbruk, datatyper og feil. Steg 2 er mapping til målmodellen, som godkjennes av arkivleder. Steg 3 er prøvekjøring i migreringssonen. Steg 4 er kontroll, der vi sammenligner antall, sjekksummer og et utvalg av dokumenter. Steg 5 er produksjonskjøring, etterfulgt av fullstendighetsrapport.\n\nVi legger opp til seks migreringsbølger i følgende rekkefølge:\nTabell 4: Foreslåtte migreringsbølger\n| Bølge | Innhold | Uke etter kontraktsignering |\n| 1 | PolitikerPortalen og Landbruksregisteret | 22–28 |\n| 2 | PersonalDok og Eiendomsskattmappa | 26–34 |\n| 3 | SkoleMappa og ØkoBilag | 32–44 |\n| 4 | ByggSak Pro 4 og Brannsynsarkivet | 40–54 |\n| 5 | Arkivus 7, OmsorgsArk og Barnevernsmappen | 48–66 |\n| 6 | TekniDok, Kulturminnebasen og Kaiprotokollen | 60–76 |\n\nVi foreslår at bølge 1 og 2 kan flyttes dersom skoleferien kolliderer med arkivleders tilgjengelighet. Bølge 5 er den mest krevende, fordi den rommer de største mengdene saksbehandlingsinnhold og sensitive personopplysninger.\n\nPrøvemigreringen planlegger vi gjennomført i uke 12 til 18 etter kontraktsignering, med Arkivus 7 som det store systemet og Landbruksregisteret som det lille. Valget er vårt forslag og forutsetter at oppdragsgiver godtar det.\n\n[[SIDE:4]]\n8. Risikovurdering\nTabell 5: Risikoregister for prosjektet\n| ID | Risiko | Sannsynlighet | Konsekvens | Tiltak |\n| R-01 | Uklare eiendomsforhold til tekniske tegninger | Middels | Middels | Avklare med kommunalteknikk i analysefasen |\n| R-02 | Tilgang til eldre databaser krever utgått klientprogramvare | Høy | Middels | Virtuell maskin med historisk klient |\n| R-03 | Nøkkelpersoner hos kommunen er utilgjengelige i ferier | Middels | Lav | Justere bølgeplan i styringsgruppen |\n| R-04 | Forsinket levering av testuttrekk fra kommunen | Middels | Høy | Felles sjekkliste og ukentlig oppfølging fra kontraktsignering |\n| R-05 | Større filvolum enn kartlagt | Lav | Middels | Endringsavtale og kapasitetsreserve |\n| R-06 | Feil i mapping av tilgangskoder | Lav | Høy | Dobbelkontroll av arkivleder og sikkerhetsrådgiver |\n| R-07 | Lav tegnnøyaktighet i gamle dokumenter | Middels | Lav | Markere usikker tekst for manuell kontroll |\n\nVi oppdaterer risikoregisteret månedlig og legger det frem for styringsgruppen. Risikoer med høy konsekvens får en navngitt eier hos begge parter.\n\n9. Skanning av papirarkiv\nLysnes Skanning AS har sitt skannesenter i Elvestad, med 22 ansatte. De utfører skanning for flere fiktive kommuner og fylkesarkiver og disponerer både dokumentskannere og storformatskannere. Underleverandøren henter arkivbokser i låste enheter og registrerer hver enhet med strekkode. Skannet materiale overføres til ArkivHavn via kryptert forbindelse. Tindefjell vil gjennomføre leverandøroppfølging minst to ganger per år.\n\nLysnes foreslår en daglig kapasitet på 40 000 sider for standarddokumenter og 800 tegninger i storformat. Dokumentene returneres til kommunen senest åtte uker etter henting.\n\n10. Integrasjoner\nArkivHavn har ferdige koblinger for samtlige funksjonsområder i tabell 5 i konkurransegrunnlaget, med unntak av kommunens økonomisystem, der vi ønsker å gjøre en nærmere vurdering sammen med kommunen når designfasen starter. Alle integrasjoner overvåkes av vår driftssentral, som varsler kommunens driftsteam innen ti minutter. Integrasjonene testes i akseptansemiljøet mot testinstanser når disse finnes.\n\n11. Sikkerhet og personvern\nTindefjell har et styringssystem for informasjonssikkerhet og gjennomfører en uavhengig penetrasjonstest årlig. Sammendraget deles med kundene. Vi varsler sikkerhetshendelser til kommunens sikkerhetsansvarlige innen 12 timer etter at de er oppdaget. Vi inngår databehandleravtale på kommunens mal. Våre underdatabehandlere er Lysnes Skanning AS og driftsselskapet for datasentrene.\n\nFor hver kommune gjennomfører vi en felles risikovurdering av personvernkonsekvenser før produksjonssetting. Vi kan bidra til kommunens egne vurderinger, men ansvaret for vurderingen ligger hos kommunen som behandlingsansvarlig.\n\n[[SIDE:5]]\n12. Brukeropplevelse\nArkivHavn har en enkel arbeidsflate med tre hovedområder: mine saker, søk og oppgaver. Vi har gjennomført brukertester med 64 saksbehandlere i fire kommuner, der oppgaver som å finne en sak og registrere et dokument ble løst uten hjelp i 91 prosent av tilfellene. Løsningen tilpasser seg nettbrett og mobil, men registrering av store dokumenter er utformet for arbeidsstasjon.\n\nFor lærere og andre sporadiske brukere tilbyr vi en forenklet visning med færre felter. For folkevalgte tilbyr vi en leseflate tilpasset møter. Helsepersonell på delte maskiner kan logge av og på med personlig adgangskort eller engangskode, forutsatt at kommunen har slike kort i bruk.\n\nGrensesnittet er tilgjengelig på bokmål og nynorsk og er testet med skjermlesere. Vi leverer en tilgjengelighetserklæring sammen med det endelige tilbudet.\n\n13. Plan for prosjektet\nTabell 6: Hovedmilepæler i vårt forslag\n| Milepæl | Uke etter kontraktsignering |\n| Oppstart og styringsgruppe | 1 |\n| Migreringsplan levert | 7 |\n| Testuttrekk mottatt fra kommunen | 6 |\n| Prøvemigrering rapportert | 18 |\n| Akseptansetest avsluttet | 48 |\n| Produksjonssetting for nye saker | 50 |\n| Hele migreringen fullført | 76 |\n| Sluttrapport | 78 |\n\nPlanen forutsetter at beslutninger i styringsgruppen fattes innen fem virkedager etter møtet. Dersom godkjenningen av prøvemigreringen trekker ut, vil bølgene forskyves tilsvarende. Vi har lagt inn fire uker buffer mellom prøvemigreringen og første produksjonsbølge.\n\n14. Opplæring og overlevering\nOpplæringen er delt i to spor. Superbrukere får seks dager med kurs, fordelt over to samlinger. Sluttbrukere gjennomfører e-læring i fire moduler på til sammen to timer, og kan delta på åpne spørretimer i de to første månedene etter produksjonssetting. Vi tilbyr også en arkivfaglig fordypning for Dokumentsenteret på to dager.\n\nVed overgang til drift overleverer migreringsteamet alle mappingregler, avviksrapporter og uløste avvik til forvaltningsteamet vårt. Kommunen får tilgang til samme dokumentasjon.\n\n15. Forbehold og forutsetninger\nVi har ikke tatt forbehold mot absolutte krav. Vi forutsetter imidlertid at kommunen stiller med teknisk kontaktperson for hvert kildesystem og at uttrekk leveres i et lesbart format. Skulle det vise seg at et system ikke kan levere uttrekk, vil vi foreslå et alternativ gjennom en endringsavtale. Vi forutsetter også at kommunen avklarer eventuelle lisensspørsmål knyttet til utgåtte kildesystemer.\n\nVårt tilbud gjelder den versjonen av ArkivHavn som er tilgjengelig på tilbudsfristen, samt alle oppdateringer i avtaleperioden. Nye moduler utenfor kravspesifikasjonen vil bli priset særskilt ved behov.\n\n16. Referanser\nVi har valgt ut tre referanseprosjekter:\nTabell 7: Referanseprosjekter\n| Kunde (fiktiv) | Omfang | År | Særlig relevant |\n| Vestfjordsamarbeidet IKS | 1,2 millioner dokumenter fra fem systemer | 2024 | Felles arkiv for fem kommuner |\n| Innlandet Kommune | 3,8 millioner dokumenter, inkludert skannede byggesaker | 2023 | Storformat og skanning |\n| Kystbyen Kommune | 780 000 dokumenter, helse og omsorg | 2025 | Særlig sensitive opplysninger |\n\nAlle referansene har gitt tillatelse til at oppdragsgiver kan kontakte dem direkte.\n\n[[SIDE:6]]\n17. Metode for TekniDok\nTekniDok krever en egen tilnærming fordi metadata i stor grad ligger i filnavn. Vi bygger en parser som leser filnavnmønstre og foreslår anlegg, objekt, revisjon og årstall. Filnavn som ikke følger mønsteret, sendes til en arbeidskø der kommunens fagpersoner kan fylle inn feltene. I vårt prosjekt for Innlandet Kommune kunne vi automatisk tolke 83 prosent av filnavnene. Vi antar en lavere andel i Havreneset og har planlagt for 70 prosent.\n\nTegninger i CAD-format konverteres til PDF for visning, mens originalfilen bevares. Tegninger som krever spesialprogramvare, blir tilgjengelige for nedlasting til arbeidsstasjoner med riktig programvare. Vi anbefaler en egen workshop med kommunalteknikk i uke fire etter kontraktsignering for å avklare dette.\n\n18. Tilgangsmodell\nTilgang i ArkivHavn bygger på roller, tilgangsgrupper og eksplisitte unntak. Hver rolle tilordnes av kommunens egne administratorer. Tilgang til barnevern og personal er avgrenset i egne soner, og et søk utenfor sonen kan ikke returnere innhold fra den. Alle oppslag i skjermede dokumenter logges. En månedlig rapport til arkivleder viser hvem som har hatt lesetilgang til særlig skjermede soner.\n\nAdministrative brukere hos Tindefjell har ikke tilgang til dokumentinnhold som standard. Brukerstøtte som trenger tilgang for feilsøking, må få tidsavgrenset tillatelse fra kommunens administrator, og dette logges.\n\n19. Kvalitetssikring av migrering\nVi anvender tre kontrollnivåer. Nivå 1 er automatisk avstemming av antall og sjekksummer for hver fil. Nivå 2 er stikkprøver som vi tar selv, med 1 000 dokumenter per bølge. Nivå 3 er kommunens egne kontroller, der vi forventer at kommunens arkivpersonell bruker to dager per bølge. Avvik klassifiseres i tre grupper: kritiske, viktige og mindre. Vi stopper en bølge dersom kritiske avvik overstiger 0,1 % av kontrollutvalget. Stopp-terskelen er vår interne styringsregel og er strengere enn det vi forstår som kommunens krav.\n\nEtter hver bølge leverer vi fullstendighetsrapport med avstemming mot kilden, oversikt over åpne avvik og forslag til tiltak. Først når kommunen har kvittert for rapporten, regner vi bølgen som ferdig.\n\n20. Organisering av driftsfasen\nNår prosjektfasen er over, overtar forvaltningsteamet vårt ansvaret for kommunen som kunde. Kommunen får en navngitt kundeansvarlig og en navngitt teknisk kontakt. Forvaltningsteamet har 26 medarbeidere og betjener alle kunder. Vi foreslår et årlig strategimøte der kommunen og Tindefjell gjennomgår produktplanen.\n\nNye versjoner av ArkivHavn slippes fire ganger per år. Hovedversjoner legges i akseptansemiljøet 20 virkedager før produksjonssetting. Kommunens superbrukere inviteres til et nettmøte før hver hovedversjon, med gjennomgang av nye funksjoner.\n\n21. Kunstig intelligens i løsningen\nArkivHavn har to funksjoner som bruker maskinlæring. Den første foreslår klassering og tilgangskode. Den andre lager et kort sammendrag av lange saker for saksbehandlere. Sammendragsfunksjonen er avslått som standard og må aktiveres av kommunen. Modellene kjører i våre datasentre i Norge, og kommunens innhold brukes ikke til å trene modeller for andre kunder. Forslag som kommer fra modellene, er tydelig merket, og brukeren må alltid bekrefte dem.\n\n22. Moduler i e-læringen\nTabell 8: E-læring for sluttbrukere\n| Modul | Innhold | Varighet |\n| 1 | Introduksjon og navigasjon | 20 minutter |\n| 2 | Finne og åpne dokumenter | 25 minutter |\n| 3 | Opprette saker og dokumenter | 45 minutter |\n| 4 | Tilgang, personvern og journalføring | 30 minutter |\n\nFullføring registreres per bruker, og kommunens prosjektleder får en oversikt per enhet. E-læringen kan gjennomføres i flere omganger og er utformet for vanlige arbeidsstasjoner uten særskilt programvare.\n\n[[SIDE:7]]\n23. Hendelseshåndtering i praksis\nNår overvåkingen vår oppdager en hendelse, varsles vakthavende automatisk. Vakthavende vurderer kategori, oppretter en hendelse i tjenestesystemet og informerer kundene som er berørt. For hendelser i kategori A publiseres en statusmelding hvert 30. minutt. Etter hver hendelse i kategori A leveres en skriftlig årsaksanalyse innen fem virkedager. Analysen beskriver hendelsesforløp, årsak, konsekvens og hvilke tiltak som skal forhindre gjentakelse.\n\nEksempel: I mars 2026 (fiktivt) førte en feil i en lastbalanserer til at to kunder mistet tilgang i 34 minutter. Vi flyttet trafikken til det sekundære datasenteret og rettet feilen samme kveld. Årsaksanalysen førte til en endring i rutinene for konfigurasjon.\n\n24. Restitusjonstester\nVi tester gjenoppretting fra sikkerhetskopi hvert kvartal i et atskilt miljø og gjennomfører en fullskala restitusjonstest to ganger per år. Kunder kan overvære disse testene. Siste fullskalatest ble gjennomført på 2 timer og 41 minutter for en kunde av tilsvarende størrelse som Havreneset.\n\n25. Bærekraft\nDatasentrene våre drives med fornybar energi og har gjenvinning av spillvarme. Vi beregner energibruk per kunde og kan rapportere dette årlig. Lysnes Skanning AS planlegger samlede ruter for henting av arkivbokser, slik at transporten holdes lav. Tindefjell har tariffavtale for sine ansatte, og vi følger opp at underleverandører gir lønns- og arbeidsvilkår som kravene sier.\n\n26. Vurdering av alternativer vi har valgt bort\nVi vurderte å migrere alle kildesystemer samtidig etter en stor overgang. Dette valgte vi bort fordi kommunen i så fall måtte bære en svært høy risiko på ett enkelt tidspunkt. Vi vurderte også å beholde TekniDok som et eget arkiv, med kun en søkeindeks i ArkivHavn. Dette valgte vi bort fordi det ikke fjerner avhengigheten av gammel programvare. Vi kan likevel gå tilbake til denne modellen for deler av innholdet dersom kommunalteknikk ønsker det, men det krever en endringsavtale.\n\n27. Tillegg: Forslag til arbeidsform med kommunens fagpersoner\nVi foreslår at hvert kildesystem får et lite team med én kommunal fagperson, én migreringsutvikler og én kvalitetskontrollør. Teamet møtes ukentlig i den perioden kildesystemet er aktivt i migrering. Fagpersonen forventes å bruke rundt 15 prosent av arbeidstiden i denne perioden. For Arkivus 7 antar vi at det trengs to fagpersoner, fordi innholdet er svært variert.\n\nFelles beslutningslogg ligger i prosjektportalen. Enhver mapping som kan påvirke tilgang eller juridisk tolkning, godkjennes av kommunen og noteres der. Vi har erfart at en slik logg sparer mye tid ved kontroll i ettertid.\n\n[[SIDE:8]]\n28. Kommunikasjon i prosjektet\nVi publiserer en ukentlig statusrapport i prosjektportalen. Rapporten viser gjennomførte oppgaver, kommende oppgaver, åpne avvik, risikostatus og behov for beslutninger. For hver migreringsbølge lager vi et kort informasjonsskriv som kommunen kan bruke overfor de berørte enhetene. Skrivene utformes sammen med kommunens prosjektleder.\n\nVi anbefaler en kort felles prosjektgjennomgang annenhver uke med kommunens fagpersoner. Hvis fremdriften avviker med mer enn to uker fra planen, tar vi saken opp på neste styringsgruppemøte og fremlegger et forslag til tiltak.\n\n29. Endringsavtaler\nNår en endring er nødvendig, utarbeider vi et kort endringsforslag med begrunnelse, konsekvens for fremdrift og konsekvens for kostnad. Kommunen kan avslå forslaget uten begrunnelse. Vi starter ikke arbeid med en endring før forslaget er skriftlig akseptert. Mindre tilpasninger i konfigurasjonen, for eksempel nye dokumenttyper eller endrede felt, gjøres normalt uten endringsavtale.\n\n30. Utfasing av kildesystemer\nVi bistår kommunen med en sjekkliste per kildesystem før utfasing. Sjekklisten omfatter godkjent fullstendighetsrapport, sluttkvittering fra systemansvarlig, avklaring av eventuelle lisenser og plan for sletting av servere. Selve avviklingen av kildesystemene er kommunens ansvar, siden systemene driftes av kommunens IT-avdeling eller av tredjeparter. Vi anbefaler å holde kildesystemene lesbare i tre måneder etter godkjent migrering, slik kommunen har bedt om.\n\n31. Søk på tvers\nSøkemotoren i ArkivHavn er språktilpasset og forstår bøyningsformer på bokmål og nynorsk. Eldre stavemåter fra før rettskrivningsendringer håndteres gjennom en synonymliste som kommunens arkivpersonell kan redigere. Forhåndsvisning av store filer skjer uten full nedlasting, noe som er viktig for tjenestesteder med begrenset båndbredde. For tegninger genererer vi en lettvekts forhåndsvisning med mulighet for å zoome inn.\n"
+    },
+    {
+      "id": "doc-kartlegging",
+      "title": "Kartlegging av arkivbestand og migreringsgrunnlag – Havreneset kommune (fiktivt)",
+      "role": "supporting_document",
+      "file_name": "havreneset-kartlegging-fiktivt.pdf",
+      "raw_text": "FIKTIVT TESTDOKUMENT. Havreneset kommune, alle kildesystemer, leverandører og alle tall i denne rapporten er oppdiktet og brukes bare som syntetisk testdata.\n\n[[SIDE:1]]\nKARTLEGGING AV ARKIVBESTAND OG MIGRERINGSGRUNNLAG\nVedlegg 2 til konkurransegrunnlaget, saksnummer 2027/0418\nUtarbeidet av Dokumentsenteret, Havreneset kommune\nDatert: 30. november 2026\n\n1. Om kartleggingen\nKartleggingen ble gjennomført fra september til november 2026. Dokumentsenteret intervjuet 27 systemansvarlige og fagpersoner, tok ut statistikk fra hvert kildesystem og kontrollerte et tilfeldig utvalg dokumenter. Der kildesystemet ikke kunne produsere statistikk, er tallene beregnet fra filstrukturen og merket som estimater.\n\nLesere må merke seg to forhold. For det første er kodene K-01 til K-14 i denne rapporten lokale koder for kildesystemer og har ingen sammenheng med kravnumrene i konkurransegrunnlaget. For det andre er risikokodene R-01 til R-08 i kapittel 7 lokale for denne rapporten.\n\nI denne rapporten betyr 1 TB det samme som 1 000 GB. Dokumenter betyr enkeltstående dokumenter med eventuelle vedlegg, ikke sider og ikke filer.\n\nPlattformen må håndtere 1 600 samtidige brukere i kontortiden, ut fra brukstall kommunen målte høsten 2026.\n\n2. Oversikt over kildesystemer\nTabell 1: Kildesystemer, antall dokumenter og volum\n| Kode | Kildesystem | Sektor | Dokumenter | Volum | Eldste dokument |\n| K-01 | Arkivus 7 | Sentraladministrasjon og fellesarkiv | 2 940 000 | 4,6 TB | 1998 |\n| K-02 | ByggSak Pro 4 | Plan og bygg | 1 180 000 | 3,2 TB | 2003 |\n| K-03 | SkoleMappa | Oppvekst, skole og barnehage | 1 310 000 | 2,1 TB | 2006 |\n| K-04 | OmsorgsArk | Helse og omsorg | 870 000 | 1,7 TB | 2009 |\n| K-05 | TekniDok | Kommunalteknikk og tekniske tegninger | 640 000 | 5,4 TB | 1994 |\n| K-06 | PersonalDok | Personal og lønn | 415 000 | 0,6 TB | 2001 |\n| K-07 | Barnevernsmappen | Barnevern | 228 000 | 0,4 TB | 2005 |\n| K-08 | ØkoBilag | Regnskap og bilag | 1 760 000 | 1,9 TB | 2012 |\n| K-09 | PolitikerPortalen | Politiske møter | 96 000 | 0,2 TB | 2011 |\n| K-10 | Kulturminnebasen | Kultur og kulturminner | 38 000 | 0,9 TB | 1987 |\n| K-11 | Landbruksregisteret | Landbruk | 57 000 | 0,1 TB | 2000 |\n| K-12 | Kaiprotokollen | Havnevesenet | 23 400 | 0,05 TB | 1979 |\n| K-13 | Brannsynsarkivet | Brann og redning | 112 000 | 0,3 TB | 2004 |\n| K-14 | Eiendomsskattmappa | Eiendomsskatt | 189 000 | 0,25 TB | 2008 |\n| Sum | | | 9 858 400 | 21,70 TB | |\n\nTallene for K-05, K-10 og K-12 er estimater. For de andre kildesystemene er tallene hentet fra systemets egen statistikk.\n\n[[SIDE:2]]\n3. Beskrivelse av kildesystemene\nK-01 Arkivus 7. Hovedsystemet for sak og arkiv siden 2011, med innhold konvertert fra to eldre løsninger. Leverandøren avsluttet ordinær støtte i 2025, og kommunen betaler nå for utvidet vedlikehold. Arkivus 7 skal avvikles 30. juni 2028 i henhold til kommunens systemplan. Uttrekk kan produseres som XML med tilhørende filer. Kontrollen viste at 1,4 prosent av journalpostene mangler avsender eller mottaker. Dokumenter fra årene før 2011 har mer varierende kvalitet.\n\nK-02 ByggSak Pro 4. Brukes av plan og bygg. Store PDF-filer og tegninger er vanlige, og enkelte saker er på over 2 GB. Systemet har kobling til eiendomsnummer, men koblingen er ikke kvalitetssikret for saker fra før 2010. Uttrekk leveres som databasekopi og filområde, så leverandøren må forholde seg til en dokumentert, men krevende tabellstruktur med 118 tabeller.\n\nK-03 SkoleMappa. Felles system for grunnskoler og barnehager. Hver skole har hatt egne mapper, og navngiving har variert. Omtrent 18 prosent av dokumentene ligger i mapper uten entydig kobling til elev. Skolene bruker fortsatt systemet aktivt, og overgangen må derfor legges utenom eksamensperioder og skolestart. Uttrekk er tilgjengelig som CSV med filer.\n\nK-04 OmsorgsArk. Inneholder vedtak og korrespondanse fra helse og omsorg, men ikke journaldata som ligger i det fiktive fagsystemet Pleieboka. Dokumentene er sensitive. Kontrollutvalg viste feil tilgangskode på 0,6 prosent av dokumentene. Systemet kan bare eksportere 25 000 dokumenter per kjøring, noe som gjør migreringen tidkrevende.\n\nK-05 TekniDok. Teknisk dokumentasjon for vann, avløp, veier og kommunale bygg. TekniDok er et filbasert arkiv uten egentlig database, og metadata ligger delvis i filnavn. Tegninger i ulike CAD-formater og store skannede kart gir det høye volumet. Her finnes dokumenter som brukes i daglig drift, og det kreves et eget opplegg for overgangen.\n\nK-06 PersonalDok. Personalmapper for nåværende og tidligere ansatte. Tilgangen er strengt begrenset, og uttrekk kan bare kjøres av to navngitte personer hos personalavdelingen. Metadata er gode, men tidligere ansatte fra før 2006 er registrert med et utgått ansattnummer.\n\nK-07 Barnevernsmappen. Dokumenter fra barnevernstjenesten, atskilt fra fagsystemet. Systemet ligger på en egen server med særskilt tilgang. Migrering krever samtykke fra barnevernsleder for hver bølge. Uttrekk er ikke tidligere testet, og det er ukjent hvor lang tid det tar.\n\n[[SIDE:3]]\nK-08 ØkoBilag. Skannede bilag og fakturaer. Systemet har svært mange små filer og et forutsigbart mønster. Bilagene er koblet til bilagsnummer i økonomisystemet Kommunekassen. Bilag eldre enn ti år ligger i en egen arkivtabell som ikke vises i standardsøk, og disse må tas med. Filene er stort sett TIFF med én side.\n\nK-09 PolitikerPortalen. Saksfremlegg, møtebøker og vedlegg. Dokumentene er offentlige med få unntak, og portalen er derfor foreslått som en tidlig migreringsbølge. Kvaliteten er høy, men lenker mellom dokumenter må bygges opp på nytt.\n\nK-10 Kulturminnebasen. Registrering av lokale kulturminner med bilder og lydopptak fra 1987. Filene er store i forhold til antallet, og noen lydopptak finnes bare i utgåtte formater. Eieren av innholdet er kulturkontoret i samarbeid med det fiktive Havreneset historielag, og rettighetene er ikke fullstendig avklart for alle bilder.\n\nK-11 Landbruksregisteret. Tilskuddssaker og driftsplaner. Et lite og oversiktlig system som er godt egnet til prøvemigrering, med kun tre dokumenttyper og komplette metadata.\n\nK-12 Kaiprotokollen. Havnevesenets protokoller over anløp og kaileie fra 1979. Materialet består av skannede protokollbøker med håndskrevne innførsler og registreringer fra en enkel database som kom på 1990-tallet. Havnefogden bruker materialet noen ganger i året, særlig ved eldre tvister om kaiplass. Antallet er lite, men tolkning av håndskrift gjør tekstgjenkjenning krevende.\n\nK-13 Brannsynsarkivet. Tilsynsrapporter fra brann og redning. Metadata knytter rapportene til bygg, men adresser er skrevet som fritekst og må vaskes ved migrering mot eiendomsregisteret. Enkelte rapporter inneholder bilder.\n\nK-14 Eiendomsskattmappa. Takster og klagebehandling. Dokumenter er knyttet til gårds- og bruksnummer, og en sammenslåing av eiendommer i 2016 har gitt dubletter som må ryddes. Mappene er stort sett fullstendige.\n\n4. Formater\nTabell 2: Filformater i bestanden\n| Format | Andel av dokumentene | Merknad |\n| PDF | 46 % | Blanding av søkbare og bildebaserte filer |\n| TIFF | 23 % | Særlig ØkoBilag |\n| Word-formater | 18 % | Eldre Word-formater krever konvertering |\n| CAD-formater | 4 % | Særlig TekniDok og ByggSak Pro 4 |\n| JPEG og PNG | 6 % | Bilder og kart |\n| E-post | 2 % | Med vedlegg |\n| Andre, inkludert lyd | 1 % | Kulturminnebasen |\n\nOmtrent 2,3 millioner dokumenter er bildebaserte og uten tekstlag. De vil trenge tekstgjenkjenning for å bli søkbare.\n\n[[SIDE:4]]\n5. Papirarkiver\nTabell 3: Papirarkiver som inngår i grunnomfanget\n| Lokasjon | Innhold | Hyllemeter | Tilstand |\n| Rådhuset, kjeller | Byggesaker 1965–2003 | 640 | God, noe fuktskade i rom B |\n| Havnekontoret | Kaiprotokoller 1979–1998 | 38 | Skjør innbinding |\n| Teknisk stasjon Nordre | Tegninger i stort format | 410 | Varierende, noen rull |\n| Omsorgssenteret Solvang | Vedtak og korrespondanse 1990–2009 | 220 | God |\n| Fjernarkivet Brandsøy | Blandede avsluttede saker 1950–1998 | 1 180 | God |\n| Skolekontoret | Elevmapper 1975–2006 | 505 | God |\n\nSamlet er 2 993 hyllemeter omfattet. Kommunen antar om lag 6 000 sider per hyllemeter for vanlige saksdokumenter, men dette er et grovt anslag. Tegningene ved Teknisk stasjon Nordre telles for seg, med omtrent 310 000 ark i varierende format.\n\nMaterialet ved Havnekontoret må behandles spesielt på grunn av skjør innbinding. Kommunen krever at slike bøker skannes på bokskanner uten at ryggen presses flatt. To ekstra lokasjoner er nevnt som mulige tillegg (opsjon O-1), men de er ikke kartlagt nærmere.\n\n6. Datakvalitet\nTabell 4: Resultater av kontrollutvalg per kildesystem\n| Kildesystem | Utvalg | Manglende fil | Feil kobling til sak | Uklar tilgangskode |\n| Arkivus 7 | 2 000 | 0,3 % | 0,8 % | 0,4 % |\n| ByggSak Pro 4 | 1 500 | 0,5 % | 1,1 % | 0,1 % |\n| SkoleMappa | 1 200 | 0,9 % | 3,4 % | 0,7 % |\n| OmsorgsArk | 1 000 | 0,1 % | 0,4 % | 0,6 % |\n| TekniDok | 800 | 1,6 % | 6,2 % | 0,2 % |\n| PersonalDok | 500 | 0,0 % | 0,2 % | 0,0 % |\n| Barnevernsmappen | 300 | 0,2 % | 0,3 % | 0,3 % |\n| ØkoBilag | 1 000 | 0,1 % | 0,2 % | 0,0 % |\n\nFor de seks øvrige systemene er det ikke tatt ut noe kontrollutvalg, fordi mengdene er små eller fordi systemet var utilgjengelig i perioden. Resultatene viser at en betydelig innsats er nødvendig for SkoleMappa og TekniDok før kravene i konkurransegrunnlaget kan oppfylles.\n\nMetadatafeltene varierer sterkt. Feltet for dokumentdato er komplett i 97 prosent av tilfellene i Arkivus 7, men bare i 61 prosent i TekniDok. Feltet for avsender eller mottaker finnes ikke i SkoleMappa. Kassasjonskoder er bare brukt i Arkivus 7 og PersonalDok, og koden har skiftet betydning i 2014.\n\n[[SIDE:5]]\n7. Risikoer sett fra kommunens side\nTabell 5: Risikoer knyttet til bestanden\n| ID | Risiko | Vurdering | Foreslått håndtering |\n| R-01 | Utgått programvare i Barnevernsmappen stopper uttrekk | Høy | Test uttrekk tidlig |\n| R-02 | Personopplysninger havner i feil tilgangsgruppe | Høy | Skjerming inntil kontrollert |\n| R-03 | Aktiv bruk av SkoleMappa i skoleåret | Middels | Unngå skolestart og eksamen |\n| R-04 | Tegninger i TekniDok mister koblingen til anlegg og bygg fordi metadata bare finnes i filnavn | Høy | Lage egen mappingtabell sammen med kommunalteknikk |\n| R-05 | Sjeldne formater i Kulturminnebasen kan ikke leses | Middels | Konvertering med bevaring av original |\n| R-06 | Fuktskade i rom B i rådhuskjelleren forverres | Lav | Prioritere skanning av rom B |\n| R-07 | Skjør innbinding ved Havnekontoret | Middels | Skanning på bokskanner |\n| R-08 | Lisensen til Arkivus 7 fornyes ikke | Middels | Følge sluttdato i systemplanen |\n\n8. Personopplysninger\nTabell 6: Følsomhet per kildesystem\n| Kildesystem | Følsomhet | Merknad |\n| Arkivus 7 | Blandet | Omfatter både åpne og skjermede saker |\n| ByggSak Pro 4 | Lav til middels | Enkelte naboklager |\n| SkoleMappa | Høy | Mindreårige |\n| OmsorgsArk | Svært høy | Helseopplysninger |\n| TekniDok | Lav | Enkelte sikkerhetsmessige tegninger |\n| PersonalDok | Høy | Personalsaker |\n| Barnevernsmappen | Svært høy | Barn og familier |\n| ØkoBilag | Lav til middels | Enkelte privatpersoner |\n| PolitikerPortalen | Lav | Lukkede saker skjermes |\n| Kulturminnebasen | Lav | Noen eldre personbilder |\n| Landbruksregisteret | Middels | Økonomi for enkeltbruk |\n| Kaiprotokollen | Lav | Navn på fartøyeiere |\n| Brannsynsarkivet | Lav | Adresser og eiere |\n| Eiendomsskattmappa | Middels | Eiendomsverdier |\n\nDokumentsenteret anbefaler at systemer med høy følsomhet ikke migreres før rutinene er prøvd på systemer med lavere følsomhet. Dette er en anbefaling og ikke en absolutt rekkefølge.\n\n9. Eksempler på feltstrukturer\nFølgende anonymiserte eksempler viser hvordan et dokument registreres i to av systemene.\n\nEksempel fra Arkivus 7: Saksnummer 2019/4412, journalpost 17, tittel «Svar på søknad om tilskudd», avsender «Kommunen», mottaker «[anonymisert]», arkivkode 223, tilgangskode U.\n\nEksempel fra TekniDok: Filnavn VA-NORD_KUM117_REV3_1998.dwg, der den første delen viser anlegget, den andre viser kummen, den tredje revisjonen og den fjerde årstallet. Det finnes ingen egne felt for disse opplysningene. Omtrent 14 prosent av filnavnene følger ikke mønsteret.\n\n[[SIDE:6]]\n10. Kontaktpunkter og ansvar i kommunen\nHvert kildesystem har en navngitt systemansvarlig. Dokumentsenteret koordinerer kontakten og vil være leverandørens første kontaktpunkt. Noen systemer har bare én person med teknisk kunnskap, og dette gjelder særlig Kaiprotokollen, Kulturminnebasen og TekniDok. Personen som kjenner TekniDok, går av med pensjon våren 2028, og kommunen ønsker at kunnskapen dokumenteres før den tid.\n\nServerkapasiteten for uttrekk er begrenset. Kommunens IT-avdeling har satt av 40 TB midlertidig lagring til uttrekk. Dersom leverandøren ønsker raskere overføring enn det kommunens internettlinje tillater, kan krypterte disker fraktes fysisk etter avtale. Dokumentsenteret må da godkjenne transportopplegget.\n\n11. Volumprognose\nBestanden vokser. Kommunen forventer om lag 780 000 nye dokumenter per år, tilsvarende 1,3 TB. Volumet fra TekniDok ventes å vokse lite, fordi nye tegninger skal håndteres i et eget system etter 2027. Prognosen gjelder tiden før migrering, og leverandøren bør ta høyde for at innholdet i kildesystemene vil være større på migreringstidspunktet enn tabell 1 viser.\n\nKommunens egen analyse viser at omtrent 12 prosent av dokumentene kan være kassasjonsmodne, men kassasjon vil ikke bli gjennomført før etter migreringen. Hele bestanden skal derfor migreres.\n\n12. Erfaringer fra tidligere overføringer\nKommunen flyttet i 2011 innhold fra to eldre løsninger til Arkivus 7. Evalueringen den gang viste at vedlegg til e-post ble skilt fra hoveddokumentet, og at datoer fra før 1970 ble tolket feil på grunn av tofigrede årstall. Feilene ble først oppdaget etter ett år. Dokumentsenteret legger derfor særlig vekt på kontroll av dato og vedlegg ved neste overføring.\n\nI 2019 skiftet personalavdelingen struktur på mappene i PersonalDok. Skiftet førte til en periode på tre uker med begrenset innsyn, og saksbehandlerne brukte regneark som en midlertidig løsning. Erfaringen er at overgangsperioden må planlegges sammen med dem som bruker dokumentene hver dag.\n\n13. Forhold som ikke er avklart\nPå tidspunktet for denne rapporten gjenstår flere avklaringer. Rettighetene til bilder i Kulturminnebasen er uklare. Det er ikke testet om uttrekk fra Barnevernsmappen fungerer. Kommunen har ikke avgjort om papiroriginalene ved Fjernarkivet Brandsøy skal kasseres, overføres til depot eller tilbakeføres etter skanning. Det er heller ikke besluttet om lydopptakene i Kulturminnebasen skal gjøres søkbare ved talegjenkjenning. Ingen av disse punktene endrer omfanget av konkurransen, men de kan påvirke rekkefølgen.\n\n[[SIDE:7]]\n14. Funn fra intervjuer per sektor\nPlan og bygg. Fagpersonene er bekymret for at kart og tegninger skal bli vanskeligere å finne. De ønsker søk på gårds- og bruksnummer i én operasjon. De bruker i dag opptil fire vinduer samtidig for å sammenligne en søknad med tidligere vedtak. Byggesaksbehandlerne har 23 ansatte, og en stor andel av sakene har frister på noen uker.\n\nHelse og omsorg. Tjenestene arbeider døgnet rundt, og vedtak må kunne slås opp i vaktskifter. Det er likevel lite behov for å endre dokumenter utenfor kontortid. De ansatte er vant til rask pålogging med personlig kort og frykter at flerfaktor skal ta for lang tid. Ledelsen har bedt om et eget møte med leverandøren om dette.\n\nOppvekst. Skolene ønsker at systemet skal være enkelt og at mapper kan videreføres i kjente strukturer. Rektorene peker på at flytting av elevmapper mellom skoler er en av de vanligste oppgavene. Nær 70 prosent av skolene har bare én person som bruker systemet jevnlig.\n\nKommunalteknikk. Fagpersonene bruker TekniDok i felt, ofte fra nettbrett. De trenger å åpne tegninger raskt, også med svak dekning. Innholdet har stor praktisk verdi ved brudd på vann og avløp, og de frykter at en overgang kan gi forsinkelser under en krise. De ber om en lokal kopi av de viktigste tegningene.\n\nSentraladministrasjon. Dokumentsenteret ønsker færre manuelle trinn ved journalføring. Saksbehandlerne klager på at søk i Arkivus 7 gir for mange treff og at filtrene er for få. Rådmannens stab er opptatt av bedre rapportering på ubesvarte henvendelser.\n\nHavnevesenet. Havnefogden understreker at det er få brukere, men at materialet har juridisk betydning ved tvister. Protokollene må kunne vises side om side med registrerte opplysninger, slik at originalen alltid kan kontrolleres.\n\nKultur. Kulturkontoret ønsker å gjøre deler av Kulturminnebasen tilgjengelig for publikum. Dette er utenfor omfanget av denne anskaffelsen og er bare nevnt for å få et helhetlig bilde.\n\n15. Anslått tid for uttrekk\nTabell 7: Tidsbruk for prøveuttrekk utført av Dokumentsenteret\n| Kildesystem | Testet mengde | Tid brukt | Merknad |\n| Arkivus 7 | 50 000 dokumenter | 7 timer | Stabilt |\n| ByggSak Pro 4 | 10 000 dokumenter | 5 timer | Filer kopiert i etterkant |\n| SkoleMappa | 25 000 dokumenter | 3 timer | Mapper må kontrolleres manuelt |\n| OmsorgsArk | 25 000 dokumenter | 9 timer | Grense per kjøring |\n| PersonalDok | 5 000 dokumenter | 1 time | Krever to personer |\n| ØkoBilag | 100 000 dokumenter | 4 timer | Svært enkelt format |\n| Landbruksregisteret | Hele bestanden | 2 timer | Ingen feil |\n\nTallene er veiledende. Barnevernsmappen, TekniDok og Kaiprotokollen er ikke testet. Kommunens uttrekk konkurrerer med vanlig bruk, og lange kjøringer må derfor legges til kvelder og helger.\n\n[[SIDE:8]]\n16. Avhengigheter mellom systemene\nByggSak Pro 4 henter eiendomsdata fra Matrikkelhuben, og TekniDok viser til byggesaker gjennom saksnummer som fritekst i filnavn. ØkoBilag er avhengig av bilagsnummer fra Kommunekassen. PolitikerPortalen har lenker til saker i Arkivus 7. Disse koblingene må bevares der det er mulig. Hvis ett av systemene migreres mye senere enn et annet, må midlertidige lenker holdes vedlike.\n\nTabell 8: Viktige koblinger\n| Fra | Til | Type kobling | Antall |\n| PolitikerPortalen | Arkivus 7 | Lenke til sak | 41 000 |\n| TekniDok | ByggSak Pro 4 | Saksnummer i filnavn | Ukjent |\n| Brannsynsarkivet | Eiendomsskattmappa | Gårds- og bruksnummer | 86 000 |\n| ØkoBilag | Kommunekassen | Bilagsnummer | 1 760 000 |\n| OmsorgsArk | Arkivus 7 | Referanse til klagesak | 12 400 |\n\n17. Særlige dokumenttyper\nMøtebøker fra formannskap og kommunestyre skal bevares for alltid og har krav om at de kan gjengis nøyaktig. Lønnsbilag i ØkoBilag kan kasseres etter gitte regler, men kommunen har ikke gjennomført kassasjon siden 2019. Eiendomsskattklager har en klagefrist som gjør at dokumenter fra de siste fire årene brukes jevnlig.\n\nI OmsorgsArk finnes dokumenter med dobbel registrering, fordi vedtak noen ganger er registrert både av tjenestestedet og av tildelingskontoret. Antallet er anslått til rundt 31 000. Dokumentsenteret anbefaler at dublettene ikke fjernes automatisk, men at de kobles sammen og vurderes etter migrering.\n\n18. Lagringsbehov under migrering\nBeregninger viser at kommunen trenger midlertidig kapasitet på opptil det dobbelte av volumet i det kildesystemet som er under migrering, fordi originale uttrekk og kontrollerte versjoner må holdes parallelt. For TekniDok tilsier det nesten 11 TB. Kommunens midlertidige lagring må derfor planlegges bølge for bølge.\n\nDokumentsenteret forutsetter at midlertidige kopier slettes innen tre måneder etter godkjent bølge, og at slettingen bekreftes skriftlig. Kommunen vil dessuten kreve en oversikt over hvor midlertidige kopier befinner seg gjennom hele prosjektet.\n\n19. Bemanning hos kommunen\nDokumentsenteret har 14 årsverk, hvorav fire med arkivfaglig fordypning. Kommunen vil frigjøre to årsverk til prosjektet i hele migreringsperioden. I tillegg brukes en ekstern arkivkonsulent i perioder. Kommunens IT-avdeling vil ha én fast kontaktperson med ansvar for kjøring av uttrekk. Ferieavvikling i juli gjør at få migreringsoppgaver kan gjennomføres den måneden.\n\n20. Anbefalinger\nDokumentsenteret anbefaler at PolitikerPortalen og Landbruksregisteret tas tidlig. Det anbefales også at migreringen av TekniDok starter med en større analysefase enn de andre systemene, og at Kaiprotokollen behandles som en egen liten delleveranse med egen faglig gjennomgang. Skanning av fuktskadet materiale i rom B bør skje tidlig. Rapporten gir ingen bindende føringer for rekkefølge, siden denne skal fastsettes i migreringsplanen.\n\n[[SIDE:9]]\n21. Historikk for systemene\nTabell 9: Når systemene ble tatt i bruk\n| Kildesystem | Tatt i bruk | Status hos systemleverandør |\n| Arkivus 7 | 2011 | Utvidet vedlikehold |\n| ByggSak Pro 4 | 2014 | Ordinær støtte |\n| SkoleMappa | 2006 | Egenutviklet av kommunen |\n| OmsorgsArk | 2009 | Ordinær støtte |\n| TekniDok | 1994 | Filområde uten leverandør |\n| PersonalDok | 2001 | Utvidet vedlikehold |\n| Barnevernsmappen | 2005 | Utgått |\n| ØkoBilag | 2012 | Ordinær støtte |\n| PolitikerPortalen | 2011 | Ordinær støtte |\n| Kulturminnebasen | 1999 | Egenutviklet av kommunen |\n| Landbruksregisteret | 2000 | Utvidet vedlikehold |\n| Kaiprotokollen | 1993 | Egenutviklet av havnevesenet |\n| Brannsynsarkivet | 2004 | Utgått |\n| Eiendomsskattmappa | 2008 | Ordinær støtte |\n\nNoen systemer inneholder dokumenter som er eldre enn systemet selv. Det skyldes at eldre materiale er skannet inn eller overført i ettertid, for eksempel Kaiprotokollen og Kulturminnebasen.\n\n22. Prioritering av papirarkiv\nDokumentsenteret har vurdert rekkefølgen på skanning ut fra hvor ofte materialet brukes, tilstand og sårbarhet. Rådhuskjelleren har høyest prioritet på grunn av fuktskaden i rom B og fordi byggesakene brukes ofte. Havnekontoret kommer deretter, fordi protokollene er skjøre. Skolekontorets elevmapper og vedtakene ved Omsorgssenteret Solvang krever særskilt skjerming under transport. Fjernarkivet Brandsøy er det største, men brukes sjelden og kan vente til senere i prosjektet. Teknisk stasjon Nordre krever storformatskanner, og mange tegninger ligger på rull.\n\nTransport fra Brandsøy forutsetter ferge. Fergeavgangene er begrenset vinterstid, og oppdragsgiver forventer at leverandøren planlegger for det. Bokser fra Brandsøy kan samles på rådhuset før videre transport, så lenge de er forseglet og registrert.\n\n23. Ordforklaringer\nBølge: En avgrenset del av migreringen som planlegges, gjennomføres og godkjennes samlet.\nKontrollutvalg: Et tilfeldig utvalg dokumenter som brukes til å vurdere om en overføring er korrekt.\nHyllemeter: Lengden på en arkivhylle som er fylt med materiale, brukt som mål på omfanget av papirarkiver.\nKildesystem: Et eksisterende system eller filområde der dokumentene ligger i dag.\nArkivformat: Et filformat som er egnet til langtidsbevaring.\nTilgangskode: En merking som viser om, og for hvem, et dokument er skjermet.\n"
+    }
+  ],
+  "saved_analysis": {
+    "customer_profile_summary": "FIKTIVT: Havreneset kommune er en oppdiktet kystkommune med om lag 38 400 innbyggere og rundt 3 100 ansatte. Dokumentsenteret har ansvar for postmottak, journalføring, arkivdanning og innsyn. Arkivlandskapet består av fjorten kildesystemer og flere papirarkiver, med om lag 9,9 millioner dokumenter og 21,7 TB.",
+    "customer_goals_summary": "Kommunen vil samle spredte løsninger i én sikker plattform for sak og arkiv, fjerne avhengigheten av utgåtte systemer, gjøre eldre dokumenter lettere å finne og korte ned tiden for innsynsbehandling fra ni til under tre virkedager. Migrering med kontroll av fullstendighet, tilgangskoder og datakvalitet er sentralt.",
+    "executive_summary": "Fiktiv konkurranse med forhandling om skytjeneste for sak og arkiv, migrering, drift og opplæring. Saksdokumentene består av konkurransegrunnlaget, rettelse nr. 2 med spørsmål og svar, kartleggingen av arkivbestanden og et utkast til løsningsbeskrivelse fra Tindefjell Systemhus AS. Utkastet er skrevet før rettelsen og må leses sammen med den. Prisskjema og kontraktsvilkår er egne vedlegg som ikke inngår i dette materialet."
+  },
+  "cases": [
+    {
+      "id": "municipal-tilbudsfrist-gjeldende",
+      "kind": "factual",
+      "question": "Når er den gjeldende fristen for å levere tilbud?",
+      "expected": "19. mars 2027 kl. 12:00. Rettelse nr. 2 erstatter den opprinnelige fristen 12. mars 2027 kl. 12:00, og rettelsen går foran konkurransegrunnlaget der de avviker.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "| Tabell 1, Tilbudsfrist | 12. mars 2027 kl. 12:00 | 19. mars 2027 kl. 12:00 |",
+          "page": 1
+        },
+        {
+          "document_id": "doc-rettelse",
+          "quote": "Der denne rettelsen avviker fra konkurransegrunnlaget, gjelder rettelsen.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-prisvekt-gjeldende",
+      "kind": "factual",
+      "question": "Hvor stor vekt har pris ved tildelingen etter de siste endringene?",
+      "expected": "35 %. Rettelse nr. 2 endret prisvekten fra 40 % til 35 %. Tallet 40 % i Tindefjells utkast bygger på den opprinnelige teksten.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "| Tabell 2, Pris | 40 % | 35 % |",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-k17-gjeldende",
+      "kind": "factual",
+      "question": "Hva er det gjeldende tilgjengelighetskravet i K-17?",
+      "expected": "Minst 99,8 % per kalendermåned i kontortiden, etter rettelse nr. 2. Det opprinnelige kravet var 99,5 %.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "| K-17 | minst 99,5 % per kalendermåned i kontortiden | minst 99,8 % per kalendermåned i kontortiden |",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-k12-kravspesifikasjon",
+      "kind": "factual",
+      "question": "Hva krever K-12 i kravspesifikasjonen i konkurransegrunnlaget?",
+      "expected": "At alle administratorer og alle brukere som logger inn utenfra kommunens nett, autentiseres med flerfaktorautentisering. Kravet er absolutt.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-12 (Absolutt): Alle administratorer og alle brukere som logger inn utenfra kommunens nett, skal autentiseres med flerfaktorautentisering.",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "municipal-k12-kartlegging",
+      "kind": "factual",
+      "question": "Hva viser koden K-12 til i kartleggingsrapporten?",
+      "expected": "Kildesystemet Kaiprotokollen hos havnevesenet, med 23 400 dokumenter og 0,05 TB. Koden er lokal for rapporten og har ingen sammenheng med kravnummeret K-12 i konkurransegrunnlaget.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| K-12 | Kaiprotokollen | Havnevesenet | 23 400 | 0,05 TB | 1979 |",
+          "page": 1
+        },
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "er kodene K-01 til K-14 i denne rapporten lokale koder for kildesystemer og har ingen sammenheng med kravnumrene i konkurransegrunnlaget",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-r04-losningsbeskrivelse",
+      "kind": "factual",
+      "question": "Hva er risiko R-04 i Tindefjells løsningsbeskrivelse?",
+      "expected": "Forsinket levering av testuttrekk fra kommunen, med middels sannsynlighet og høy konsekvens. Tiltaket er felles sjekkliste og ukentlig oppfølging fra kontraktsignering.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "| R-04 | Forsinket levering av testuttrekk fra kommunen | Middels | Høy | Felles sjekkliste og ukentlig oppfølging fra kontraktsignering |",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "municipal-r04-kartlegging",
+      "kind": "factual",
+      "question": "Hva er risiko R-04 i kommunens kartleggingsrapport?",
+      "expected": "At tegninger i TekniDok mister koblingen til anlegg og bygg fordi metadata bare finnes i filnavn. Risikoen er vurdert som høy og skal håndteres med en egen mappingtabell sammen med kommunalteknikk.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| R-04 | Tegninger i TekniDok mister koblingen til anlegg og bygg fordi metadata bare finnes i filnavn | Høy | Lage egen mappingtabell sammen med kommunalteknikk |",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-gjenoppretting-timer",
+      "kind": "factual",
+      "question": "Innen hvor mange timer krever kommunen at plattformen er gjenopprettet etter en alvorlig hendelse?",
+      "expected": "Innen 4 timer (240 minutter, RTO), regnet fra hendelsen ble meldt.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-19 (Absolutt): Ved en alvorlig hendelse skal plattformen være gjenopprettet innen 240 minutter (RTO) fra hendelsen ble meldt.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-datatap-minutter",
+      "kind": "factual",
+      "question": "Hvor mange minutter med datatap tillater kommunens krav ved gjenoppretting?",
+      "expected": "Høyst 15 minutter (ett kvarter, RPO).",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-20 (Absolutt): Tap av data ved gjenoppretting skal ikke overstige ett kvarter (RPO).",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-byggsak-gigabyte",
+      "kind": "factual",
+      "question": "Hvor mange gigabyte utgjør ByggSak Pro 4 ifølge kartleggingen?",
+      "expected": "3 200 GB. Tabellen oppgir 3,2 TB, og rapporten regner 1 TB som 1 000 GB.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| K-02 | ByggSak Pro 4 | Plan og bygg | 1 180 000 | 3,2 TB | 2003 |",
+          "page": 1
+        },
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "I denne rapporten betyr 1 TB det samme som 1 000 GB.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-skole-dokumenter",
+      "kind": "factual",
+      "question": "Hvor mange dokumenter ligger i kildesystemet for skole og barnehage?",
+      "expected": "1 310 000 dokumenter, i kildesystemet SkoleMappa.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| K-03 | SkoleMappa | Oppvekst, skole og barnehage | 1 310 000 | 2,1 TB | 2006 |",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-storst-volum",
+      "kind": "factual",
+      "question": "Hvilket kildesystem har størst lagringsvolum, og hvor stort er det?",
+      "expected": "TekniDok, med 5,4 TB. Arkivus 7 har flest dokumenter, men bare 4,6 TB.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| K-05 | TekniDok | Kommunalteknikk og tekniske tegninger | 640 000 | 5,4 TB | 1994 |",
+          "page": 1
+        },
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "| K-01 | Arkivus 7 | Sentraladministrasjon og fellesarkiv | 2 940 000 | 4,6 TB | 1998 |",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-kategori-b-utenfor-kontortid",
+      "kind": "factual",
+      "question": "Hvor raskt må leverandøren respondere på en feil i kategori B utenfor kontortid?",
+      "expected": "Innen 4 timer.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "| B | Viktig funksjon er ute av drift, ingen enkel omgåelse | 2 timer | 4 timer | 1 virkedag |",
+          "page": 6
+        }
+      ]
+    },
+    {
+      "id": "municipal-dagmulkt",
+      "kind": "factual",
+      "question": "Hva blir dagmulkten hvis produksjonsmigreringen fullføres for sent?",
+      "expected": "0,15 % av migreringsvederlaget per påbegynte virkedag, begrenset til 100 virkedager. Dagmulkt påløper ikke når forsinkelsen skyldes forhold oppdragsgiver har ansvaret for, og leverandøren har varslet uten ugrunnet opphold.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Ved forsinket fullføring av produksjonsmigreringen påløper dagmulkt på 0,15 % av migreringsvederlaget per påbegynte virkedag, begrenset til 100 virkedager.",
+          "page": 8
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Dagmulkt påløper ikke når forsinkelsen skyldes forhold oppdragsgiver har ansvaret for, og som leverandøren har varslet om uten ugrunnet opphold.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "municipal-produksjonsmigrering-vilkar",
+      "kind": "factual",
+      "question": "Hva må være på plass før produksjonsmigreringen kan starte?",
+      "expected": "Oppdragsgiver må skriftlig ha godkjent prøvemigreringen, og godkjenning forutsetter at avviksandelen i kontrollutvalget ikke overstiger 0,2 %. Dette er en betingelse og ikke en kalenderfrist.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Produksjonsmigrering kan ikke starte før oppdragsgiver skriftlig har godkjent prøvemigreringen.",
+          "page": 6
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Godkjenning forutsetter at avviksandelen i kontrollutvalget ikke overstiger 0,2 %.",
+          "page": 6
+        }
+      ]
+    },
+    {
+      "id": "municipal-provemigrering-frist",
+      "kind": "factual",
+      "question": "Hva er fristen for å gjennomføre og rapportere prøvemigreringen?",
+      "expected": "Senest 20 uker etter kontraktsignering.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Prøvemigrering skal være gjennomført og rapportert senest 20 uker etter kontraktsignering.",
+          "page": 6
+        }
+      ]
+    },
+    {
+      "id": "municipal-innbyggerinnsyn-vilkar-frist",
+      "kind": "factual",
+      "question": "Hva er vilkåret og hva er fristen for å utløse opsjonen for innbyggerinnsyn?",
+      "expected": "Vilkåret er at kommunestyret har vedtatt finansiering av modulen. Fristen er 18 måneder etter produksjonssetting. Dette er to separate forhold.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Opsjon O-3 (innbyggerinnsyn) kan utløses innen 18 måneder etter produksjonssetting.",
+          "page": 3
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Utløsing av O-3 er betinget av at kommunestyret har vedtatt finansiering av modulen.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "municipal-nokkelpersonell-garanti",
+      "kind": "factual",
+      "question": "Er Tindefjells garanti om at nøkkelpersonellet blir i prosjektet ubetinget?",
+      "expected": "Nei. Garantien forutsetter at oppdragsgiver leverer godkjent testuttrekk senest seks uker etter kontraktsignering. Kommer uttrekket senere, vil Tindefjell bare tilstrebe kontinuitet og kan ikke garantere den.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Tindefjell garanterer at nøkkelpersonellet forblir i prosjektet gjennom hele migreringsfasen, forutsatt at oppdragsgiver leverer godkjent testuttrekk senest seks uker etter kontraktsignering.",
+          "page": 3
+        },
+        {
+          "document_id": "doc-losning",
+          "quote": "Hvis uttrekket kommer senere, vil vi fortsatt tilstrebe kontinuitet, men kan ikke garantere den.",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "municipal-referansebesok-kriterium",
+      "kind": "factual",
+      "question": "Er referansebesøk et tildelingskriterium i konkurransen?",
+      "expected": "Nei. Kommunens kriterier er pris, løsningens kvalitet og migreringsplan og gjennomføringsevne. Referansebesøk med 10 % vekt er bare et forslag fra Tindefjell, og rettelsen sier at kriteriene ikke endres utover det som fremgår av den.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Vi foreslår at oppdragsgiver også bruker referansebesøk som eget tildelingskriterium med 10 % vekt",
+          "page": 1
+        },
+        {
+          "document_id": "doc-rettelse",
+          "quote": "Oppdragsgiver endrer ikke tildelingskriteriene utover det som fremgår av denne rettelsen.",
+          "page": 1
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Oppdragsgiver har fastsatt følgende tildelingskriterier med vekter:",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "municipal-lagring-tilbud",
+      "kind": "factual",
+      "question": "Hvor lagrer Tindefjell produksjonsdata og sikkerhetskopier ifølge tilbudsutkastet?",
+      "expected": "I to datasentre i Norge: Tromsdal (primær) og Elvestad (sekundær).",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Vi lagrer produksjonsdata og sikkerhetskopier i to datasentre i Norge, Tromsdal (primær) og Elvestad (sekundær), med 310 kilometer imellom.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-lagring-krav",
+      "kind": "factual",
+      "question": "Hvilket geografisk krav stiller kommunen til lagring av produksjonsdata?",
+      "expected": "Produksjonsdata og sikkerhetskopier skal lagres innenfor EØS.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-26 (Absolutt): Produksjonsdata og sikkerhetskopier skal lagres innenfor EØS.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-daglige-kopier-uker",
+      "kind": "factual",
+      "question": "Hvor mange uker krever kommunen at daglige sikkerhetskopier skal oppbevares?",
+      "expected": "5 uker (35 dager).",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-21 (Absolutt): Daglige sikkerhetskopier skal oppbevares i 35 dager, og månedlige sikkerhetskopier skal oppbevares i 12 måneder.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-tilbakeforing-varighet",
+      "kind": "factual",
+      "question": "Hvor lenge skal leverandøren bistå med å føre data tilbake når kontrakten opphører?",
+      "expected": "I seks måneder, med full lesetilgang i hele perioden.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-46 (Absolutt): Ved kontraktens opphør skal leverandøren bistå ved tilbakeføring av alle data i seks måneder, med full lesetilgang i hele perioden.",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "municipal-k22-handskrift",
+      "kind": "factual",
+      "question": "Gjelder kravet til 98 % tegnnøyaktighet i K-22 også håndskrevne dokumenter?",
+      "expected": "Nei. Svaret i rettelse nr. 2 presiserer at K-22 gjelder maskinskrevet tekst. Håndskrevne dokumenter skal bare billedlagres og indekseres med metadata.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "Svar: Nei. K-22 gjelder maskinskrevet tekst. Håndskrevne dokumenter skal bare billedlagres og indekseres med metadata.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "municipal-referanseprosjekter",
+      "kind": "factual",
+      "question": "Hvilke krav stilles til referanseprosjektene i kvalifikasjonen?",
+      "expected": "Tre referanseprosjekter fra de siste fem årene, hvert med migrering av minst 500 000 dokumenter med metadata til et sak- og arkivsystem. Minst ett skal være gjennomført for en offentlig virksomhet.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Leverandøren skal dokumentere tre referanseprosjekter fra de siste fem årene, der hvert prosjekt omfatter migrering av minst 500 000 dokumenter med metadata til et sak- og arkivsystem.",
+          "page": 2
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Minst ett av referanseprosjektene skal være gjennomført for en offentlig virksomhet.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "municipal-sporsmalsfrist-uendret",
+      "kind": "factual",
+      "question": "Ble fristen for å stille spørsmål flyttet da tilbudsfristen ble endret?",
+      "expected": "Nei. Siste frist for spørsmål står uendret, 26. februar 2027 kl. 15:00.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "Siste frist for spørsmål i tabell 1 står uendret, 26. februar 2027 kl. 15:00.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-vedstaelse",
+      "kind": "factual",
+      "question": "Hvor lenge er leverandøren bundet av tilbudet sitt, og fra når regnes det?",
+      "expected": "180 dager, regnet fra den nye tilbudsfristen (19. mars 2027).",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "Vedståelsesfristen er fortsatt 180 dager, regnet fra den nye tilbudsfristen.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-protokoll-befolkningsnavet",
+      "kind": "factual",
+      "question": "Hvilken protokoll skal brukes mot innbyggerregisteret Befolkningsnavet?",
+      "expected": "REST/JSON over TLS 1.3 med gjensidige sertifikater.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "| INT-01 | Befolkningsnavet (innbyggerregister) | Oppslag av navn og adresse | REST/JSON over TLS 1.3 med gjensidige sertifikater | Sanntid |",
+          "page": 7
+        }
+      ]
+    },
+    {
+      "id": "municipal-kategori-a-sammenligning",
+      "kind": "factual",
+      "question": "Hvordan er Tindefjells responstid for kategori A i kontortiden sammenlignet med kommunens krav?",
+      "expected": "Tindefjell tilbyr 20 minutter, mens kravet er 30 minutter. Tilbudet er altså 10 minutter raskere enn kravet.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "| A | Plattformen er utilgjengelig eller data står i fare | 30 minutter | 60 minutter | 4 timer |",
+          "page": 6
+        },
+        {
+          "document_id": "doc-losning",
+          "quote": "| A | 20 minutter | 45 minutter | 3 timer |",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "id": "municipal-revisjonslogg-ar",
+      "kind": "factual",
+      "question": "Hvor mange år må revisjonslogger oppbevares etter gjeldende krav?",
+      "expected": "3 år (36 måneder), etter rettelse nr. 2. Opprinnelig krav var 24 måneder.",
+      "citations_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-rettelse",
+          "quote": "| K-23 | oppbevares i 24 måneder | oppbevares i 36 måneder |",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-protokoll-kommunekassen",
+      "kind": "negative",
+      "question": "Hvilken protokoll skal integrasjonen mot økonomisystemet Kommunekassen bruke?",
+      "expected": "Protokollen er ikke fastsatt. Tabell 5 sier «Avklares i designfasen», og Tindefjell vil bare vurdere dette nærmere sammen med kommunen. Protokollene for de andre integrasjonene gjelder ikke her.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "| INT-02 | Kommunekassen (økonomisystem) | Bilagsreferanser og fakturakobling | Avklares i designfasen | Daglig |",
+          "page": 7
+        },
+        {
+          "document_id": "doc-losning",
+          "quote": "med unntak av kommunens økonomisystem, der vi ønsker å gjøre en nærmere vurdering sammen med kommunen når designfasen starter",
+          "page": 4
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-migreringspris-tindefjell",
+      "kind": "negative",
+      "question": "Hva er Tindefjells pris for migreringen?",
+      "expected": "Prisen finnes ikke i materialet. Priser står i prisskjemaet (vedlegg 4), som ikke er gjengitt. Estimatet på NOK 48 millioner er kommunens estimat for hele kontraktsperioden og ikke Tindefjells pris.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Priser fremgår av prisskjemaet (vedlegg 4), som leveres som eget dokument og ikke er gjengitt i denne beskrivelsen.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-godkjenningsfrist-provemigrering",
+      "kind": "negative",
+      "question": "Hvor mange dager har kommunen på seg til å godkjenne prøvemigreringen?",
+      "expected": "Det står ikke. Materialet angir et vilkår for godkjenningen (skriftlig godkjenning, høyst 0,2 % avvik) og leverandørens frist på 20 uker, men ingen behandlingsfrist for kommunen. Tindefjells fem virkedager for beslutninger i styringsgruppen er en planforutsetning og ikke en forpliktelse for kommunen.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Produksjonsmigrering kan ikke starte før oppdragsgiver skriftlig har godkjent prøvemigreringen.",
+          "page": 6
+        },
+        {
+          "document_id": "doc-losning",
+          "quote": "Planen forutsetter at beslutninger i styringsgruppen fattes innen fem virkedager etter møtet.",
+          "page": 5
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-opplaering-samisk",
+      "kind": "negative",
+      "question": "Har Tindefjell forpliktet seg til å levere opplæring på samisk?",
+      "expected": "Materialet viser ingen slik forpliktelse. Det omtaler opplæringsmateriell på bokmål og nynorsk, men sier ingenting om samisk.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Opplæringsmateriellet leveres på bokmål og nynorsk.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-samtidige-brukere-motstrid",
+      "kind": "negative",
+      "question": "Hvor mange samtidige brukere skal plattformen dimensjoneres for?",
+      "expected": "Materialet er motstridende uten avklaring. Konkurransegrunnlaget sier 1 450 og kartleggingen sier 1 600 samtidige brukere. Rettelse nr. 2 omtaler ikke dette, og ingen rangering avgjør det. Tallet må avklares med kommunen.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Plattformen skal dimensjoneres for 1 450 samtidige brukere i kontortiden.",
+          "page": 1
+        },
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "Plattformen må håndtere 1 600 samtidige brukere i kontortiden, ut fra brukstall kommunen målte høsten 2026.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-arkivus-avvikling-motstrid",
+      "kind": "negative",
+      "question": "Hvilken dato skal Arkivus 7 avvikles?",
+      "expected": "Materialet er motstridende uten avklaring. Konkurransegrunnlaget sier 31. oktober 2028 og kartleggingen sier 30. juni 2028. Rettelse nr. 2 omtaler ikke dette, og datoen må avklares med kommunen.",
+      "citations_required": true,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Hovedsystemet Arkivus 7 skal avvikles 31. oktober 2028.",
+          "page": 7
+        },
+        {
+          "document_id": "doc-kartlegging",
+          "quote": "Arkivus 7 skal avvikles 30. juni 2028 i henhold til kommunens systemplan.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-produksjonssetting-kalenderdato",
+      "kind": "negative",
+      "question": "Hvilken kalenderdato skal plattformen settes i produksjon?",
+      "expected": "Ingen kalenderdato er oppgitt. Fristen er relativ, senest 52 uker etter kontraktsignering, og kontraktsignering er ikke tidfestet. Uttalelsen om signering i løpet av våren var uten bindende virkning.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Plattformen skal settes i produksjon for nye saker senest 52 uker etter kontraktsignering",
+          "page": 7
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Kontraktsignering tidfestes etter at karensperioden er over og er ikke fastsatt i tidsplanen.",
+          "page": 2
+        },
+        {
+          "document_id": "doc-rettelse",
+          "quote": "I orienteringen ble det nevnt at kontrakt kan bli signert i løpet av våren, men dette var en uttalelse uten bindende virkning og er ikke en fastsatt dato.",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-erstatningstak",
+      "kind": "negative",
+      "question": "Hva er øvre grense for leverandørens erstatningsansvar?",
+      "expected": "Grensen er ikke oppgitt. Ansvarsbegrensning og erstatning reguleres i kontraktsvilkårene (vedlegg 5), som ikke er gjengitt. Begrensningen på 100 virkedager gjelder dagmulkt og er ikke et tak for erstatningsansvar.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Ansvarsbegrensning og erstatning reguleres i kontraktsvilkårene (vedlegg 5), som ikke er gjengitt i dette konkurransegrunnlaget.",
+          "page": 8
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-lysnes-sertifisering",
+      "kind": "negative",
+      "question": "Er Lysnes Skanning AS sertifisert etter ISO/IEC 27001?",
+      "expected": "Det er ikke opplyst. Bare Tindefjell Systemhus AS er oppgitt som sertifisert, og det sertifikatet omfatter drift av ArkivHavn.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-losning",
+          "quote": "Tindefjell Systemhus AS er sertifisert etter ISO/IEC 27001, og sertifikatet omfatter drift av ArkivHavn.",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "id": "municipal-neg-krypteringsalgoritme-kopier",
+      "kind": "negative",
+      "question": "Hvilken krypteringsalgoritme brukes for sikkerhetskopiene?",
+      "expected": "Algoritmen er ikke oppgitt. Kravet og tilbudet sier bare at sikkerhetskopiene skal være kryptert. TLS 1.3 gjelder nettverkstrafikk mellom klient og plattform, ikke sikkerhetskopiene.",
+      "citations_required": false,
+      "abstention_required": true,
+      "evidence": [
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "Alle sikkerhetskopier skal være kryptert og oppbevares atskilt fra produksjonsmiljøet.",
+          "page": 5
+        },
+        {
+          "document_id": "doc-konkurransegrunnlag",
+          "quote": "K-29 (Absolutt): All nettverkstrafikk mellom klient og plattform skal være kryptert med TLS 1.3 eller nyere.",
+          "page": 5
+        },
+        {
+          "document_id": "doc-losning",
+          "quote": "Alle kopier ligger kryptert i det sekundære datasenteret.",
+          "page": 2
+        }
+      ]
+    }
+  ]
+}

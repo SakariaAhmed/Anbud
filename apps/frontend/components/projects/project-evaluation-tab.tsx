@@ -1014,6 +1014,11 @@ export function ProjectEvaluationTab({
             );
           })()}
 
+          {solutionEvaluation.evidence_review ? (
+            <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              {solutionEvaluation.evidence_review.message}
+            </div>
+          ) : null}
           {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} excludePaths={["result.requirement_coverage", "result.document_findings"]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
           <div>
             <RequirementCoveragePanel
@@ -1032,6 +1037,18 @@ export function ProjectEvaluationTab({
               canDownloadDocuments={canDownloadDocuments}
             />
           </div>
+
+          {solutionEvaluation.criterion_coverage?.length ? <section aria-label="Dekning av mulige evalueringskriterier" className="space-y-3">
+            <h3 className="font-semibold">Mulige evalueringskriterier</h3>
+            <p className="text-xs text-muted-foreground">Forslag fra kundeanalysen. Kontroller hvilke kriterier kunden faktisk bruker ved tildeling.</p>
+            {solutionEvaluation.criterion_coverage.map((item, index) => <article key={item.criterion_id} className="min-w-0 rounded-md border p-3 text-sm [overflow-wrap:anywhere]">
+              <h4 className="font-medium">{item.criterion}</h4>
+              <p className="mt-1">{item.assessment}: {item.rationale}</p>
+              {item.evidence ? <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{item.evidence}</p> : null}
+              {projectId && item.criterion_source ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={item.criterion_source}>Kilde til kriterieforslaget</SourceEvidenceButton> : null}
+              {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} path={`result.criterion_coverage.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
+            </article>)}
+          </section> : null}
 
           <div className="grid gap-5 lg:grid-cols-2">
             <FindingPanel

@@ -5,13 +5,14 @@ import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from 
 import { WorkflowIncompleteError } from "@/lib/server/workflow-errors";
 import { SourceQuoteIndex, quotedSourcePassages, evidenceIdentity, sourceQuoteLength, isMeaningfulShortSourceQuote, locateSourceEvidenceQuote } from "@/lib/server/source-evidence";
 import { bindDocumentSourceEvidence } from "@/lib/server/document-source-evidence";
+import { unsupportedSourceLocators, withholdSourceLocators } from "@/lib/source-locators";
 import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail, SourceEvidenceManifest } from "@/lib/types";
 
 export type OutputSourceEvidence = SourceEvidenceManifest;
 export type AuthorizedEvidenceArtifact = { id: string; title: string; content_markdown: string; artifact_version?: number };
 export type AuthorizedEvidenceDocument = { document: ProjectDocumentDetail | ServiceDocumentDetail; sourceType: "project_document" | "service_document" };
 export class OutputEvidenceValidationError extends WorkflowIncompleteError {
-  constructor(readonly code: "unverified_quote" | "unknown_requirement", message: string) { super(message); }
+  constructor(readonly code: "unverified_quote" | "unknown_requirement" | "unverified_locator", message: string, readonly replacement?: string) { super(message); }
 }
 
 /** Original-quotation and identifier membership is deterministic. It does not
@@ -74,6 +75,17 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
       onInvalidField(field, error);
     }
   }
+  // Validate locators after binding all fields: a row's reference may precede
+  // its evidence in the serialized object. Never borrow another row's proof.
+  for (const field of input.fields) {
+    const parent = field.path.slice(0, field.path.lastIndexOf("."));
+    const bound = references.filter(entry => entry.path === field.path || entry.path.slice(0, entry.path.lastIndexOf(".")) === parent).map(entry => entry.source);
+    const unsupported = unsupportedSourceLocators(field.text, bound);
+    if (!unsupported.length) continue;
+    const error = new OutputEvidenceValidationError("unverified_locator", "Den presise side- eller kapittelhenvisningen kunne ikke bekreftes i kildegrunnlaget.", withholdSourceLocators(field.text, unsupported));
+    if (!onInvalidField) throw error;
+    onInvalidField(field, error);
+  }
   return { version: 1, references };
 }
 
@@ -84,7 +96,7 @@ export function reviewOutputSourceEvidence(input: Parameters<typeof bindOutputSo
   const replacements = new Map<string, string>();
   const bound = bindOutputSourceEvidence(input, (field, error) => {
     issues.push({ path: field.path, code: error.code, message: error.publicMessage });
-    replacements.set(field.path, "Må avklares. Denne formuleringen ble holdt tilbake fordi kildegrunnlaget ikke kunne bekreftes. Kontroller originaldokumentet og oppdater dette feltet før bruk.");
+    if (!replacements.has(field.path)) replacements.set(field.path, error.replacement ?? "Må avklares. Denne formuleringen ble holdt tilbake fordi kildegrunnlaget ikke kunne bekreftes. Kontroller originaldokumentet og oppdater dette feltet før bruk.");
   });
   const fields = input.fields.map(field => ({ ...field, text: replacements.get(field.path) ?? field.text }));
   return { fields, evidence: { ...bound, ...(issues.length ? { issues } : {}) } };
@@ -112,15 +124,15 @@ export function outputEvidenceFields(value: unknown, prefix = "result"): Array<{
 }
 
 const outputProvenanceFields = new Set([
-  "source_evidence", "source_references", "evaluation_context", "evaluation_provenance_mode",
+  "source_evidence", "source_references", "evaluation_context", "evaluation_provenance_mode", "evidence_review", "criterion_source", "criterion_id", "requirement_references",
   "customer_document_id", "solution_document_id", "evaluated_generated_artifact_id",
   "source_document_id", "source_document_title", "answer_document_id", "answer_document_title",
   "heading_path", "page_range", "table_id", "source_reference", "full_reference",
 ]);
 
 export function reviewRequirementRowOutputEvidence(input: Omit<Parameters<typeof bindOutputSourceEvidence>[0], "fields"> & {
-  rows: Array<{ index: number; ref: string; answer: string; evidence: string }>;
-  parentRows?: Array<{ ref: string; answer: string; evidence: string }>;
+  rows: Array<{ index: number; ref: string; answer: string; evidence: string; rowHash?: string }>;
+  parentRows?: Array<{ ref: string; answer: string; evidence: string; rowHash?: string }>;
   parentEvidence?: unknown; regeneratedIndexes?: ReadonlySet<number>;
 }) {
   const generated = input.rows.filter(row => !input.regeneratedIndexes || input.regeneratedIndexes.has(row.index));
@@ -129,5 +141,15 @@ export function reviewRequirementRowOutputEvidence(input: Omit<Parameters<typeof
   ]) });
   const preserved: SourceEvidenceManifest = input.regeneratedIndexes ? unchangedRequirementRowEvidence(input.parentEvidence, input.parentRows ?? [], input.rows, input.regeneratedIndexes) : { version: 1 as const, references: [] };
   const issues = [...preserved.issues ?? [], ...reviewed.evidence.issues ?? []];
-  return { fields: reviewed.fields, evidence: { version: 1 as const, references: [...preserved.references, ...reviewed.evidence.references], ...(issues.length ? { issues } : {}) } };
+  const confidence: NonNullable<SourceEvidenceManifest["row_confidence"]> = generated.flatMap(row => {
+    if (!row.rowHash) return [];
+    const prefix = `rows.${row.index}.`;
+    const failed = issues.some(issue => issue.path.startsWith(prefix)) || !row.answer.trim() || /må avklares|ikke dokumentert|trenger tilbudsinput/iu.test(`${row.answer} ${row.evidence}`);
+    const bound = reviewed.evidence.references.some(entry => entry.path.startsWith(prefix) && entry.source.classification === "documented");
+    return [{ index: row.index, ref: row.ref, row_hash: row.rowHash,
+      level: failed ? "needs_review" as const : bound ? "documented_excerpt" as const : "unknown" as const,
+      reasons: [failed ? "Svaret har uavklart kildegrunnlag eller manglende tilbudsinput." : bound ? "Minst ett originalutdrag i denne raden er kontrollert. Dette beviser ikke at hele svaret er riktig." : "Det er ikke lagret et kontrollert originalutdrag for dette svaret."],
+    }];
+  });
+  return { fields: reviewed.fields, evidence: { version: 1 as const, references: [...preserved.references, ...reviewed.evidence.references], row_confidence: [...preserved.row_confidence ?? [], ...confidence], ...(issues.length ? { issues } : {}) } };
 }

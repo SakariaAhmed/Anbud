@@ -21,7 +21,7 @@ test("a persisted register preserves repeated rows, inferred identity and explic
 });
 test("stale, foreign or corrupted persisted registers cannot act as an empty register", () => {
   for (const value of [null, artifact({ sourceRevision: 1 }), artifact({ projectId: "other" }), artifact({ documentId: "other" }),
-    artifact({ requirementRegister: { version: 2, rows: [] } }), artifact({ requirementRegister: { version: 1, rows: [{ id: "K-1" }] } }),
+    artifact({ requirementRegister: { version: 3, rows: [] } }), artifact({ requirementRegister: { version: 1, rows: [{ id: "K-1" }] } }),
     artifact({ requirementRegister: { version: 1, rows: [{ ...artifact().requirementRegister.rows[0], documentId: "other" }] } }),
     artifact({ requirementRegister: { version: 1, rows: [{ ...artifact().requirementRegister.rows[0], pages: [0] }] } })]) {
     assert.throws(() => parsePersistedRequirementRegister(value, snapshot), /kravregister|dokumentversjonen/iu);
@@ -34,4 +34,22 @@ test("the browser payload parser rejects malformed evidence instead of casting u
   const broken = structuredClone(valid); broken.documents[0].rows[0].pages = ["2"];
   assert.throws(() => parseProjectRequirementRegister(broken), /kravrad/iu);
   assert.throws(() => parseProjectRequirementRegister({ documents: [] }), /format/iu);
+});
+
+test("wording provenance survives storage and legacy ID provenance never implies observed wording", () => {
+  const { annotateRequirementTextProvenance } = load("../requirements/ingestion-register.ts");
+  const original = "K-1\nData skal\nlagres i Norge.\nK-2\nLogger skal eksporteres.";
+  const rows = annotateRequirementTextProvenance([
+    { id: "K-1", text: "Data skal lagres i Norge.", heading: "Data", pages: [], idOrigin: "source" },
+    { id: "K-2", text: "Logger skal eksporteres hver dag.", heading: "Data", pages: [], idOrigin: "source" },
+  ], original);
+  const parsed = parsePersistedRequirementRegister({ ...snapshot, requirementRegister: { version: 2, rows } }, snapshot);
+  assert.equal(parsed[0].textOrigin, "observed");
+  assert.equal(parsed[0].textEvidence.originalText, "Data skal\nlagres i Norge.");
+  assert.equal(original.slice(parsed[0].textEvidence.start, parsed[0].textEvidence.end), parsed[0].textEvidence.originalText);
+  assert.equal(parsed[1].textOrigin, "reconstructed");
+  assert.equal(parsed[1].textEvidence, undefined);
+  assert.equal(parsePersistedRequirementRegister(artifact(), snapshot)[0].textOrigin, "unknown");
+  rows[0].textEvidence.end++;
+  assert.throws(() => parsePersistedRequirementRegister({ ...snapshot, requirementRegister: { version: 2, rows } }, snapshot), /opprinnelse/u);
 });

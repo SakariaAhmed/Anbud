@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { ChatSourceReference } from "@/lib/types";
+import { unsupportedSourceLocators } from "@/lib/source-locators";
 import { extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 
 const quotationText = (value: string) => value.replace(/\*\*([^*]+)\*\*/gu, "$1").replace(/__([^_]+)__/gu, "$1");
@@ -76,9 +77,15 @@ export class SourceQuoteIndex {
     if (!this.projection) {
       const positions: number[] = [];
       const characters: string[] = [];
+      const emphasis = new Set<number>();
+      // Only balanced emphasis is typography. Keep original offsets and
+      // characters in every returned span, including interior delimiters.
+      for (const match of source.matchAll(/\*\*([^*]+)\*\*|__([^_]+)__/gu)) {
+        for (const offset of [0, 1, match[0].length - 2, match[0].length - 1]) emphasis.add(match.index + offset);
+      }
       for (let at = 0; at < source.length; at++) {
         const character = source[at];
-        if (character === "\u0000") continue;
+        if (character === "\u0000" || emphasis.has(at)) continue;
         const next = /\s/u.test(character) ? " " : /[‐‑‒–—]/u.test(character) ? "-" : character;
         if (next === " " && (!characters.length || characters.at(-1) === " ")) continue;
         characters.push(next);
@@ -141,6 +148,10 @@ export function validateChatEvidence(answer: string, available: ChatSourceRefere
   }
   for (const paragraph of answer.split(/\n\s*\n/u)) {
     const sources = [...paragraph.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => available[Number(match[1]) - 1]);
+    const invalidLocators = unsupportedSourceLocators(paragraph, sources);
+    if (invalidLocators.some(locator => sources.length > 0 || !options.userText?.includes(locator))) {
+      throw new SourceEvidenceValidationError("CHAT_SOURCE_REFERENCE_INVALID", "En side- eller kapittelhenvisning kan ikke bekreftes i den oppgitte kilden. Fjern den usikre plasseringen og behold bare dokumenterte opplysninger.");
+    }
     // The prompt reserves «…» for source quotations. Ordinary quotation marks
     // without citations also support conversation such as Svar "Ja" eller "Nei".
     const quotes = quotedSourcePassages(paragraph, sources.length > 0);

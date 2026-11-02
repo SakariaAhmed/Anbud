@@ -360,12 +360,34 @@ export interface CustomerAnalysisResult {
 
 export interface SourceEvidenceManifest {
   version: 1;
+  row_confidence?: Array<{
+    index: number; ref: string; row_hash: string;
+    level: "documented_excerpt" | "needs_review" | "unknown";
+    reasons: string[];
+  }>;
   references: Array<{ path: string; source: ChatSourceReference }>;
-  issues?: Array<{ path: string; code: "unverified_quote" | "unknown_requirement"; message: string }>;
+  issues?: Array<{ path: string; code: "unverified_quote" | "unknown_requirement" | "unverified_locator"; message: string }>;
 }
 
 export interface SolutionEvaluationResult {
   source_evidence?: SourceEvidenceManifest;
+  criterion_coverage?: Array<{
+    criterion_id: string;
+    criterion: string;
+    origin: "suggested";
+    assessment: "Godt" | "Dårlig" | "Mangler" | "Uklart";
+    rationale: string;
+    evidence: string;
+    requirement_references: string[];
+    criterion_source?: ChatSourceReference;
+    review_required: boolean;
+  }>;
+  evidence_review?: {
+    status: "coverage_downgraded";
+    message: string;
+    affected_requirement_references: string[];
+    withheld_paths: string[];
+  };
   customer_document_id?: string | null;
   solution_document_id?: string | null;
   evaluated_generated_artifact_id?: string | null;
@@ -551,7 +573,7 @@ export interface ProjectRequirementRegister {
     source_revision: number;
     document_ready: boolean;
     register_available: boolean;
-    rows: Array<{ id: string; text: string; heading: string; pages: number[]; id_origin: "source" | "inferred" | "generated"; original_id?: string }>;
+    rows: Array<{ id: string; text: string; heading: string; pages: number[]; id_origin: "source" | "inferred" | "generated"; original_id?: string; text_origin?: "observed" | "reconstructed" | "unknown"; original_text?: string }>;
   }>;
 }
 

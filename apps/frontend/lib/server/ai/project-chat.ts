@@ -614,7 +614,7 @@ export function selectProjectChatArtifactSections(input: {
       return section.split(/\n\s*\n/u).filter(text => text.trim()).map((text, paragraphOrder) => {
         const comparable = comparableChatText(text), title = comparableChatText(heading);
         const score = (explicitlyNamed ? 100 : 0) + terms.reduce((sum, term) => sum + (title.includes(term) ? 3 : 0) + (comparable.includes(term) ? 1 : 0), 0);
-        return { artifact, heading, text, score, artifactOrder, sectionOrder, paragraphOrder };
+        return { artifact, heading, text, score, explicitlyNamed, artifactOrder, sectionOrder, paragraphOrder };
       });
     });
   }).sort((a, b) => b.score - a.score || a.artifactOrder - b.artifactOrder || a.sectionOrder - b.sectionOrder || a.paragraphOrder - b.paragraphOrder);
@@ -932,6 +932,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sourceType: "chat_attachment", title: attachment.title, text: attachment.rawText, revision: 0,
   }));
   const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
+  // An analysis being present is not evidence for an arbitrary factual query.
+  // Keep explicit questions about generated interpretation available while
+  // factual source questions still obey the retrieval gate on large projects.
+  const asksForAvailableInterpretation = artifactSections.some(section => section.explicitlyNamed)
+    || Boolean(input.customerAnalysis && /\b(?:kundeanalys(?:e|en)|analysen|prosjektoversikt)\b/iu.test(input.question))
+    || Boolean(input.solutionEvaluation && /\b(?:løsningsvurdering(?:en)?|vurderingen)\b/iu.test(input.question));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
     const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
     const revision = artifact.artifact_version ?? 0;
@@ -1130,9 +1136,11 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     retrievalTelemetry: retrievalResult.telemetry,
     abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsDocumentEvidence && !promptAttachments.length
       ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
+      : retrievalResult.telemetry.requirementLookupTruncated && !fullDocumentsInContext
+      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Oppgi dokument og kapittel, slik at ingen forekomster utelates fra svaret."
       : unresolvedRequirementId
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
-      : needsDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !input.customerAnalysis && !input.solutionEvaluation && !generatedArtifacts.length && !input.sessionSummary
+      : needsDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !asksForAvailableInterpretation
       ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert${retrievalResult.telemetry.usedBroadenedSearch ? " etter et nytt søk" : " i de tilgjengelige kildene"}. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`
       : null,
   };

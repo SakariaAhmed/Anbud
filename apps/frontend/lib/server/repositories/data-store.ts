@@ -2225,7 +2225,7 @@ export async function saveDocumentIngestionResult(input: {
           }
         : undefined,
     });
-    if (input.requirementRegister) artifact.requirementRegister = { version: 1, rows: input.requirementRegister };
+    if (input.requirementRegister) artifact.requirementRegister = { version: 2, rows: input.requirementRegister };
     await storeDocumentIntelligenceArtifact(artifact)
       .then(async (stored) => {
         if (!stored) return;

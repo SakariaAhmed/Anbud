@@ -86,7 +86,7 @@ export interface DocumentEvidenceUnit {
 }
 
 export interface DocumentIntelligenceArtifact {
-  requirementRegister?: { version: 1; rows: RequirementLedgerEntry[] };
+  requirementRegister?: { version: 1 | 2; rows: RequirementLedgerEntry[] };
   schemaVersion: typeof DOCUMENT_INTELLIGENCE_SCHEMA_VERSION;
   compilerVersion: typeof DOCUMENT_INTELLIGENCE_COMPILER_VERSION;
   documentId: string;
