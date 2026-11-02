@@ -28,3 +28,9 @@ test("short numeric quotations retain original context while ordinary labels nev
   const later = { ...input, raw_text: "Den gamle fristen var 130 dager.\nDen nye fristen er 30 dager." };
   assert.equal(bindDocumentSourceEvidence(later, "30 dager").original_quote, "Den nye fristen er 30 dager.");
 });
+
+test("a quoted numeric value cannot be the fractional tail of a decimal", () => {
+  assert.equal(bindDocumentSourceEvidence({ ...document, raw_text: "Tilgjengeligheten skal være 99,99 %." }, "99 %"), null);
+  assert.equal(bindDocumentSourceEvidence({ ...document, raw_text: "Fristen er 1,30 dager." }, "30 dager"), null);
+  assert.ok(bindDocumentSourceEvidence({ ...document, raw_text: "Tilgjengeligheten skal være 99,99 %." }, "99,99 %"));
+});

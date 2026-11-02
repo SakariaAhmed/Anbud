@@ -29,7 +29,13 @@ export class SourceQuoteIndex {
     const source = this.source;
     if (!excerpt.trim()) return null;
     const startAt = options.startAt ?? 0;
-    const bounded = (start: number, end: number) => !options.tokenBoundaries || (!/[\p{L}\p{N}]$/u.test(source.slice(Math.max(0, start - 2), start)) && !/^[\p{L}\p{N}]/u.test(source.slice(end, end + 2)));
+    const bounded = (start: number, end: number) => {
+      if (!options.tokenBoundaries) return true;
+      const before = source.slice(Math.max(0, start - 2), start), after = source.slice(end, end + 2);
+      return !/[\p{L}\p{N}]$/u.test(before) && !/^[\p{L}\p{N}]/u.test(after)
+        && !( /^\d/u.test(source.slice(start, end)) && /\d[.,]$/u.test(before))
+        && !( /\d$/u.test(source.slice(start, end)) && /^[.,]\d/u.test(after));
+    };
     const candidates = Array.from(new Set([excerpt, quotationText(excerpt)]));
     for (const candidate of candidates) {
       let at = source.indexOf(candidate, startAt);
