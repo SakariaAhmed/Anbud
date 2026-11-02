@@ -833,6 +833,10 @@ test("current question controls evidence gates and named source scope, independe
         await checkFrame(question, { promptAttachments: legalAttachment }, true);
       for (const question of ["Hva sier vedlegget om K-42 i forhold til kravene?", "Hva sier vedlegget om leveransen i lys av kravene?", "Vurder K-42 i forhold til kravene i vedlegget.", "Vurder løsningen i forhold til kravene i vedlegget.", "Vurder vedlegget helhetlig i forhold til kravene.", "Vurder vedlegget fra kunden i lys av kravene.", "Hva sier vedlegget om K-42 mot kunden sine krav?", "Hva sier vedlegget om vern mot krav fra tredjeparter, og vurder leveransen mot kravene?"])
         await checkFrame(question, { promptAttachments: legalAttachment }, false);
+      for (const question of ["Hva sier vedlegget om leverandørens plikter mot kunden sine ansatte?", "Hva sier vedlegget om ansvar i forhold til krav fra tredjeparter?", "Hva sier vedlegget om beskyttelse mot krav fra tredjeparter?", "Hva sier vedlegget om forsikring mot krav fra tredjeparter?", "Hva sier vedlegget om sikring mot krav fra tredjeparter?", "Hva sier vedlegget om forsvar mot krav fra tredjeparter?", "Hva sier vedlegget om vern mot alle krav fra tredjeparter?", "Hva sier vedlegget om ansvar i lys av krav fra tredjeparter?"])
+        await checkFrame(question, { promptAttachments: legalAttachment }, true);
+      for (const question of ["Hva sier vedlegget om K-42 i forhold til prosjektet?", "Hva sier vedlegget om K-42 mot kunden sine behov?", "Hva sier vedlegget om ansvar i forhold til krav fra tredjeparter, og vurder K-42 i lys av kravene?"])
+        await checkFrame(question, { promptAttachments: legalAttachment }, false);
       for (const constraint of styleConstraints)
         await checkFrame(`Oppsummer vedlegget og unngå ${constraint}.`, { promptAttachments: attachment }, true);
       for (const suffix of ["fagspråk, svar på hva kundens bindende exit-frist er", "fagspråk og gi meg kundens bindende exit-frist", "kundeanalysen"])

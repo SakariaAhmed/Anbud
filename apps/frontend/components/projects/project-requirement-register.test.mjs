@@ -35,7 +35,7 @@ test("empty successful register reads warm the key without timing later ingestio
     payload = register("empty-then-ready", 1, []);
     let cleanup = await mount(); flushPaint(); assert.equal(metrics.length, 0);
     payload = register("empty-then-ready", 1, [row]);
-    await timer(); flushPaint(); assert.equal(metrics.length, 0, "Polling must not fold ingestion wait into a first-read render sample.");
+    timer(); await new Promise(setImmediate); flushPaint(); assert.equal(metrics.length, 0, "Polling must not fold ingestion wait into a first-read render sample.");
     cleanup(); cleanup = await mount(); flushPaint();
     assert.equal(metrics.at(-1).cacheState, "warm"); cleanup();
 
@@ -48,12 +48,12 @@ test("empty successful register reads warm the key without timing later ingestio
 
     payload = register("failed-read", 1, [row]); respond = () => new Response(null, { status: 503 });
     cleanup = await mount(); cleanup(); respond = undefined;
-    cleanup = await mount(); flushPaint(); assert.equal(metrics.at(-1).cacheState, "cold"); cleanup();
+    cleanup = await mount(); flushPaint(); assert.equal(metrics.at(-1).documentId, "failed-read"); assert.equal(metrics.at(-1).cacheState, "cold"); cleanup();
 
     let resolve; payload = register("aborted-read", 1, [row]);
     respond = () => new Promise(done => { resolve = done; });
     cleanup = await mount(); cleanup(); resolve(Response.json(payload)); await new Promise(setImmediate); respond = undefined;
-    cleanup = await mount(); flushPaint(); assert.equal(metrics.at(-1).cacheState, "cold"); cleanup();
+    cleanup = await mount(); flushPaint(); assert.equal(metrics.at(-1).documentId, "aborted-read"); assert.equal(metrics.at(-1).cacheState, "cold"); cleanup();
   } finally {
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete globalThis[key]; else globalThis[key] = value; }
     delete globalThis.__registerMetricHooks; rmSync(directory, { recursive: true, force: true });

@@ -1089,12 +1089,14 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     ...attachmentReferences.map(source => source.document_title.trim().replace(/[‐‑‒–—]/gu, "-")).filter(Boolean)
       .map(title => `${title.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}${!/\d/u.test(title) ? (/e$/iu.test(title) ? "(?:n|t)?" : "(?:en|et)?") : ""}`)].join("|");
   const comparisonSource = `(?<![\\p{L}\\p{N}])(?:${comparisonNames}|det|den)(?![\\p{L}\\p{N}])`;
-  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
+  const requirementComparisonTarget = `${comparisonTargetModifiers}(?:prosjekt(?:et|ets)?|krav[\\p{L}\\p{N}]*|kundekrav[\\p{L}\\p{N}]*|evalueringskriter[\\p{L}\\p{N}]*|konkurransegrunnlag[\\p{L}\\p{N}]*${requestedIds.length ? `|${requestedIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|")}` : ""})(?![\\p{L}\\p{N}])`;
   // Legal-claim readings of "krav" are attachment subject matter.
   // Check each relation separately so a later genuine comparison remains gated.
-  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\b)))\\s+${comparisonTarget}`, "giu");
+  const standaloneComparisons = new RegExp(`\\b(?:kontra|mot(?!\\s+kunden\\b(?!\\s+sine\\s+(?:krav(?:ene|et)?|behov(?:ene|et)?)(?![\\p{L}\\p{N}]))))\\s+${comparisonTarget}`, "giu");
+  const isThirdPartyClaim = (match: RegExpMatchArray) => /\bkrav(?:ene|et)?$/iu.test(match[0])
+    && /^\s+fra\s+tredjepart[\p{L}]*(?![\p{L}\p{N}])/iu.test(comparisonQuestion.slice((match.index ?? 0) + match[0].length));
   const hasStandaloneComparison = Array.from(comparisonQuestion.matchAll(standaloneComparisons)).some(match =>
-    !(/^mot\s+krav(?:ene|et)?(?![\p{L}\p{N}])/iu.test(match[0]) && /\b(?:vern|innsigelser|skadesløs)\s*$/iu.test(comparisonQuestion.slice(0, match.index))));
+    !isThirdPartyClaim(match) && !(/^mot\s+krav(?:ene|et)?(?![\p{L}\p{N}])/iu.test(match[0]) && /\b(?:vern|innsigelser|skadesløs)\s*$/iu.test(comparisonQuestion.slice(0, match.index))));
   // Bounded manner/source modifiers may intervene, but topic complements such
   // as "om tiltak mot datatap" must not be consumed as comparison modifiers.
   const comparisonModifiers = `(?:\\s+(?:samlet|grundig|nøye|sett|fra\\s+leverandøren)){0,3}`;
@@ -1107,7 +1109,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     || hasStandaloneComparison
     // These relations also compare requirement targets when their subject is
     // not adjacent. Solution/contract topic readings are deliberately excluded.
-    || new RegExp(`\\b(?:i\\s+forhold\\s+til|i\\s+lys\\s+av)\\s+${requirementComparisonTarget}`, "iu").test(comparisonQuestion)
+    || Array.from(comparisonQuestion.matchAll(new RegExp(`\\b(?:i\\s+forhold\\s+til|i\\s+lys\\s+av)\\s+${requirementComparisonTarget}`, "giu"))).some(match => !isThirdPartyClaim(match))
     || new RegExp(`\\b(?:(?:det|den|vedlegget|filen|fila|dokumentet)\\s+(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker|er\\s+i\\s+tråd)|(?:dekker|tilfredsstiller|stemmer|samsvarer|avviker)\\s+(?:det|den|vedlegget|filen|fila|dokumentet))\\s+(?:(?:med|fra|på)\\s+)?${comparisonTarget}`, "iu").test(comparisonQuestion);
   const attachmentQuestion = !mentionsProjectEvidence && !comparesSources && attachmentReferences.some(source =>
     requestsChatSource(input.question, ["vedlegg", "chatvedlegg", "fil", "fila", "dokument", source.document_title], true)

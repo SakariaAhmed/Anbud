@@ -1018,7 +1018,7 @@ Logs: `/private/tmp/anbud-r16-before.log`,
 build. No paid/provider, production or new browser/HTTP proof ran. All four PR
 checks passed on preceding `7107f9bc`; the new correction requires fresh
 council, CI and CodeRabbit review. The semantic/holdout, budget, runtime and
-external acceptance gaps remain open; all 18 recommendations are not complete.
+external acceptance gaps remain open; the full set of 18 recommendations is not complete.
 
 ## Round 16 corrections: legal topics, requirement comparisons and style lists
 
@@ -1095,4 +1095,67 @@ Logs: `/private/tmp/anbud-r17-before.log`,
 build. No provider/paid, production or new browser/HTTP proof ran. All four
 checks passed on preceding `eb773b18`; this correction requires fresh review
 and CI. Council satisfaction, release quality, budget and runtime/external
-acceptance remain open; all 18 recommendations are not complete.
+acceptance remain open; the full set of 18 recommendations is not complete.
+
+## Round 17 corrections: explicit legal claims and non-vacuous polling proof
+
+Round 17 rejected `e40740a3` (both council members 8/10). The `kunden sine`
+exception accepted every following noun and newly refused employee-topic
+reading. The requirement-relation fallback also newly refused explicit legal
+claims after `i forhold til`. Both are regressions, not language-debt exceptions.
+
+The added customer-target case now requires `sine krav` or `sine behov` (including
+definite endings); `plikter mot kunden sine ansatte` remains attachment reading.
+The standalone relation checks recognize `krav fra tredjepart…` as an explicit
+legal-claim topic, independent of the preceding protection/insurance noun. This
+also covers a bounded modifier such as `alle krav`. Each match is considered
+separately; a subsequent genuine requirement comparison still keeps all gates.
+The optional explicit `prosjektet` comparison target is now included. Solution,
+contract, bid and needs topics are not added to the requirement-only rule.
+
+The previous polling-proof claim is retracted. `await timer()` awaited a callback
+that returned void; its assertion could run before the poll finished, and cleanup
+then aborted the poll. The production first-read-only behavior was correct, but
+that assertion did not prove it. The test now yields through `setImmediate`
+after invoking the timer, then runs paint callbacks before checking metrics.
+Failed-read and aborted-read metrics also assert their document IDs, so an older
+cold sample cannot satisfy those checks.
+
+Mutation checks outside the checkout confirm the correction: the old test passes
+a component that incorrectly reports the later populated poll, while the corrected
+test fails it. The corrected test also rejects components that omit the failed-read
+or aborted-read metric. Logs: `/private/tmp/anbud-r18-old-mutant-proof.log` and
+`/private/tmp/anbud-r18-mutant-{populated-poll,missing-failed-metric,missing-aborted-metric}.log`.
+The expanded chat regression fails on the prior owner. All 52 focused tests pass.
+No production register component or sampling-protocol change is made this round.
+
+Language limits remain concrete: `de tekniske kravene`, `de funksjonelle kravene`
+and `kundens overordnede krav` can evade the bounded target modifiers; `ift`,
+`med hensyn til`, `ut fra`, `med tanke på` and unrecognized compounds are not
+covered. These ordinary tender phrasings remain known debt, not a universal
+intent-correctness claim. Existing generic source-location, sentence-level,
+chapter-context and accounting-resume limits remain. A `processing` dependency
+change can restart the register effect without a new view opening; that older
+measurement limitation is unchanged. No schema, model, fixture, threshold or
+budget change is included.
+
+CodeRabbit's unverified wording note on recommendation status is clarified:
+“the full set of 18 recommendations is not complete” describes the aggregate
+acceptance gate. It does not claim that every individual recommendation remains
+unfinished. Completed local slices and their distinct acceptance gaps retain
+their recorded status.
+
+Final verification: 1,532 frontend + 202 root tests pass (1,734 total), zero
+failures/skips, plus parser goldens. Production build/types, full lint,
+schema/workflow/release checks, secret scan and whitespace pass. Both final-code
+recorded SQL regression gates pass (116 original + 55 extended), zero provider
+requests, missing recorded inputs or memory fallback. Conceptual 30/36, MRR .565,
+and stress 18/20 remain unchanged and below release targets.
+
+Logs: `/private/tmp/anbud-r18-before.log`, `/private/tmp/anbud-r18-focused.log`,
+`/private/tmp/anbud-r18-final-tests.log`, `/private/tmp/anbud-r18-final-build.log`,
+`/private/tmp/anbud-r18-final-lint.log`, `/private/tmp/anbud-r18-retrieval.log`,
+`/private/tmp/anbud-r18-extended.log`, plus the mutation logs above. The owned
+AI-disabled app restarted after build. No provider/paid, production or new
+browser/HTTP proof ran. Fresh council, CI and CodeRabbit review are required.
+Semantic/holdout, budget, runtime and external acceptance gaps remain open.
