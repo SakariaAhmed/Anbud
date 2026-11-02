@@ -9,6 +9,9 @@ export const RUNNER_VERSION = "rag-holdout-http.v1";
 export const AUTHORIZED_LIMIT_USD = 10;
 export const PRIOR_ACCOUNTED_USD = 6.331864;
 export const MAX_PHASE_USD = 3.668136;
+// Separate $10 authorization explicitly granted after the historical ledger was
+// lost. It never imports, resets or reconstructs that earlier ledger's charges.
+export const SEPARATE_EVALUATION_AUTHORIZATION = "rag-release-evaluation-v2-2026-11-02";
 export const sha256 = value => createHash("sha256").update(typeof value === "string" || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest("hex");
 const micros = value => Math.round(value * 1e6);
 
@@ -26,8 +29,24 @@ export function assertFrozenCode({ commit, status }, expectedCommit) {
 
 /** Read-only inspection of the active guard; never reserve, refill or open a ledger. */
 export function validateBudget(snapshot, { phase, phaseCapUsd, baseline } = {}) {
-  requireCondition(Number.isFinite(phaseCapUsd) && phaseCapUsd > 0 && phaseCapUsd <= MAX_PHASE_USD, "PHASE_CAP", "An explicit finite phase cap no greater than the remaining authorization is required.");
-  requireCondition(snapshot?.accountingPolicy === ACCOUNTING_POLICY && validatedBudgetLimit(snapshot) === AUTHORIZED_LIMIT_USD, "BUDGET_IDENTITY", "The existing $10 cumulative budget and its accounting owner are required.");
+  const authorization = snapshot?.evaluationAuthorization;
+  const separate = authorization !== undefined;
+  if (separate) {
+    // The operator records this receipt only for the explicit new grant, after
+    // prior paid phases settle. Pin their exact rows before the first checkpoint.
+    requireCondition(authorization?.id === SEPARATE_EVALUATION_AUTHORIZATION
+      && authorization.userStatement === "Authorize a new $10 evaluation cap"
+      && authorization.authorizedLimitUsd === AUTHORIZED_LIMIT_USD
+      && typeof authorization.observedAt === "string" && Number.isFinite(Date.parse(authorization.observedAt))
+      && authorization.ledgerCreatedAt === snapshot.createdAt
+      && Number.isSafeInteger(authorization.priorRequestCount) && authorization.priorRequestCount >= 0
+      && Array.isArray(snapshot.requests) && authorization.priorRequestCount <= snapshot.requests.length
+      && /^[a-f0-9]{64}$/u.test(authorization.priorRequestsSha256 ?? "")
+      && sha256(snapshot.requests.slice(0, authorization.priorRequestCount)) === authorization.priorRequestsSha256,
+    "BUDGET_AUTHORIZATION", "The separate evaluation authorization must identify this ledger and preserve every earlier phase request.");
+  }
+  requireCondition(Number.isFinite(phaseCapUsd) && phaseCapUsd > 0 && phaseCapUsd <= (separate ? AUTHORIZED_LIMIT_USD : MAX_PHASE_USD), "PHASE_CAP", "An explicit finite phase cap no greater than the applicable authorization is required.");
+  requireCondition(snapshot?.accountingPolicy === ACCOUNTING_POLICY && validatedBudgetLimit(snapshot) === AUTHORIZED_LIMIT_USD, "BUDGET_IDENTITY", "The authorized $10 ledger and its accounting owner are required.");
   requireCondition(snapshot.proxyRequestPurposeVersion === 1, "PROXY_REQUEST_PURPOSE", "Restart the owned budget proxy with operation classification before setup or model requests.");
   requireCondition(typeof snapshot.createdAt === "string" && Number.isFinite(Date.parse(snapshot.createdAt)), "BUDGET_IDENTITY", "The cumulative ledger must have an identity.");
   requireCondition(typeof phase === "string" && phase.length > 0 && snapshot.proxyPhase === phase && Number.isFinite(snapshot.proxyPhaseBudgetUsd) && snapshot.proxyPhaseBudgetUsd > 0 && snapshot.proxyPhaseBudgetUsd <= phaseCapUsd, "PHASE_GUARD", "The active proxy phase must match --proxy-phase and enforce --phase-cap-usd or less.");
@@ -35,10 +54,10 @@ export function validateBudget(snapshot, { phase, phaseCapUsd, baseline } = {}) 
     requireCondition(Number.isFinite(row.reservedUsd) && row.reservedUsd > 0 && typeof row.id === "string", "BUDGET_ROWS", "Malformed cumulative budget row.");
     return sum + micros(accountedCostUpperBound(row));
   }, 0) / 1e6;
-  requireCondition(micros(accounted) === micros(snapshot.accountedUpperBoundUsd) && micros(snapshot.remainingUsd) === micros(AUTHORIZED_LIMIT_USD - accounted) && accounted >= PRIOR_ACCOUNTED_USD, "BUDGET_RESET", "Cumulative accounting is inconsistent or predates the already spent $6.331864; resetting is forbidden.");
+  requireCondition(micros(accounted) === micros(snapshot.accountedUpperBoundUsd) && micros(snapshot.remainingUsd) === micros(AUTHORIZED_LIMIT_USD - accounted) && accounted >= (separate ? 0 : PRIOR_ACCOUNTED_USD), "BUDGET_RESET", "Cumulative accounting is inconsistent or predates the applicable ledger history; resetting is forbidden.");
   requireCondition(!snapshot.requests.some(row => ["reserved", "pending"].includes(row.status)), "BUDGET_BUSY", "Finish outstanding proxy requests before this phase; unresolved reservations must remain charged.");
   if (baseline) {
-    requireCondition(snapshot.createdAt === baseline.createdAt && snapshot.accountingPolicy === baseline.accountingPolicy && snapshot.proxyPhase === baseline.proxyPhase && snapshot.proxyPhaseBudgetUsd === baseline.proxyPhaseBudgetUsd && sha256(snapshot.requests.slice(0, baseline.requests.length)) === sha256(baseline.requests), "BUDGET_RESET", "The checkpoint's cumulative budget history or phase guard changed.");
+    requireCondition(sha256(snapshot.evaluationAuthorization ?? null) === sha256(baseline.evaluationAuthorization ?? null) && snapshot.createdAt === baseline.createdAt && snapshot.accountingPolicy === baseline.accountingPolicy && snapshot.proxyPhase === baseline.proxyPhase && snapshot.proxyPhaseBudgetUsd === baseline.proxyPhaseBudgetUsd && sha256(snapshot.requests.slice(0, baseline.requests.length)) === sha256(baseline.requests), "BUDGET_RESET", "The checkpoint's cumulative budget history or phase guard changed.");
   }
   const phaseSpent = snapshot.requests.filter(row => row.phase === phase).reduce((sum, row) => sum + micros(accountedCostUpperBound(row)), 0) / 1e6;
   return { remainingUsd: snapshot.remainingUsd, phaseRemainingUsd: snapshot.proxyPhaseBudgetUsd - phaseSpent };

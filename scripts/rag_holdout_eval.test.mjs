@@ -168,6 +168,43 @@ test("active finite proxy guard enforces existing $10 history and refuses reset,
   assert.throws(() => validateBudget(pending, guard), /outstanding/u);
 });
 
+test("separate authorized evaluation ledger preserves earlier phase charges without recreating historical spend", () => {
+  const snapshot = { ...budget(), createdAt: "2026-11-02T17:00:00Z", accountedUpperBoundUsd: 1.25, remainingUsd: 8.75,
+    proxyPhaseBudgetUsd: 6, requests: [{ id: "retrieval", phase: "retrieval-v2", status: "uncertain", model: "gpt-5.4-mini", reservedUsd: 1.25 }] };
+  snapshot.evaluationAuthorization = { id: "rag-release-evaluation-v2-2026-11-02", userStatement: "Authorize a new $10 evaluation cap", authorizedLimitUsd: 10,
+    observedAt: "2026-11-02T16:59:00Z", ledgerCreatedAt: snapshot.createdAt, priorRequestCount: snapshot.requests.length, priorRequestsSha256: sha256(snapshot.requests) };
+  const separateGuard = { phase: guard.phase, phaseCapUsd: 6 };
+  assert.deepEqual(validateBudget(snapshot, separateGuard), { remainingUsd: 8.75, phaseRemainingUsd: 6 });
+  assert.throws(() => validateBudget({ ...snapshot, evaluationAuthorization: undefined }, separateGuard));
+  assert.throws(() => validateBudget({ ...snapshot, evaluationAuthorization: {} }, separateGuard));
+  assert.throws(() => validateBudget(snapshot, { ...separateGuard, phaseCapUsd: 10.000001 }));
+  assert.throws(() => validateBudget({ ...snapshot, limitUsd: 11 }, separateGuard));
+  assert.throws(() => requireBudgetHeadroom(snapshot, separateGuard, 6.000001));
+  for (const field of ["id", "userStatement", "authorizedLimitUsd", "observedAt", "ledgerCreatedAt", "priorRequestCount", "priorRequestsSha256"]) {
+    const changed = clone(snapshot); changed.evaluationAuthorization[field] = "changed";
+    assert.throws(() => validateBudget(changed, separateGuard), field);
+  }
+  const reset = clone(snapshot); reset.requests = []; reset.accountedUpperBoundUsd = 0; reset.remainingUsd = 10;
+  assert.throws(() => validateBudget(reset, separateGuard), /authorization/u);
+  const altered = clone(snapshot); altered.requests[0].id = "replacement";
+  assert.throws(() => validateBudget(altered, separateGuard), /authorization/u);
+  const changedReceipt = clone(snapshot); changedReceipt.evaluationAuthorization.observedAt = "2026-11-02T16:58:00Z";
+  assert.throws(() => validateBudget(changedReceipt, { ...separateGuard, baseline: snapshot }), /history/u);
+  const spent = clone(snapshot); spent.requests.push({ id: "answer", phase: guard.phase, status: "uncertain", reservedUsd: 6 });
+  spent.accountedUpperBoundUsd += 6; spent.remainingUsd -= 6;
+  assert.equal(validateBudget(spent, { ...separateGuard, baseline: snapshot }).remainingUsd, 2.75);
+  assert.throws(() => requireBudgetHeadroom(spent, { ...separateGuard, baseline: snapshot }), /cannot fund/u);
+  const broadGuard = { phase: guard.phase, phaseCapUsd: 10 };
+  const exhausted = clone(spent); exhausted.proxyPhaseBudgetUsd = 10;
+  exhausted.requests.push({ id: "last", phase: guard.phase, status: "uncertain", reservedUsd: 2.75 });
+  exhausted.accountedUpperBoundUsd = 10; exhausted.remainingUsd = 0;
+  assert.equal(validateBudget(exhausted, broadGuard).remainingUsd, 0);
+  assert.throws(() => requireBudgetHeadroom(exhausted, broadGuard, 0.000001), /cannot fund/u);
+  const pending = clone(snapshot); pending.requests.push({ id: "pending", phase: guard.phase, status: "reserved", reservedUsd: 0.1 });
+  pending.accountedUpperBoundUsd += 0.1; pending.remainingUsd -= 0.1;
+  assert.throws(() => validateBudget(pending, separateGuard), /outstanding/u);
+});
+
 function owned() {
   const status = { running: true, directory: "/private/owned", baseUrl: "http://127.0.0.1:4338", aiMode: "budgeted loopback model proxy", ports: { postgres: 55448, postgrest: 55449, blob: 55450 } };
   const runtime = { databaseUrl: "postgresql://postgres:private-password@127.0.0.1:55448/postgres", sessions: { adminCookie: "bidsite_session=private-cookie" }, env: { DATA_API_URL: "http://127.0.0.1:55449", DATA_API_SERVICE_ROLE_KEY: "private-token", PROJECT_JOB_WORKER_TOKEN: "private-worker", PROJECT_JOB_WORKER_PROCESS: "1", OPENAI_BASE_URL: "http://127.0.0.1:4340/v1", OPENAI_API_KEY: "local-budget-proxy-only", RAG_MODEL_RERANK: "on", APP_PUBLIC_ORIGIN: status.baseUrl, AZURE_STORAGE_CONTAINER: "anbud-system-test", AZURE_STORAGE_EMULATOR_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=anbudtest;AccountKey=private-key;BlobEndpoint=http://127.0.0.1:55450/anbudtest" } };

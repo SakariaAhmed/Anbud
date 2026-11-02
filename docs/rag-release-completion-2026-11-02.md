@@ -1223,3 +1223,80 @@ is not affected-workflow/browser proof. No provider/paid or production operation
 ran. Fresh council, CI and CodeRabbit review remain required. Semantic/holdout,
 budget, runtime and external acceptance gaps remain open; the full set of 18
 recommendations is not complete.
+
+## New evaluation authorization and paid retrieval proof — 2026-11-02
+
+After both round-19 council members accepted the code corrections at `f826c77a`
+(9/10 each) and all four PR checks passed, the user explicitly authorized:
+**“Authorize a new $10 evaluation cap.”** This is a separate evaluation pool,
+not a refill or reconstruction of the unavailable historical ledger. Production
+changes and release-gate waivers remain outside the authorization.
+
+The existing hard-cap proxy recorded 171 requests in the new private ledger at
+`tmp/rag-evaluation-2026-11-02-v2/budget.json`. Its accounted upper bound is
+**$1.278359**, leaving **$8.721641** of the new $10 cap. Retrieval had a separate
+$2 phase cap. All requests settled before the proxy was stopped; no paid holdout
+or feature run has started. The historical $6.331864 is not imported into this
+ledger. The old ledger remains unavailable and will not be recreated.
+
+Both unchanged retrieval release gates passed on application code `f826c77a`,
+using real disposable PostgreSQL, recorded embeddings and live `gpt-5.4-mini`
+reranking (low reasoning, default service tier):
+
+| Suite/group | Result | MRR |
+| --- | --- | --- |
+| Original gate, 116 cases | Passed | — |
+| ID lookup | 60/60 | 1.0 |
+| Conceptual recall at 5 | 35/36 | 0.893519 |
+| Retrieval held-out group | 20/20 | 0.975 |
+| Extended gate, 55 cases | Passed | — |
+| Stress | 20/20 | 1.0 |
+| Follow-up | 5/5 | 1.0 |
+| Tender IDs | 23/23 | 1.0 |
+| Amendment | 2/2 | 1.0 |
+| Missing ID | 5/5 correct low-evidence results | — |
+
+These live-rerank results supersede the earlier failing conceptual/stress scores
+for this evaluated configuration. They do not establish answer grounding or a
+semantic holdout pass. All cases and thresholds stayed unchanged. Both suites
+report zero embedding requests, missing recorded inputs and memory fallback.
+The original suite used 116 successful model reranks. The extended suite issued
+55 requests and used 54 model reranks: the `K-4.2.1` Hålandsvik request reached
+its 600-token output limit and used the normal heuristic fallback. That case
+passed, and its result and charge are retained without a rerun.
+
+Evidence is retained under `tmp/rag-evaluation-2026-11-02-v2/`, including both
+JSON reports/logs, the authorization receipt, run manifest, budget snapshot and
+`retrieval-evidence-index.json`. Report SHA-256 values:
+
+- `retrieval-original.json`: `88acfea7a6ece30f1d3e6544442a8759f5b9233131940edc9c4e217701a94da5`
+- `retrieval-extended.json`: `188bad89537d90168aac1b050793b4eef71bef23627c3a429206cd2849b85c31`
+- `retrieval-budget-snapshot.json`: `6f4b1d79494a9c5dcb52bee8e6d61e3a0105feb685cb3170793253ea5e5ee502`
+
+The holdout validator now recognizes this explicit separate authorization through
+an operator-recorded receipt bound to the ledger creation identity and the hash
+of all 171 existing request rows. This receipt records the user's actual grant;
+it is not an external signature or an authorization service. Resume additionally
+pins the receipt and checkpoint history. The legacy profile retains its original
+$6.331864 historical minimum and $3.668136 phase ceiling. Both profiles retain
+the $10 global limit, row-derived accounting, pending-request rejection and hard
+proxy reservations. The validator is read-only and never opens or refills a
+ledger. No application behavior, model, fixture, threshold or production setting
+changes in this budget adaptation.
+
+The new regression fails on the prior validator and passes with the change.
+Focused budget/holdout/retrieval-gate tests pass 48/48. Full tests pass 1,532
+frontend + 203 root (1,735 total), zero failures/skips, plus parser goldens;
+lint, syntax and whitespace checks pass. The application build was not repeated
+for this root-script-only change; the reviewed application's build remains the
+round-19 result. Logs are `authorization-{before,focused,full-tests,lint}.log` in
+the same evidence directory. The actual retained ledger also passes the new
+validator without changing any request row.
+
+Next is a focused council/CI review of the authorization adaptation, then a
+proposed $6 semantic phase on the same ledger. The runner must still pass its
+runtime and projected-cost preflight before dispatch; the earlier $3.972449
+forecast is not a measured cost guarantee. Semantic80/smoke, feature behavior,
+latency/provider-stream/browser, pinned Docling, Entra, production and human
+acceptance remain open. The new authorization removes the old spending blocker,
+not those gates. All 18 recommendations are not complete.
