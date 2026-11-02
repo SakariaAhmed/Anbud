@@ -18,7 +18,7 @@ test("saved evidence is rechecked for every quotation and differing locations ar
 test("one stale or absent quotation invalidates the whole displayed proof", async t => {
   for (const status of [409, 422]) {
     t.mock.method(globalThis, "fetch", async (_, options) => JSON.parse(options.body).quote === source.original_quote ? Response.json({ source }) : Response.json({ error: "Unavailable" }, { status }));
-    await assert.rejects(verifyProjectSourceEvidence("project", source, new AbortController().signal), status === 409 ? /Kilden er endret/u : /ikke bekreftes/u);
+    await assert.rejects(verifyProjectSourceEvidence("project", source, new AbortController().signal), status === 409 ? /Kilden er endret/u : /ikke kontrolleres/u);
     t.mock.restoreAll();
   }
 });
@@ -66,4 +66,11 @@ test("auth, service, malformed and network failures do not claim the original qu
 test("a missing source gives a refresh action instead of a generic retry", async t => {
   t.mock.method(globalThis, "fetch", async () => new Response("Not found", { status: 404 }));
   await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), { message: "Fant ikke kilden. Oppdater prosjektet og velg en annen kildehenvisning." });
+});
+test("both short-excerpt rejection and absent quotations use neutral 422 guidance", async t => {
+  for (const error of ["Utdraget er for kort til å kontrollere med din tilgang.", "Utdraget finnes ikke ordrett i den gjeldende kilden."]) {
+    t.mock.method(globalThis, "fetch", async () => Response.json({ error }, { status: 422 }));
+    await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), { message: "Utdraget kunne ikke kontrolleres. Bruk en fullstendig kildehenvisning, eller kontroller originaldokumentet hvis du har tilgang." });
+    t.mock.restoreAll();
+  }
 });

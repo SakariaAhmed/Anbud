@@ -27,7 +27,7 @@ export async function verifyProjectSourceEvidence(projectId: string, source: Cha
       : response.status === 404
         ? "Fant ikke kilden. Oppdater prosjektet og velg en annen kildehenvisning."
       : response.status === 422
-        ? "Utdraget kunne ikke bekreftes ordrett. Kontroller originaldokumentet fra dokumentlisten."
+        ? "Utdraget kunne ikke kontrolleres. Bruk en fullstendig kildehenvisning, eller kontroller originaldokumentet hvis du har tilgang."
         : unavailable);
     const payload: unknown = await response.json().catch(failRequest);
     const value = payload && typeof payload === "object" && "source" in payload ? parseChatSourceReferences([payload.source])[0] : undefined;
