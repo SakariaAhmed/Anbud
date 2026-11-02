@@ -76,9 +76,9 @@ export function projectWorkflowBlockingReason(input: {
  * drops the shared cached list, which may predate it.
  */
 export function createProjectJobsSource(input: {
-  read: () => Promise<ProjectJobRecord[]>;
+  read: () => Promise<ProjectJobRecord[] | import("@/lib/types").ProjectActivitySnapshot>;
   invalidate: () => void;
-  onChange: (jobs: ProjectJobRecord[]) => void;
+  onChange: (jobs: ProjectJobRecord[], automaticAnalysis?: import("@/lib/types").AutomaticAnalysisRequest | null) => void;
 }) {
   let sequence = 0;
   let applied = 0;
@@ -90,8 +90,8 @@ export function createProjectJobsSource(input: {
       const next = await input.read();
       if (requested <= applied) return false;
       applied = requested;
-      jobs = next;
-      input.onChange(jobs);
+      jobs = Array.isArray(next) ? next : next.jobs;
+      input.onChange(jobs, Array.isArray(next) ? undefined : next.automatic_analysis);
       return true;
     },
     record(job: ProjectJobRecord) {

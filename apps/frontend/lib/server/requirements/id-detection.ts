@@ -91,7 +91,7 @@ export function isTableOrColumnHeaderRequirementMarker(markerPrefix: string) {
   );
 }
 
-function isLikelyStandardsReferenceId(value: string) {
+export function isLikelyStandardsReferenceId(value: string) {
   const compact = value.toUpperCase().replace(/[\s._-]+/g, "");
   return /^(?:ISO|IEC|NS|EN|RFC|AES|TLS|SSL|SHA|HTTP|HTTPS|SAML|OIDC|NIST|CIS|OWASP)\d/.test(
     compact,

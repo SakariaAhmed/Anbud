@@ -1,5 +1,6 @@
 import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import { WorkflowPreconditionError } from "@/lib/server/workflow-errors";
+import { findPdfPageMarkers } from "@/lib/server/requirements/pdf-normalization";
 
 // Tender documents often publish changes in a closing "Rettelser" chapter
 // that takes precedence over the original requirement tables, which are left
@@ -53,6 +54,25 @@ function headingText(line: string) {
 
 function normalized(value: string) {
   return value.replace(/\s+/gu, " ").trim().toLocaleLowerCase("nb");
+}
+
+function correctionLocation(rawText: string, id: string, wording: string) {
+  const lines = rawText.split("\n");
+  const offsets = [0];
+  for (const line of lines) offsets.push(offsets.at(-1)! + line.length + 1);
+  const ranges = correctionsSectionRanges(lines).map(([start, end]) => ({ start: offsets[start], end: offsets[end], heading: headingText(lines[start]) }));
+  const markers = findPdfPageMarkers(rawText);
+  const located = markers.flatMap((marker, index) => ranges.flatMap(range => {
+    const start = Math.max(marker.index + marker.marker.length, range.start);
+    const end = Math.min(markers[index + 1]?.index ?? rawText.length, range.end);
+    if (end <= start) return [];
+    const text = rawText.slice(start, end);
+    return [...text.toLocaleUpperCase("nb").matchAll(REQUIREMENT_ID)].some(match => match[0] === id.toLocaleUpperCase("nb")) && normalized(text).includes(normalized(wording))
+      ? [{ marker, heading: range.heading }] : [];
+  }));
+  const pages = located.length === 1 ? Array.from({ length: located[0].marker.endPage - located[0].marker.startPage + 1 }, (_, index) => located[0].marker.startPage + index) : [];
+  const headings = new Set(located.map(item => item.heading));
+  return { pages, heading: headings.size === 1 ? [...headings][0] : undefined };
 }
 
 /** Replaces quoted spans with placeholders, so old wording or IDs inside a
@@ -323,7 +343,7 @@ export type RequirementCorrectionReport = {
 export function applyRequirementCorrections(
   ledger: RequirementLedgerEntry[],
   rawText: string,
-  options: { removeCorrectionRows?: boolean } = {},
+  options: { removeCorrectionRows?: boolean; documentId?: string; documentTitle?: string } = {},
 ): { ledger: RequirementLedgerEntry[]; originalLedger: RequirementLedgerEntry[]; report: RequirementCorrectionReport } {
   const report: RequirementCorrectionReport = { changed: [], withdrawn: [], added: [], renumbered: [], clarified: [] };
   const section = findCorrectionsSection(rawText);
@@ -615,14 +635,21 @@ export function applyRequirementCorrections(
         const newId = [named, ...statementIds].find((id) => id && !sourceIds.has(id) && !known().has(id));
         if (newId) {
           const anchor = entries.filter((entry) => idPrefix(entry.id) === idPrefix(newId)).at(-1);
+          const wording = quotes[Number(placeholders.at(-1)![1])]!;
+          // Insertion order is not source location. Only a unique, explicit
+          // page containing the new ID and wording can supply a locator.
+          const location = correctionLocation(rawText, newId, wording);
+          const pages = location.pages;
           const added: RequirementLedgerEntry = {
             id: newId,
-            text: quotes[Number(placeholders.at(-1)![1])]!,
-            pages: anchor?.pages ?? [],
+            idOrigin: "source",
+            text: wording,
+            pages,
             heading: anchor?.heading ?? "",
             ...(anchor?.documentId ? { documentId: anchor.documentId } : {}),
             ...(anchor?.documentTitle ? { documentTitle: anchor.documentTitle } : {}),
             sourceExcerpt: `Nytt krav i rettelse: ${statement}`,
+            ...(options.documentId ? { correctionSource: { documentId: options.documentId, documentTitle: options.documentTitle ?? "", pages, excerpt: statement, heading: location.heading } } : {}),
           };
           const at = anchor ? entries.indexOf(anchor) + 1 : entries.length;
           entries = [...entries.slice(0, at), added, ...entries.slice(at)];
@@ -680,6 +707,8 @@ export function applyRequirementCorrections(
             ? {
                 ...entry,
                 text,
+                pages: correctionLocation(rawText, target, quote).pages,
+                ...(options.documentId ? { correctionSource: { documentId: options.documentId, documentTitle: options.documentTitle ?? "", ...correctionLocation(rawText, target, quote), excerpt: statement } } : {}),
                 sourceExcerpt: [entry.sourceExcerpt, `Endret ved rettelse: ${statement}`, `Opprinnelig tekst: ${entry.text}`].filter(Boolean).join(" | "),
               }
             : entry,

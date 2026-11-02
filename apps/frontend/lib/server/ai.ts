@@ -1,3 +1,5 @@
+import { reviewStructuredOutputEvidence } from "@/lib/server/output-source-evidence";
+import { selectRequirementRegenerationLedger, mergeRegeneratedRequirementRows } from "@/lib/server/ai/requirement-response-regeneration";
 import "server-only";
 
 import { isRequirementDocument } from "@/lib/document-processing";
@@ -3137,7 +3139,65 @@ export async function evaluateSolutionDocument(input: {
       },
     );
   assertSubstantiveSolutionEvaluationResult(normalizedEvaluation);
-  return normalizedEvaluation;
+  return reviewSolutionEvaluationEvidence(normalizedEvaluation, {
+    documents: [input.customerDocument, input.solutionDocument, ...input.supportingDocuments].map(document => ({ document, sourceType: "project_document" as const })),
+    authoritativeRequirementRefs: (input.sourceRequirementLedger ?? []).map(row => row.id),
+    artifacts: input.systemSolutionArtifact?.id ? [{ ...input.systemSolutionArtifact, id: input.systemSolutionArtifact.id }] : [],
+  });
+
+}
+
+/** Source review may downgrade coverage after model normalization. Keep all
+ * derived summaries, scores and matched findings on the same assessment set. */
+export function reviewSolutionEvaluationEvidence(result: SolutionEvaluationResult, input: Parameters<typeof reviewStructuredOutputEvidence>[1]) {
+  const reviewed = reviewStructuredOutputEvidence(result, input);
+  const coverage = reviewed.result.requirement_coverage;
+  if (!coverage || !reviewed.evidence.issues?.length) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  let downgraded = false;
+  const changedPaths = new Set<string>();
+  const downgradedItems = new Set<RequirementCoverage["items"][number]>();
+  for (const issue of reviewed.evidence.issues) {
+    const match = /^result\.requirement_coverage\.items\.(\d+)\./u.exec(issue.path);
+    const item = match ? coverage.items[Number(match[1])] : null;
+    if (match && item?.assessment === "Godt") {
+      item.assessment = "Uklart";
+      item.rationale = "Må avklares. Kravdekningen kunne ikke bekreftes i kildegrunnlaget.";
+      item.recommendation = "Kontroller originalkilden og oppdater besvarelsen før kravet vurderes på nytt.";
+      downgradedItems.add(item);
+      changedPaths.add(`result.requirement_coverage.items.${match[1]}.rationale`);
+      changedPaths.add(`result.requirement_coverage.items.${match[1]}.recommendation`);
+      downgraded = true;
+    }
+  }
+  if (!downgraded) return { ...reviewed.result, source_evidence: reviewed.evidence };
+  coverage.good = coverage.items.filter(item => item.assessment === "Godt").length;
+  coverage.weak = coverage.items.filter(item => item.assessment === "Dårlig").length;
+  coverage.missing = coverage.items.filter(item => item.assessment === "Mangler").length;
+  coverage.unclear = coverage.items.filter(item => item.assessment === "Uklart").length;
+  coverage.coverage_summary = buildRequirementCoverageSummary(coverage.items);
+  changedPaths.add("result.requirement_coverage.coverage_summary");
+  const comparison = reviewed.result.architecture_comparison;
+  if (comparison) {
+    const previousScore = comparison.architect_solution_score;
+    const previousWinner = comparison.winner;
+    const cap = coverage.items.length ? Math.round((coverage.good + coverage.weak * 0.6 + coverage.unclear * 0.35) / coverage.items.length * 100) : 100;
+    comparison.architect_solution_score = Math.min(comparison.architect_solution_score, cap);
+    comparison.winner = reconcileArchitectureComparisonWinner(comparison.architect_solution_score, comparison.system_solution_score);
+    const comparisonChanged = comparison.architect_solution_score !== previousScore || comparison.winner !== previousWinner;
+    comparison.verdict = `${coverage.coverage_summary} ${comparisonChanged ? "Sammenligningen er oppdatert" : "Poengene og vinneren er uendret"} etter kildekontroll: arkitektløsning ${comparison.architect_solution_score}, systemløsning ${comparison.system_solution_score}. Avklar de usikre kravene før sammenligningen brukes.`;
+    changedPaths.add("result.architecture_comparison.verdict");
+  }
+  reviewed.result.document_findings = reviewed.result.document_findings.map((finding, index) => {
+    if (finding.reference_match !== "coverage") return finding;
+    const match = matchFindingToCoverageItem({ finding, coverage });
+    changedPaths.add(`result.document_findings.${index}.assessment`);
+    const recommendationChanged = match && downgradedItems.has(match);
+    if (recommendationChanged) changedPaths.add(`result.document_findings.${index}.recommendation`);
+    return { ...finding, assessment: match?.assessment ?? "Uklart", ...(recommendationChanged ? { recommendation: match.recommendation } : {}) };
+  });
+  reviewed.evidence.references = reviewed.evidence.references.filter(reference => !changedPaths.has(reference.path));
+  reviewed.evidence.issues = reviewed.evidence.issues?.filter(issue => !changedPaths.has(issue.path));
+  return { ...reviewed.result, source_evidence: reviewed.evidence };
 }
 
 function parseGeneratedArtifactDraft(
@@ -3611,10 +3671,10 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       artifactKnowledge,
     });
 
-    return generateRequirementResponseFromLedger({
+    const generated = await generateRequirementResponseFromLedger({
       projectName: input.projectName,
       baseContext: requirementAnswer.baseContext,
-      ledger: requirementContext.requirementLedger,
+      ledger: input.requirementRegeneration ? selectRequirementRegenerationLedger(requirementContext.requirementLedger, input.requirementRegeneration.parent, input.requirementRegeneration.selection) : requirementContext.requirementLedger,
       solutionDocument: input.solutionDocument,
       ledgerConfidence: requirementContext.requirementLedgerConfidence,
       requirementDocuments: requirementContext.requirementDocuments,
@@ -3623,7 +3683,9 @@ export async function generateProjectArtifact(input: ProjectArtifactGenerationIn
       model: input.model,
       onProgress: input.onProgress,
     });
+    return input.requirementRegeneration ? mergeRegeneratedRequirementRows(input.requirementRegeneration.parent, input.requirementRegeneration.selection, generated, requirementContext.requirementLedger) : generated;
   }
+  if (input.requirementRegeneration) throw new Error("Utvalgte krav kan bare regenereres fra et komplett kravregister.");
 
   const userPrompt = buildGeneralArtifactPrompt({
     generationInput: input,

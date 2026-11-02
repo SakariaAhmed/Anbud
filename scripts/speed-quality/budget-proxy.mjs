@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { once } from "node:events";
 import { openBudgetLedger, prepareRequest } from "./budget.mjs";
-import { forwardStream } from "./stream-response.mjs";
+import { forwardStream, writeProxyStreamChunk } from "./stream-response.mjs";
 
 const args = new Map(process.argv.slice(2).reduce((pairs, value, index, all) => index % 2 ? pairs : [...pairs, [value, all[index + 1]]], []));
 const ledgerPath = args.get("--ledger");
@@ -22,6 +21,8 @@ const ledger = openBudgetLedger(ledgerPath);
 const outputLimit = Number(args.get("--output-limit") ?? 8000);
 const server = createServer(async (request, response) => {
   const started = performance.now();
+  const downstream = new AbortController();
+  response.once("close", () => { if (!response.writableFinished) downstream.abort(); });
   let reservation;
   try {
     if (request.method === "GET" && request.url === "/budget") {
@@ -49,15 +50,13 @@ const server = createServer(async (request, response) => {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify(prepared.request),
-      signal: AbortSignal.timeout(240_000),
+      signal: AbortSignal.any([AbortSignal.timeout(240_000), downstream.signal]),
     });
     if (upstream.ok && prepared.request.stream) {
       response.statusCode = upstream.status;
       response.setHeader("content-type", upstream.headers.get("content-type") ?? "text/event-stream");
       response.flushHeaders();
-      const metadata = await forwardStream(upstream.body, async (chunk) => {
-        if (!response.write(chunk)) await once(response, "drain");
-      }, started);
+      const metadata = await forwardStream(upstream.body, chunk => writeProxyStreamChunk(response, chunk, downstream.signal), started);
       ledger.finish(reservation, { status: upstream.status, durationMs: Math.round(performance.now() - started), ...metadata });
       response.end();
       return;
@@ -82,6 +81,7 @@ const server = createServer(async (request, response) => {
     response.end(upstream.ok ? body : JSON.stringify({ error: { message: `Evaluation provider request failed (HTTP ${upstream.status}).`, type: "evaluation_provider_error" } }));
   } catch {
     if (reservation) ledger.finish(reservation, { status: "uncertain", durationMs: Math.round(performance.now() - started) });
+    if (response.destroyed) return;
     if (response.headersSent) response.destroy();
     else {
       response.statusCode = 400; // Non-retryable: budget refusal must stop SDK retries.

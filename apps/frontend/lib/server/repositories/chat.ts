@@ -1,4 +1,5 @@
 import "server-only";
+import { parseChatSourceReferences as normalizeChatSourceReferences } from "@/lib/chat-source-references";
 
 import {
   decryptJson,
@@ -14,7 +15,6 @@ import type {
   ChatMessage,
   ChatMessageRole,
   ChatSessionSummary,
-  ChatSourceReference,
 } from "@/lib/types";
 
 const CHAT_MESSAGE_LIST_LIMIT = 1200;
@@ -67,38 +67,6 @@ function normalizeChatDomainHints(value: unknown): ChatDomainHint[] {
   ).slice(0, 4);
 }
 
-function normalizeChatSourceReferences(value: unknown): ChatSourceReference[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter(
-      (item): item is Record<string, unknown> =>
-        Boolean(item) && typeof item === "object",
-    )
-    .map((item) => ({
-      document_title:
-        typeof item.document_title === "string" ? item.document_title : "",
-      reference: typeof item.reference === "string" ? item.reference : "",
-      heading_path: Array.isArray(item.heading_path)
-        ? item.heading_path.filter(
-            (part): part is string => typeof part === "string",
-          )
-        : [],
-      page_start:
-        typeof item.page_start === "number" && Number.isFinite(item.page_start)
-          ? item.page_start
-          : null,
-      page_end:
-        typeof item.page_end === "number" && Number.isFinite(item.page_end)
-          ? item.page_end
-          : null,
-      source_type:
-        item.source_type === "service_document"
-          ? ("service_document" as const)
-          : ("project_document" as const),
-      source_id: typeof item.source_id === "string" ? item.source_id : "",
-    }))
-    .filter((item) => item.document_title || item.reference);
-}
 
 function sessionIdFromSnapshot(snapshot: unknown) {
   if (!snapshot || typeof snapshot !== "object") return null;

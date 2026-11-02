@@ -29,6 +29,7 @@ type ArtifactKnowledgeItem = {
 
 export type ProjectArtifactGenerationInput = {
   artifactType: GeneratedArtifactType;
+  requirementRegeneration?: { parent: import("@/lib/types").GeneratedArtifact; selection: import("@/lib/requirement-regeneration").RequirementRegenerationSelection };
   projectName: string;
   customerAnalysis: CustomerAnalysisResult | null;
   solutionEvaluation: SolutionEvaluationResult | null;

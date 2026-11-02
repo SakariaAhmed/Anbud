@@ -42,6 +42,10 @@ exports.updatePersistedProjectJob = async (jobId, patch) => {
 writeFileSync(path.join(fakes, "results.cjs"), `
 exports.recoverCommittedProjectJobResult = async () => globalThis.__abandonmentTest.checkpoint;
 `);
+writeFileSync(path.join(fakes, "automatic-analysis.cjs"), `
+exports.scheduleReadyCustomerAnalysis = async () => {};
+exports.dispatchReadyCustomerAnalyses = async () => {};
+`);
 writeFileSync(path.join(fakes, "workflows.cjs"), `
 exports.parseProjectWorkflowInput = (value) => value;
 exports.runProjectWorkflow = (input) => {
@@ -64,6 +68,7 @@ const jiti = createJiti(path.join(fakes, "abandonment-tests.cjs"), {
   moduleCache: false,
   alias: {
     "@/lib/server/repositories/jobs": path.join(fakes, "jobs.cjs"),
+    "@/lib/server/repositories/automatic-analysis": path.join(fakes, "automatic-analysis.cjs"),
     "@/lib/server/project-job-results": path.join(fakes, "results.cjs"),
     "@/lib/server/use-cases/project-workflows": path.join(fakes, "workflows.cjs"),
     "@/lib/server/project-workflow-deadline": path.join(fakes, "deadline.ts"),

@@ -16,6 +16,28 @@ const { applyRequirementCorrections, correctedRequirementIds, findCorrectionsSec
   "lib/server/requirements/corrections.ts",
 );
 const { spreadsheetRequirementIds } = await load("lib/server/requirements/spreadsheet-ledger.ts");
+
+test("amendment additions use their own explicit page, never the insertion anchor", () => {
+  const original = [{ id: "OPS-1", text: "Drift skal dokumenteres.", pages: [2], heading: "Drift" }];
+  const correction = "9 Rettelser\nNytt krav OPS-2 legges til: «Alle logger skal lagres i Norge.»";
+  const paged = `[[SIDE:2]]\nOPS-1 Drift skal dokumenteres.\n[[SIDE:9]]\n${correction}`;
+  const added = applyRequirementCorrections(original, paged).ledger.find(row => row.id === "OPS-2");
+  assert.deepEqual(added.pages, [9]);
+  assert.equal(added.idOrigin, "source");
+  assert.deepEqual(applyRequirementCorrections(original, correction).ledger.find(row => row.id === "OPS-2").pages, []);
+});
+
+test("rewritten and partially replaced wording cites the actual correction page or an unknown page", () => {
+  const source = [{ id: "OPS-1", text: "Leverandøren skal svare innen 60 minutter.", pages: [2], heading: "4 Drift", documentId: "document", documentTitle: "Bilag 1" }];
+  const change = "9 Rettelser\nOPS-1 endres fra «60 minutter» til «30 minutter».";
+  const result = applyRequirementCorrections(source, `[[SIDE:2]]\nOPS-1 Leverandøren skal svare innen 60 minutter.\n[[SIDE:9]]\n${change}`, { documentId: "document", documentTitle: "Bilag 1" }).ledger[0];
+  assert.equal(result.text, "Leverandøren skal svare innen 30 minutter.");
+  assert.deepEqual(result.pages, [9]);
+  assert.deepEqual(result.correctionSource.pages, [9]);
+  assert.equal(result.correctionSource.heading, "9 Rettelser");
+  assert.match(result.correctionSource.excerpt, /60 minutter.*30 minutter/u);
+  assert.deepEqual(applyRequirementCorrections(source, change).ledger[0].pages, [], "without explicit page markers the original page is not recycled");
+});
 const { assertExplicitRequirementLedgersComplete } = await load(
   "lib/server/requirements/source-readiness.ts",
 );

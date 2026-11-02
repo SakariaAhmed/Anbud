@@ -27,6 +27,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { OutputSourceEvidence } from "@/components/projects/output-source-evidence";
+import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 import { MarkdownViewer } from "@/components/projects/markdown-viewer";
 import { WorkflowBlockedHint } from "@/components/projects/workflow-blocked-hint";
 import {
@@ -308,8 +310,14 @@ function assessmentTone(assessment: RequirementCoverageItem["assessment"]) {
 
 function RequirementCoveragePanel({
   coverage,
+  projectId,
+  canDownloadDocuments = false,
+  sourceEvidence,
 }: {
+  sourceEvidence?: unknown;
   coverage?: RequirementCoverage | null;
+  projectId?: string;
+  canDownloadDocuments?: boolean;
 }) {
   if (!coverage) {
     return null;
@@ -455,7 +463,7 @@ function RequirementCoveragePanel({
               return (
                 <article
                   key={`${item.reference}-${index}`}
-                  className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
+                  className={`min-w-0 border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
                 >
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
@@ -485,15 +493,13 @@ function RequirementCoveragePanel({
                   </div>
                 </div>
 
-                <div className="mb-3 inline-flex max-w-full items-start gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs font-medium leading-5 text-slate-500">
-                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                  <span className="min-w-0 break-words">
-                    {item.full_reference || item.source_reference
-                      ? cleanEvaluationTypography(item.full_reference || item.source_reference)
-                      : "Kilde mangler"}
-                  </span>
+                <div className="mb-3">
+                  <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={{ source_type: "project_document", source_id: item.source_document_id ?? "", document_title: item.source_document_title || "Kravgrunnlag", reference: item.full_reference || item.source_reference || "Kilde mangler", heading_path: item.heading_path ?? [], page_start: null, page_end: null, original_quote: item.requirement, classification: "needs_clarification" }}>
+                    Kilde: {item.full_reference || item.source_reference || "Henvisning mangler"}
+                  </SourceEvidenceButton>
                 </div>
 
+                {projectId ? <OutputSourceEvidence value={sourceEvidence} path={`result.requirement_coverage.items.${coverageItems.indexOf(item)}`} excludePaths={[`result.requirement_coverage.items.${coverageItems.indexOf(item)}.requirement`]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="min-w-0">
                     <p className={`mb-1.5 ${eyebrowClass}`}>Vurdering</p>
@@ -533,9 +539,10 @@ function RequirementCoveragePanel({
 }
 
 function DocumentFindingsPanel({
-  findings,
+  findings, sourceEvidence, projectId, canDownloadDocuments = false,
 }: {
   findings: SolutionDocumentFinding[];
+  sourceEvidence?: unknown; projectId?: string; canDownloadDocuments?: boolean;
 }) {
   if (!findings.length) {
     return null;
@@ -557,7 +564,7 @@ function DocumentFindingsPanel({
         </div>
       </div>
 
-      <div className="grid gap-3 px-5 py-5 md:px-6">
+      <div className="grid min-w-0 gap-3 px-5 py-5 md:px-6">
         {findings.map((finding, index) => {
           const tone = findingTone(finding);
           const Icon = tone.icon;
@@ -565,10 +572,10 @@ function DocumentFindingsPanel({
           return (
             <article
               key={`${finding.reference}-${finding.finding}-${index}`}
-              className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
+              className={`min-w-0 border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
             >
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
+                <div className="flex min-w-0 max-w-full items-start gap-3">
                   <span
                     className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${tone.iconWrap}`}
                   >
@@ -581,7 +588,7 @@ function DocumentFindingsPanel({
                       >
                         {finding.assessment}
                       </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                         <MapPin className="size-3.5 shrink-0" />
                         <span className="min-w-0 truncate">
                           {finding.reference
@@ -616,6 +623,7 @@ function DocumentFindingsPanel({
                   />
                 </div>
               </div>
+              {projectId ? <OutputSourceEvidence value={sourceEvidence} path={`result.document_findings.${index}`} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
             </article>
           );
         })}
@@ -751,6 +759,8 @@ function ArchitectureCallToAction({
 }
 
 export function ProjectEvaluationTab({
+  projectId,
+  canDownloadDocuments = false,
   documents,
   solutionEvaluation,
   hasSolutionDocument,
@@ -762,6 +772,8 @@ export function ProjectEvaluationTab({
   onImportArchitectureDocument,
   workflowBlockedReason = null,
 }: {
+  projectId?: string;
+  canDownloadDocuments?: boolean;
   documents: ProjectDocument[];
   solutionEvaluation: SolutionEvaluationResult | null;
   hasSolutionDocument: boolean;
@@ -1002,15 +1014,22 @@ export function ProjectEvaluationTab({
             );
           })()}
 
+          {projectId ? <OutputSourceEvidence value={solutionEvaluation.source_evidence} excludePaths={["result.requirement_coverage", "result.document_findings"]} projectId={projectId} canDownloadDocuments={canDownloadDocuments} /> : null}
           <div>
             <RequirementCoveragePanel
               coverage={solutionEvaluation.requirement_coverage}
+              sourceEvidence={solutionEvaluation.source_evidence}
+              projectId={projectId}
+              canDownloadDocuments={canDownloadDocuments}
             />
           </div>
 
           <div>
             <DocumentFindingsPanel
               findings={solutionEvaluation.document_findings}
+              sourceEvidence={solutionEvaluation.source_evidence}
+              projectId={projectId}
+              canDownloadDocuments={canDownloadDocuments}
             />
           </div>
 

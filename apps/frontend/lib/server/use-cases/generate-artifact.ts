@@ -1,3 +1,6 @@
+import { reviewOutputSourceEvidence, reviewRequirementRowOutputEvidence } from "@/lib/server/output-source-evidence";
+import { editRequirementReviewRow, requirementReviewRows } from "@/lib/requirement-review";
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
@@ -36,6 +39,7 @@ import {
 import {
   getArtifactSourceRevisions,
   listArtifactKnowledgeCandidatesFresh,
+  listGeneratedArtifactsFresh,
   saveGeneratedArtifact,
 } from "@/lib/server/repositories/artifacts";
 import { getDocumentDetail, listProjectDocumentsForAnalysis } from "@/lib/server/repositories/data-store";
@@ -77,6 +81,7 @@ export interface ArtifactGenerationTiming {
 export interface GenerateAndSaveArtifactInput {
   projectId: string;
   artifactType: GeneratedArtifactType;
+  regenerateRequirements?: RequirementRegenerationSelection;
   instructions?: string;
   sourceDocumentIds?: string[];
   useSolutionEvaluationContext?: boolean;
@@ -428,10 +433,18 @@ export async function generateAndSaveProjectArtifact(
 ): Promise<GenerateAndSaveArtifactResult> {
   input.assertActive?.();
   input.onProgress?.(formatJobProgress(12, "Laster prosjektkontekst og relevante dokumenter ..."));
+  const regenerateRequirements = parseRequirementRegeneration(input.regenerateRequirements);
+  if (regenerateRequirements && input.artifactType !== "forbedret_kravsvar") throw new Error("Bare kravbesvarelser støtter regenerering av utvalgte rader.");
   const sourceRevisions = await getArtifactSourceRevisions(input.projectId);
+  const regenerationParent = regenerateRequirements ? (await listGeneratedArtifactsFresh(input.projectId, { artifactType: "forbedret_kravsvar" })).find(artifact => artifact.id === regenerateRequirements.artifactId && artifact.artifact_version === regenerateRequirements.artifactVersion && artifact.is_current && artifact.source_is_current) : undefined;
+  if (regenerateRequirements && !regenerationParent) throw new Error("Kravbesvarelsen er endret eller bygger på eldre kilder. Last inn på nytt.");
+  if (regenerationParent && (regenerationParent.input_artifact_source_revision !== sourceRevisions.artifactSourceRevision || regenerationParent.input_service_library_revision !== sourceRevisions.serviceLibraryRevision || (regenerationParent.used_solution_evaluation && (
+    regenerationParent.input_solution_evaluation_id !== sourceRevisions.solutionEvaluationDependency?.id || regenerationParent.input_solution_evaluation_updated_at !== sourceRevisions.solutionEvaluationDependency?.updated_at || regenerationParent.input_solution_evaluation_hash !== sourceRevisions.solutionEvaluationDependency?.content_hash
+  )))) throw new Error("Kravbesvarelsen og gjeldende grunnlag samsvarer ikke. Generer en fullstendig besvarelse først.");
+  const useSolutionEvaluationContext = regenerationParent ? Boolean(regenerationParent.used_solution_evaluation) : input.useSolutionEvaluationContext;
   const usesSolutionEvaluation = shouldUseSolutionEvaluationForArtifact({
     artifactType: input.artifactType,
-    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+    useSolutionEvaluationContext,
   });
   const [
     project,
@@ -645,7 +658,7 @@ export async function generateAndSaveProjectArtifact(
   );
   const solutionEvaluationContextMode = solutionEvaluationContextModeForArtifact({
     artifactType: input.artifactType,
-    useSolutionEvaluationContext: input.useSolutionEvaluationContext,
+    useSolutionEvaluationContext,
   });
   const solutionEvaluationForGeneration = usesSolutionEvaluation
     ? freshSolutionEvaluationSnapshot?.evaluation ?? null
@@ -689,6 +702,7 @@ export async function generateAndSaveProjectArtifact(
   const knowledgeArtifacts = refreshedKnowledgeArtifacts;
   const generated = await generateProjectArtifact({
     artifactType: input.artifactType,
+    requirementRegeneration: regenerationParent && regenerateRequirements ? { parent: regenerationParent, selection: regenerateRequirements } : undefined,
     projectName: project.name,
     customerAnalysis,
     solutionEvaluation: solutionEvaluationForGeneration,
@@ -727,6 +741,30 @@ export async function generateAndSaveProjectArtifact(
       `Generatorresultatet inneholdt ${repaired.repairedRows} rader fra innholdsfortegnelse. Jobben stoppes i stedet for å lagre feiloutput.`,
     );
   }
+  const evidenceRows = input.artifactType === "forbedret_kravsvar" ? requirementReviewRows(repaired.contentMarkdown, { generation_metadata: generationMetadata }) : [];
+  const evidenceInput = {
+    authoritativeRequirementRefs: requirementQualityExpectations(generationMetadata).expectedRequirementRefs ?? [],
+    documents: [...projectDocuments.map(document => ({ document, sourceType: "project_document" as const })), ...serviceDescriptionDocuments.map(document => ({ document, sourceType: "service_document" as const }))],
+    artifacts: knowledgeArtifacts,
+    verifiedReferences: solutionEvaluationForGeneration?.source_evidence?.references.map(entry => entry.source),
+  };
+  const reviewedEvidence = evidenceRows.length ? reviewRequirementRowOutputEvidence({ ...evidenceInput, rows: evidenceRows,
+    parentRows: regenerationParent ? requirementReviewRows(regenerationParent.content_markdown, regenerationParent.input_snapshot) : undefined,
+    parentEvidence: regenerationParent && regenerationParent.input_snapshot && typeof regenerationParent.input_snapshot === "object" && "source_evidence" in regenerationParent.input_snapshot ? regenerationParent.input_snapshot.source_evidence : undefined,
+    regeneratedIndexes: regenerateRequirements ? new Set(regenerateRequirements.rows.map(row => row.index)) : undefined,
+  }) : reviewOutputSourceEvidence({ ...evidenceInput,
+    interpretationOnly: input.artifactType !== "bilag1_rekonstruksjon",
+    fields: repaired.contentMarkdown.split(/(\r?\n[ \t]*\r?\n)/u).flatMap((text, index) => index % 2 === 0 && text.trim() ? [{ path: `content_markdown.${index}`, text }] : []),
+  });
+  const replacements = new Map(reviewedEvidence.fields.map(field => [field.path, field.text]));
+  if (evidenceRows.length) {
+    for (const row of evidenceRows) {
+      const answer = replacements.get(`rows.${row.index}.answer`) ?? row.answer;
+      const evidence = replacements.get(`rows.${row.index}.evidence`) ?? row.evidence;
+      if (answer !== row.answer || evidence !== row.evidence) repaired.contentMarkdown = editRequirementReviewRow(repaired.contentMarkdown, row, { answer, evidence });
+    }
+  } else repaired.contentMarkdown = repaired.contentMarkdown.split(/(\r?\n[ \t]*\r?\n)/u).map((text, index) => replacements.get(`content_markdown.${index}`) ?? text).join("");
+  const sourceEvidence = reviewedEvidence.evidence;
   const qualityReport = validateGeneratedArtifact({
     artifactType: input.artifactType,
     title: generated.title,
@@ -741,6 +779,7 @@ export async function generateAndSaveProjectArtifact(
       `Generatorresultatet stoppet i kvalitetskontroll: ${qualityReport.issues.join(" ")}`,
     );
   }
+
   input.onPhase?.("validering");
 
   input.onProgress?.(formatJobProgress(90, "Lagrer validert generatorresultat i prosjektet ..."));
@@ -836,6 +875,8 @@ export async function generateAndSaveProjectArtifact(
         repaired_rows: repaired.repairedRows,
       },
       generation_metadata: generationMetadata ?? null,
+      source_evidence: sourceEvidence,
+      source_check_status: sourceEvidence.issues?.length ? "needs_clarification" : "passed",
       generation_timings: [
         ...(input.timings?.() ?? []),
         ...(input.totalDurationMs

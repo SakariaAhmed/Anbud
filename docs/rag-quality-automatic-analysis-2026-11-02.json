@@ -1,0 +1,23 @@
+{
+  "scope": "Owned synthetic TXT HTTP environment. Never production. No repeated generation for the solution-upload preservation check.",
+  "scenarios": [
+    {
+      "project_id": "796b3303-7426-4bd3-973f-e437884bb5d2",
+      "register_ready_ms": 12697,
+      "automatic_analysis_completed_ms": 311358,
+      "automatic_jobs": 1,
+      "existing_analysis_preserved": true,
+      "limitation": "One owned synthetic TXT scenario; no p50/p95 or production latency inference.",
+      "measurement_note": "This first worker-mode harness initially omitted dispatch. The worker was invoked explicitly through its authenticated endpoint after 218 seconds queued; the 311-second total is not a latency baseline."
+    },
+    {
+      "project_id": "a59319a1-4a37-4140-be65-550b70b5d327",
+      "execution_mode": "web_autorun_without_worker_dispatch",
+      "register_ready_ms": 3130,
+      "automatic_analysis_completed_ms": 99204,
+      "automatic_jobs": 1,
+      "existing_analysis_preserved": true,
+      "limitation": "One owned synthetic TXT scenario; no p50/p95 or production latency inference."
+    }
+  ]
+}

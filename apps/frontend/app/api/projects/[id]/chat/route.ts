@@ -1,4 +1,6 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { randomUUID } from "node:crypto";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 import { NextResponse } from "next/server";
 
 import { CHAT_SESSION_MEMORY_STORAGE_LIMIT, inferProjectChatDomains, streamProjectChat, type ChatPromptAttachment } from "@/lib/server/ai/project-chat";
@@ -373,9 +375,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const startedAt = Date.now();
+  let trace: { projectId: string; traceId: string } | null = null;
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "chat.write");
+    const traceId = randomUUID();
+    trace = { projectId: id, traceId };
     const rateLimit = await checkRateLimit(request, `project-chat:${id}`, {
       limit: 30,
       windowMs: 60_000,
@@ -458,6 +464,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     const chatStream = await streamProjectChat({
+      traceId,
+      signal: request.signal,
       projectId: id,
       projectName: project.name,
       customerAnalysis,
@@ -483,21 +491,40 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       domainHints,
     });
     const encoder = new TextEncoder();
+    recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "context_assembly", durationMs: Date.now() - startedAt });
     const assistantContextSnapshot = {
       ...contextSnapshot,
       domain_hints: chatStream.domainHints,
-      source_references: chatStream.sourceReferences,
       retrieval_plan: chatStream.retrievalPlan,
       retrieval_telemetry: chatStream.retrievalTelemetry,
     };
+
+    const responseHeaders = new Headers({
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Workflow-Trace-Id": traceId,
+          "X-Chat-Session-Id": sessionId,
+          "X-Chat-Session-Title": encodeURIComponent(sessionTitle),
+          "X-Chat-Domains": encodeURIComponent(
+            JSON.stringify(chatStream.domainHints),
+          ),
+          "X-Retrieval-Quality": encodeURIComponent(
+            JSON.stringify(chatStream.retrievalTelemetry?.quality ?? null),
+          ),
+    });
 
     return new NextResponse(
       new ReadableStream({
         async start(controller) {
           let assistantMessage = "";
+          let firstToken = true;
 
           try {
             for await (const chunk of chatStream.stream) {
+              if (firstToken) {
+                firstToken = false;
+                recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "first_token", durationMs: Date.now() - startedAt });
+              }
               assistantMessage += chunk;
               controller.enqueue(encoder.encode(chunk));
             }
@@ -506,14 +533,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             if (!cleanedAssistantMessage) {
               throw new Error("AI returnerte tomt svar.");
             }
+            const validationStartedAt = Date.now();
+            const verifiedSources = chatStream.validateAnswer(cleanedAssistantMessage);
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "validation", durationMs: Date.now() - validationStartedAt });
+            const persistenceStartedAt = Date.now();
+            request.signal.throwIfAborted();
 
             await appendChatMessage(
               id,
               "assistant",
               cleanedAssistantMessage,
-              assistantContextSnapshot,
+              { ...assistantContextSnapshot, source_references: verifiedSources, source_check_status: chatStream.sourceValidationFailed ? "needs_clarification" : "passed" },
               { sessionId },
             );
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "persistence", durationMs: Date.now() - persistenceStartedAt });
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: chatStream.sourceValidationFailed ? "failed" : "completed" });
 
             await updateChatSessionMemory({
               projectId: id,
@@ -536,6 +570,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
             controller.close();
           } catch (error) {
+            recordWorkflowPerformance({ traceId, projectId: id, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: "failed" });
             console.warn(
               JSON.stringify({
                 event: "project_chat_stream_failed",
@@ -555,21 +590,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         },
       }),
       {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-store",
-          "X-Chat-Session-Id": sessionId,
-          "X-Chat-Session-Title": encodeURIComponent(sessionTitle),
-          "X-Chat-Domains": encodeURIComponent(
-            JSON.stringify(chatStream.domainHints),
-          ),
-          "X-Retrieval-Quality": encodeURIComponent(
-            JSON.stringify(chatStream.retrievalTelemetry?.quality ?? null),
-          ),
-        },
+        headers: responseHeaders,
       },
     );
   } catch (error) {
+    if (trace) recordWorkflowPerformance({ ...trace, operation: "chat", phase: "total", durationMs: Date.now() - startedAt, status: "failed" });
     if (error instanceof ChatRequestError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

@@ -48,8 +48,43 @@ const {
   getDocumentChunksTestRpcCalls,
   resetDocumentChunksTestRuntime,
   setDocumentChunksTestRetrievalRows,
+  setDocumentChunksTestRequirementRegister,
 } = jiti(testSupportPath);
-const { encryptString } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
+const { encryptString, encryptJson } = jiti(path.join(frontendRoot, "lib/server/crypto.ts"));
+
+test("exact full IDs resolve authoritative repeated rows before model reranking and invalidate with source changes", async () => {
+  resetDocumentChunksTestRuntime();
+  const source = (id, text, role = "primary_customer_document") => projectDocument({ id, role, file_format: "txt", raw_text: `1 Drift\nNORD-IAM-02 ${text}\nNORD-IAM-03 Leverandøren skal rapportere feil.\nNORD-IAM-04 Leverandøren skal tilby eksport.`, structure_map: [], chunk_source_revision: 1 });
+  const first = source("lookup-first", "Leverandøren skal ha døgnbemanning.");
+  const second = source("lookup-second", "Leverandøren skal levere en vaktplan.");
+  const solution = source("lookup-solution", "Leverandøren skal ikke overstyre kundekravet.", "primary_solution_document");
+  const input = { query: "Hva sier NORD-IAM-02?", exactTerms: ["NORD-IAM-02"], documents: [first, second, solution], rerank: async ({ candidates }) => candidates.map((_, i) => i).reverse() };
+  const result = await retrieveDocumentSnippetsWithMetadata(input);
+  assert.deepEqual(result.snippets.slice(0, 2).map(row => [row.sourceId, row.requirementId]), [[first.id, "NORD-IAM-02"], [second.id, "NORD-IAM-02"]]);
+  const updated = source(first.id, "Leverandøren skal ha beredskap i Norge.");
+  updated.chunk_source_revision = 2;
+  const fresh = await retrieveDocumentSnippetsWithMetadata({ ...input, documents: [updated] });
+  assert.match(fresh.snippets[0].text, /beredskap i Norge/u);
+  assert.doesNotMatch(fresh.snippets[0].text, /døgnbemanning/u);
+});
+
+test("ordinary P1 terminology does not become a missing-ID refusal while an observed P1 register row stays pinned", async () => {
+  resetDocumentChunksTestRuntime();
+  const support = projectDocument({ id: "priority-terms", role: "primary_customer_document", file_format: "txt", raw_text: "## Beredskap\nLeverandøren håndterer kritiske hendelser med døgnåpen beredskap.", structure_map: [] });
+  const general = await retrieveDocumentSnippetsWithMetadata({ query: "Hvordan håndteres P1-hendelser i beredskap?", exactTerms: ["P1"], documents: [support] });
+  assert.deepEqual(general.telemetry.missingRequirementIds, []);
+  assert.equal(general.telemetry.requirementLookupFailed, false);
+  const formal = projectDocument({ id: "priority-register", role: "primary_customer_document", file_format: "txt", raw_text: "## Drift\n| Krav-ID | Krav |\n| --- | --- |\n| P1 | Leverandøren skal tilby døgnåpen beredskap. |", structure_map: [] });
+  setDocumentChunksTestRequirementRegister(formal.id, encryptJson({ documentId: formal.id, projectId: formal.project_id, sourceRevision: formal.chunk_source_revision ?? 0, requirementRegister: { version: 1, rows: [{ id: "P1", idOrigin: "source", text: "Leverandøren skal tilby døgnåpen beredskap.", heading: "Drift", pages: [] }] } }));
+  const observed = await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier P1?", exactTerms: ["P1"], documents: [formal] });
+  assert.equal(observed.snippets[0]?.requirementId, "P1");
+  const missing = await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier P2?", exactTerms: ["P2"], documents: [formal] });
+  assert.deepEqual(missing.telemetry.authoritativeRequirementIds, ["P1"]);
+  assert.deepEqual(missing.telemetry.missingRequirementIds, ["P2"]);
+  assert.equal(missing.telemetry.quality.sufficient, false);
+  const broad = await retrieveDocumentSnippetsWithMetadata({ query: "Oppsummer beredskapen", documents: [formal] });
+  assert.deepEqual(broad.telemetry.authoritativeRequirementIds, ["P1"], "Authority is independent of both the requested ID and the returned row snippets.");
+});
 
 function projectDocument(overrides = {}) {
   return {
@@ -630,4 +665,37 @@ test("a section longer than the window returns a bounded window around the match
   assert.ok(start === 0 || /\s/u.test(text[start - 1]), "the window starts at a word boundary");
   const end = start + snippet.text.length;
   assert.ok(end === text.length || /\s/u.test(text[end]), "the window ends at a word boundary");
+});
+
+test("explicit source heading paths survive chunk persistence without splitting their own dash", async () => {
+  resetDocumentChunksTestRuntime();
+  const source = projectDocument({ id: "explicit-heading-path", file_format: "txt", raw_text: "Andel pasienter som ikke møter skal reduseres til fem prosent.", structure_map: [{ reference: "Resultatmål - må ikke omskrives til ambisjon", text: "Andel pasienter som ikke møter skal reduseres til fem prosent.", heading_path: ["Resultatmål - må ikke omskrives til ambisjon"], page: 1 }] });
+  await replaceProjectDocumentChunks({ documentId: source.id, projectId: source.project_id, role: source.role, supportingSubtype: source.supporting_subtype, title: source.title, fileName: source.file_name, fileFormat: source.file_format, rawText: source.raw_text, structureMap: source.structure_map, sourceRevision: source.chunk_source_revision ?? 0 });
+  const rows = getDocumentChunksTestManifest("project_document", source.id).rows;
+  assert.ok(rows.some(row => row.heading_path.includes("Resultatmål - må ikke omskrives til ambisjon")));
+});
+
+test("an unreadable register fails the gate for ambiguous IDs and broad questions without affecting ordinary successful P1 lookup", async () => {
+  resetDocumentChunksTestRuntime();
+  const formal = projectDocument({ id: "unreadable-priority-register", role: "primary_customer_document", file_format: "txt", raw_text: "| Krav-ID | Krav |\n| --- | --- |\n| P1 | Leverandøren skal tilby døgnåpen beredskap. |", structure_map: [] });
+  setDocumentChunksTestRequirementRegister(formal.id, "not-encrypted-register-data");
+  for (const [query, exactTerms] of [["Hva sier P2?", ["P2"]], ["Oppsummer beredskapen", []]]) {
+    const result = await retrieveDocumentSnippetsWithMetadata({ query, exactTerms, documents: [formal] });
+    assert.equal(result.telemetry.requirementLookupFailed, true);
+    assert.equal(result.telemetry.quality.sufficient, false);
+    assert.match(result.telemetry.quality.reason, /kravregister.*ikke leses/iu);
+  }
+});
+
+test("actual overlapping retrieval chunks remain verifiable as original source excerpts", async () => {
+  resetDocumentChunksTestRuntime();
+  const { bindDocumentSourceEvidence } = jiti(path.join(frontendRoot, "lib/server/document-source-evidence.ts"));
+  const raw_text = Array.from({ length: 120 }, (_, i) => `Driftsteamets beredskapsavtale nummer ${i + 1} beskriver kontraktsforvaltning og etterprøvbar systemovervåking.`).join(" ");
+  const source = projectDocument({ id: "overlapping-long-source", role: "primary_solution_document", supporting_subtype: null, file_format: "txt", raw_text, structure_map: [] });
+  const result = await retrieveDocumentSnippetsWithMetadata({ query: "beredskapsavtale kontraktsforvaltning systemovervåking", documents: [source], limit: 12 });
+  assert.ok(result.snippets.length > 1);
+  for (const snippet of result.snippets) {
+    assert.ok(snippet.originalQuote); assert.ok(raw_text.includes(snippet.originalQuote));
+    assert.ok(bindDocumentSourceEvidence(source, snippet.originalQuote), snippet.originalQuote.slice(0, 40));
+  }
 });

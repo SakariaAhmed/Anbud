@@ -1,4 +1,6 @@
+import { parseRequirementRegeneration } from "@/lib/requirement-regeneration";
 import { listRecentProjectJobs } from "@/lib/server/repositories/jobs";
+import { getAutomaticAnalysisRequest } from "@/lib/server/repositories/automatic-analysis";
 import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
@@ -99,10 +101,14 @@ async function queueArtifactJob(
     );
   }
 
+  let regenerateRequirements: ReturnType<typeof parseRequirementRegeneration>;
+  try { regenerateRequirements = parseRequirementRegeneration(body.regenerate_requirements); }
+  catch (error) { throw new RequestBodyError(error instanceof Error ? error.message : "Ugyldig kravutvalg."); }
   return {
     job: await queueArtifactGenerationJob({
       projectId,
       artifactType: body.artifact_type,
+      regenerateRequirements,
       instructions: normalizeArtifactInstructions(body.instructions),
       sourceDocumentIds: normalizeSourceDocumentIds(body.source_document_ids),
       useSolutionEvaluationContext:
@@ -199,7 +205,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "project.read");
-    return NextResponse.json({ jobs: await listRecentProjectJobs(id) }, { headers: { "Cache-Control": "private, no-store" } });
+    const [jobs, automatic_analysis] = await Promise.all([listRecentProjectJobs(id), getAutomaticAnalysisRequest(id)]);
+    return NextResponse.json({ jobs, automatic_analysis }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return routeErrorResponse(error, "Kunne ikke hente jobbstatus.");
   }

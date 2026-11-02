@@ -1,4 +1,5 @@
 import { requireProjectPermission } from "@/lib/server/authorization";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 import { suggestUploadDocumentRole } from "@/lib/document-processing";
 import { NextResponse } from "next/server";
 
@@ -122,6 +123,7 @@ function enforceUploadRateLimit(projectId: string) {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const startedAt = Date.now();
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "document.upload");
@@ -175,6 +177,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
     const file = formData.get("file");
     const title = `${formData.get("title") || ""}`.trim();
+    const analysisChoice = formData.get("request_auto_analysis");
+    if (analysisChoice !== null && analysisChoice !== "true" && analysisChoice !== "false") return NextResponse.json({ error: "Ugyldig valg for automatisk analyse." }, { status: 400 });
+    const requestAutoAnalysis = analysisChoice === null ? undefined : analysisChoice === "true";
+    if (requestAutoAnalysis) await requireProjectPermission(id, "analysis.write");
 
     if (!enforceUploadRateLimit(id)) {
       return NextResponse.json(
@@ -267,8 +273,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const job = await queueDocumentIngestionJob({
       projectId: id,
       documentId: document.id,
+      requestAutoAnalysis,
     });
     const snapshot = await getProjectSnapshot(id);
+    recordWorkflowPerformance({ traceId: document.id, projectId: id, documentId: document.id,
+      jobId: job.id, documentClass: document.file_format, operation: "document", phase: "upload",
+      durationMs: Date.now() - startedAt });
     await auditEvent({
       action: "document_uploaded",
       projectId: id,

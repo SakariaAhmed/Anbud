@@ -104,13 +104,13 @@ test("adaptive first questions skip rewriting while prior context and forced rew
       let answer = ""; for await (const chunk of result.stream) answer += chunk;
       assert.equal(answer, "Et lokalt svar.");
       assert.equal(state.rewrites.length, item.rewrites, item.name);
-      assert.equal(state.retrieval.length, 1, item.name);
+      assert.equal(state.retrieval.length, item.rewrites ? 2 : 1, item.name);
       assert.equal(state.answers.length, 1, item.name);
       assert.ok(state.retrieval[0].exactTerms.includes("K-42"), item.name);
       assert.match(state.retrieval[0].query, /K-42/);
       assert.ok(state.retrieval[0].broaderQuery.startsWith(question), item.name);
       assert.ok(state.retrieval[0].broaderExactTerms.includes("K-42"), item.name);
-      assert.equal(typeof state.retrieval[0].rerank, "function", "model rerank is on by default");
+      assert.equal(typeof state.retrieval[0].rerank, "function", "reranking is deferred until the plan is known and reuses the first candidate pool");
       assert.deepEqual(history, item.messages, "The history sent to the final answer must not be mutated.");
       assert.doesNotMatch(state.answers[0].user, /### Dokumentregel|Hele\s+står nedenfor/u,
         "A chat without documents must not claim whole documents are included.");
@@ -175,8 +175,9 @@ test("chat keeps question-specific evidence, complete late qualifications and al
       assert.ok(!prompt.includes("Kildene inneholder en Microsoft-relatert føring"), "Supplier choice or a negated platform mention must not become an asserted customer requirement.");
       assert.ok(state.retrieval.at(-1).exactTerms.includes("tilgjengelighetsprøver"));
       assert.ok(state.retrieval.at(-1).exactTerms.includes("opplæring"));
-      assert.equal(result.sourceReferences.length, 16);
-      for (const reference of result.sourceReferences) assert.ok(prompt.includes(`Referanse: ${reference.reference}`));
+      assert.equal(result.sourceReferences.length, 18);
+      for (const reference of result.sourceReferences.slice(2)) assert.ok(prompt.includes(`Referanse: ${reference.reference}`));
+      assert.deepEqual(result.sourceReferences.slice(0, 2).map(source => source.citation_number), [1, 2], "complete-document references retain a stable prefix before query-specific snippets");
       assert.equal(state.snippets[15].text, late, "Original source text remains intact.");
     }
   } finally {
@@ -240,7 +241,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
     writeFileSync(completion, `exports.createTextCompletionStream = async () => (async function* () { yield "ok"; })();`);
     writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata = async input => {
       globalThis.__projectChatRerankSkipTest.retrieval.push(input);
-      return { snippets: [], telemetry: { durationMs: 0, sourceCount: 0, quality: { sufficient: false, sourceCount: 0 } } };
+      return { snippets: [1, 2].map(index => ({ sourceType: "project_document", sourceId: "kunde", documentTitle: "kunde", reference: "del " + index, text: "Oppetid skal være 99,9 prosent.", headingPath: [], pageStart: null, pageEnd: null, lexicalScore: 2, score: 100, similarity: 0.8 })), telemetry: { durationMs: 0, sourceCount: 2, quality: { sufficient: true, sourceCount: 2 } } };
     };`);
     const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: {
       "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval,
@@ -254,7 +255,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
         customerAnalysis: null, solutionEvaluation: null, recentMessages: [], supportingDocuments,
         customerDocument: document("kunde", "primary_customer_document", text), solutionDocument: null });
       for await (const _ of result.stream) { /* drain */ }
-      return state.retrieval[0].rerank;
+      return state.retrieval.at(-1).rerank;
     };
     assert.equal(await ask("Oppetid skal være 99,9 prosent."), undefined, "a document sent whole needs no rerank");
     assert.equal(state.retrieval[0].surroundingSections, false, "an anchor keeps the matched part");
@@ -263,7 +264,7 @@ test("model rerank is skipped when the whole documents are in the prompt", async
     const supporting = [1, 2, 3, 4].map((index) => document(`bilag-${index}`, "supporting_document", "Kort bilag."));
     supporting.push(document("bilag-5", "supporting_document", "Oppetid i bilag 5. ".repeat(8000)));
     assert.equal(typeof await ask("Oppetid skal være 99,9 prosent.", supporting), "function",
-      "a fifth supporting document is searched but never sent whole");
+      "an oversized collection uses excerpts and one final model rerank");
   } finally {
     for (const [key, name] of [["rewrite", "RAG_QUERY_REWRITE"], ["rerank", "RAG_MODEL_RERANK"]]) {
       if (previous[key] === undefined) delete process.env[name]; else process.env[name] = previous[key];
@@ -431,7 +432,7 @@ test("the chat route selects each fallback document once before building the rea
   const directory = mkdtempSync(path.join(tmpdir(), "anbud-chat-route-scope-"));
   const previousMode = process.env.RAG_QUERY_REWRITE;
   process.env.RAG_QUERY_REWRITE = "off";
-  const state = { documents: [], prompts: [], retrieval: [] };
+  const state = { documents: [], prompts: [], retrieval: [], saved: [], abortOnEnd: null };
   globalThis.__projectChatRouteScopeTest = state;
   try {
     const dependencies = path.join(directory, "dependencies.cjs");
@@ -442,10 +443,11 @@ test("the chat route selects each fallback document once before building the rea
       exports.listProjectDocumentsForAnalysis = async () => globalThis.__projectChatRouteScopeTest.documents;
       exports.getFreshCustomerAnalysis = async () => null;
       for (const name of ["listCurrentGeneratedArtifactsFresh", "listChatMessages", "listChatSessions"]) exports[name] = async () => [];
-      for (const name of ["appendChatMessage", "upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
+      exports.appendChatMessage = async (...args) => { globalThis.__projectChatRouteScopeTest.saved.push(args); };
+      for (const name of ["upsertChatSession", "updateChatSessionMemory"]) exports[name] = async () => {};
       exports.createTextCompletionStream = async input => {
         globalThis.__projectChatRouteScopeTest.prompts.push(input);
-        return (async function* () { yield "Lokalt testsvar."; })();
+        return (async function* () { yield "Lokalt testsvar."; globalThis.__projectChatRouteScopeTest.abortOnEnd?.abort(); })();
       };
       exports.retrieveDocumentSnippetsWithMetadata = async input => {
         globalThis.__projectChatRouteScopeTest.retrieval.push(input);
@@ -469,10 +471,17 @@ test("the chat route selects each fallback document once before building the rea
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hva er beskrevet?" }),
       }), { params: Promise.resolve({ id: "fictional" }) });
       assert.equal(response.status, 200);
+      assert.match(response.headers.get("x-workflow-trace-id"), /^[a-f0-9-]{36}$/u);
       assert.equal(await response.text(), "Lokalt testsvar.");
       assert.equal(state.prompts[0].user.split(marker).length - 1, 1, "the complete source is sent once");
       assert.deepEqual(state.retrieval[0].documents.map((item) => item.id), [source.id]);
     }
+    const cancellation = new AbortController(); state.abortOnEnd = cancellation; state.saved = [];
+    const canceled = await POST(new Request("http://localhost/api/projects/fictional/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Hei!" }), signal: cancellation.signal }), { params: Promise.resolve({ id: "fictional" }) });
+    assert.equal(canceled.status, 200);
+    await assert.rejects(() => canceled.text(), /Chatstrømmen|abort/iu);
+    assert.equal(state.saved.filter(args => args[1] === "assistant").length, 0, "request cancellation immediately after provider EOF must prevent assistant publication");
+
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatRouteScopeTest;
@@ -554,7 +563,7 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     const document = (id, role, raw_text) => ({ id, project_id: "fictional", role, title: id, file_name: `${id}.txt`, file_format: "txt", raw_text, structure_map: [] });
     const supports = Array.from({ length: 5 }, (_, index) =>
       // The first, included document repeats the fifth document's passage.
-      document(`s${index + 1}`, "supporting_document", index === 4 ? `Innledning.\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
+      document(`s${index + 1}`, "supporting_document", index === 4 ? `${"Lang bakgrunn. ".repeat(8000)}\n${exception}` : index === 0 ? `Støtte 1.\n${exception}` : `Støtte ${index + 1}.`),
     );
     const result = await streamProjectChat({
       projectName: "Fiktiv", question: "Hvilke unntak gjelder for tilgjengelighet?",
@@ -567,12 +576,42 @@ test("chat keeps the full text of excerpts from documents the prompt does not ca
     const user = state.prompts.at(-1).user;
     const excerpt = user.slice(user.indexOf("Støtte 5, side 2"), user.indexOf("Støtte 5, side 2") + exception.length + 400);
     assert.ok(excerpt.includes(exception), "the fifth document's own excerpt keeps its full text, even when an included document repeats it");
-    // The document rule says which documents are whole and which only excerpted.
-    assert.match(state.prompts.at(-1).user, /«s5» er bare med som utdrag/u);
-    assert.match(state.prompts.at(-1).user, /Hele «customer», «supplier», «s1», «s2», «s3», «s4» står nedenfor\./u);
+    assert.doesNotMatch(user, /Lang bakgrunn\. Lang bakgrunn/u, "large documents use retrieval without raw prefix duplication");
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;
     delete globalThis.__projectChatFifthTest;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("section discovery searches the whole current artifact collection and honors explicit type aliases", () => {
+  const { selectProjectChatArtifactSections } = jiti(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+  const artifact = (id, artifact_type, content_markdown, extra = {}) => ({ id, project_id: "p", artifact_type, title: `Utkast ${id}`, content_markdown, artifact_version: 3, is_current: true, source_is_current: true, ...extra });
+  const desired = artifact("late", "bilag1_rekonstruksjon", "# Innledning\n\nGenerell bakgrunn.\n\n" + "Generell bakgrunn.\n\n".repeat(300) + "## Tilbakeføring\n\nEksport ved avslutning tar 30 dager.");
+  const candidates = [...Array.from({ length: 8 }, (_, i) => artifact(`other-${i}`, "losningsutkast", "## Eksport\n\nAndre forslag til eksport.")), desired, artifact("foreign", "bilag1_rekonstruksjon", "Eksport tar 9 dager", { project_id: "foreign" }), artifact("stale", "bilag1_rekonstruksjon", "Eksport tar 8 dager", { source_is_current: false })];
+  const sections = selectProjectChatArtifactSections({ artifacts: candidates, projectId: "p", question: "Hva sier Bilag 1 om eksport ved avslutning?", characterBudget: 1500, limit: 4 });
+  assert.equal(sections[0].artifact.id, "late");
+  assert.match(sections[0].text, /30 dager/u);
+  assert.equal(sections[0].heading, "Tilbakeføring");
+  assert.ok(sections.every(section => section.artifact.project_id === "p" && section.artifact.source_is_current && section.artifact.content_markdown.includes(section.text)));
+  assert.ok(sections.reduce((sum, section) => sum + section.text.length, 0) <= 1500);
+});
+
+test("chat repairs citation format once, validates before display and retains an honest terminal failure", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "chat-format-bound-"));
+  const state = { calls: 0 }; globalThis.__chatFormatBound = state;
+  try {
+    const completion = path.join(directory, "completion.cjs"), retrieval = path.join(directory, "retrieval.cjs");
+    writeFileSync(completion, `exports.createTextCompletionStream = async () => { const state=globalThis.__chatFormatBound; state.calls++; const text=state.calls===1 ? "K-1.3 krever eksport.\\n\\nK-1.3 krever eksport." : "K-1.3 krever eksport. [Kilde 1]"; return (async function*(){yield text;})(); };`);
+    writeFileSync(retrieval, `exports.retrieveDocumentSnippetsWithMetadata=async()=>({snippets:[],telemetry:{durationMs:0,quality:{sufficient:false,sourceCount:0}}});`);
+    const load = createJiti(import.meta.url, { fsCache: false, moduleCache: false, alias: { "@/lib/server/ai/completion": completion, "@/lib/server/document-chunks": retrieval, "@": frontendRoot, "server-only": "/dev/null" } });
+    const { streamProjectChat } = load(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
+    const output = await streamProjectChat({ projectName: "Fiktiv", question: "Hva krever K-1.3?", customerAnalysis: null, solutionEvaluation: null, recentMessages: [], customerDocument: { id: "customer", project_id: "p", role: "primary_customer_document", title: "Krav", raw_text: "K-1.3 krever eksport.", structure_map: [] }, solutionDocument: null });
+    let answer = ""; for await (const text of output.stream) answer += text;
+    assert.equal(state.calls, 2, "Only the initial answer and one format repair are allowed.");
+    assert.match(answer, /^K-1\.3 krever eksport\. \[Kilde 1\]/u);
+    assert.match(answer, /kunne ikke kildebekreftes/u);
+    assert.equal(output.sourceValidationFailed, true);
+    assert.equal(output.validateAnswer(answer).length, 1);
+  } finally { delete globalThis.__chatFormatBound; rmSync(directory, { recursive: true, force: true }); }
 });

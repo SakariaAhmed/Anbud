@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { unchangedRequirementRowEvidence } from "@/lib/output-source-evidence";
+import { requirementReviewRows } from "@/lib/requirement-review";
 
 import { isMarkdownTableDivider } from "@/lib/markdown-table-row";
 import { requirementResponseTableColumns } from "@/lib/requirement-response-table";
@@ -473,6 +475,8 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
   if (input.artifactType !== "forbedret_kravsvar") {
     return {
       ...parentInputSnapshot,
+      source_evidence: { version: 1, references: [] },
+      source_check_status: "manually_edited",
       edited_manually: true,
       edited_at: input.editedAt,
       parent_artifact_id: input.parentArtifactId,
@@ -680,8 +684,17 @@ export function buildValidatedManualArtifactInputSnapshot(input: {
     delete updatedRequirementResponse.manual_review_note;
   }
 
+  // Evidence belongs to the exact generated cell. A manual edit cannot inherit
+  // verified quotations from the old answer, even without repair acknowledgement.
+  const parentAnswerRows = typeof input.parentContentMarkdown === "string"
+    ? requirementReviewRows(input.parentContentMarkdown, parentInputSnapshot) : [];
+  const editedAnswerRows = requirementReviewRows(input.contentMarkdown, parentInputSnapshot);
+  const retainedEvidence = unchangedRequirementRowEvidence(parentInputSnapshot.source_evidence, parentAnswerRows, editedAnswerRows);
+
   return {
     ...parentInputSnapshot,
+    source_evidence: retainedEvidence,
+    source_check_status: "manually_edited",
     generation_metadata: {
       ...generationMetadata,
       requirement_response: updatedRequirementResponse,

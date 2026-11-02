@@ -66,6 +66,7 @@ import {
 } from "@/lib/server/repositories/lease-fenced-persistence";
 import { assertProjectWorkflowActive } from "@/lib/server/project-workflow-cancellation";
 import { isHistoricalSolutionDocument } from "@/lib/document-processing";
+import type { RequirementLedgerEntry } from "@/lib/server/requirements/types";
 import {
   fetchStoredFileReferencesPaginated,
   runStorageFirstDeletion,
@@ -2043,6 +2044,7 @@ export async function publishDocumentReadiness(input: {
 }
 
 export async function saveDocumentIngestionResult(input: {
+  requirementRegister?: RequirementLedgerEntry[];
   projectId: string;
   documentId: string;
   role: ProjectDocumentRole;
@@ -2200,7 +2202,7 @@ export async function saveDocumentIngestionResult(input: {
     });
   }
 
-  if (shouldIndexChunks && isDocumentAnalysisEnabled()) {
+  if (shouldIndexChunks && (isDocumentAnalysisEnabled() || input.requirementRegister !== undefined)) {
     const artifact = compileDocumentIntelligenceArtifact({
       documentId: input.documentId,
       projectId: input.projectId,
@@ -2223,6 +2225,7 @@ export async function saveDocumentIngestionResult(input: {
           }
         : undefined,
     });
+    if (input.requirementRegister) artifact.requirementRegister = { version: 1, rows: input.requirementRegister };
     await storeDocumentIntelligenceArtifact(artifact)
       .then(async (stored) => {
         if (!stored) return;
@@ -2268,6 +2271,7 @@ export async function saveDocumentIngestionResult(input: {
 export async function getDocumentDetail(
   projectId: string,
   documentId: string,
+  options: { includeFileBase64?: boolean } = {},
 ): Promise<ProjectDocumentDetail> {
   const dataApi = createServiceClient();
   const data = await fetchSingleDocumentRow((select) =>
@@ -2283,7 +2287,7 @@ export async function getDocumentDetail(
     throw new Error("Fant ikke dokumentet.");
   }
 
-  return resolveDocumentRow(data);
+  return resolveDocumentRow(data, options);
 }
 
 export async function deleteDocument(projectId: string, documentId: string) {
@@ -2489,7 +2493,8 @@ export async function saveCustomerAnalysis(
   result: CustomerAnalysisResult,
   options: {
     expectedSourceRevision: number;
-    expectedAnalysisRevision?: string;
+    expectedAnalysisRevision?: string | null;
+    automaticRequestId?: string;
     previousAnalysis?: CustomerAnalysisResult | null;
     updatedSections?: CustomerAnalysisSection[];
     historySource?: CustomerAnalysisHistorySource;
@@ -2528,9 +2533,10 @@ export async function saveCustomerAnalysis(
   const payload = {
     source_document_ids: sourceDocumentIds,
     expected_source_revision: options.expectedSourceRevision,
-    ...(options.expectedAnalysisRevision || previousAnalysis?.revision
-      ? { expected_analysis_revision: options.expectedAnalysisRevision ?? previousAnalysis?.revision }
+    ...(options.expectedAnalysisRevision !== undefined || previousAnalysis?.revision
+      ? { expected_analysis_revision: options.expectedAnalysisRevision !== undefined ? options.expectedAnalysisRevision : previousAnalysis?.revision }
       : {}),
+    ...(options.automaticRequestId ? { automatic_request_id: options.automaticRequestId } : {}),
     unchanged: analysisContentEqual(previousAnalysis, result),
     result_json: encryptJson(resultWithHistory),
     last_activity_at: new Date().toISOString(),

@@ -1,5 +1,7 @@
 "use client";
 
+import { OutputSourceEvidence } from "@/components/projects/output-source-evidence";
+import { isRecord } from "@/lib/unknown-values";
 import { FormEvent } from "react";
 import {
   AlertTriangle,
@@ -24,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { GeneratedArtifact, ProjectDocument } from "@/lib/types";
 
 export function ProjectBilag1Tab({
+  projectId, canDownloadDocuments = false,
   documents,
   artifacts,
   busy,
@@ -33,6 +36,8 @@ export function ProjectBilag1Tab({
   onDeleteArtifact,
   onSubmit,
 }: {
+  projectId: string;
+  canDownloadDocuments?: boolean;
   documents: ProjectDocument[];
   artifacts: GeneratedArtifact[];
   busy: boolean;
@@ -136,7 +141,11 @@ export function ProjectBilag1Tab({
                   </Button>
                 </DeleteConfirmDialog>
               </div>
+              <OutputSourceEvidence collapsible value={isRecord(latestArtifact.input_snapshot) ? latestArtifact.input_snapshot.source_evidence : undefined} projectId={projectId} canDownloadDocuments={canDownloadDocuments} />
               <MarkdownViewer
+                sourceEvidence={isRecord(latestArtifact.input_snapshot) ? latestArtifact.input_snapshot.source_evidence : undefined}
+                projectId={projectId}
+                canDownloadDocuments={canDownloadDocuments}
                 content={
                   latestArtifact.content_markdown ||
                   "Dette Bilag 1-utkastet mangler lagret innhold. Generer det på nytt for å få et komplett resultat."

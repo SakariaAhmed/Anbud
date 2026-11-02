@@ -116,7 +116,7 @@ export function selectDocumentStructureEntries(
 export function retrievedSnippetContext(
   label: string,
   snippets: RetrievedDocumentSnippet[],
-  options?: { textLimit?: number | null },
+  options?: { textLimit?: number | null; startIndex?: number },
 ) {
   if (!snippets.length) {
     return "";
@@ -128,7 +128,7 @@ export function retrievedSnippetContext(
     snippets
       .map((snippet, index) =>
         [
-          `${index + 1}. ${snippet.documentTitle}`,
+          `${index + 1 + (options?.startIndex ?? 0)}. ${snippet.documentTitle}`,
           `Referanse: ${snippet.reference}`,
           snippet.headingPath.length
             ? `Seksjon: ${snippet.headingPath.join(" > ")}`

@@ -21,12 +21,13 @@ const { buildKeywordSearchQuery } = jiti(path.join(frontendRoot, "lib/server/doc
 
 // The deployed definition is the one in the latest migration that replaces it.
 const retrievalMigration = readFileSync(
-  path.join(repositoryRoot, "database/migrations/20260711124500_selected_service_document_retrieval.sql"),
+  path.join(repositoryRoot, "database/migrations/20261101210000_norwegian_hybrid_retrieval.sql"),
   "utf8",
 );
 const hybridFunction = retrievalMigration.match(
   /create or replace function public\.hybrid_match_document_chunks\([\s\S]*?\n\$\$;/u,
 )?.[0];
+const norwegianSetup = retrievalMigration.slice(retrievalMigration.indexOf("-- Derive"), retrievalMigration.indexOf("create or replace function public.hybrid_match"));
 
 function runPsql(databaseUrl, sql) {
   return spawnSync("psql", [databaseUrl, "-X", "-v", "ON_ERROR_STOP=1", "-Atq", "-c", sql], { encoding: "utf8" });
@@ -66,6 +67,7 @@ test("keyword half of hybrid search finds passages for a full chat question", { 
         fts tsvector not null,
         embedding extensions.vector(1536)
       );
+      ${norwegianSetup}
       ${hybridFunction}
       insert into public.document_chunks (id, source_type, source_id, project_id, chunk_index, fts)
       values ${chunks.map(([id, text], index) =>
@@ -83,6 +85,15 @@ test("keyword half of hybrid search finds passages for a full chat question", { 
     assert.equal(keywordMatches(question), "", "the whole question requires every word and finds nothing");
     const matches = keywordMatches(buildKeywordSearchQuery(question, ["K-2.1"])).split(",");
     assert.deepEqual(matches, [`${chunks[0][0]}:1`], "inflected words and the exact ID find only the K-2.1 passage");
+    assert.match(keywordMatches("månedlig"), new RegExp(chunks[1][0]), "Norwegian stemming matches inflection without hand-written variants");
+    psqlOutput(databaseUrl.toString(), `update public.document_chunks set fts = to_tsvector('simple', 'hendelser') where id = '${chunks[1][0]}';`, "update lexical source");
+    assert.equal(keywordMatches("månedlig"), "", "updating FTS removes obsolete Norwegian stems");
+    assert.match(keywordMatches("hendelse"), new RegExp(chunks[1][0]));
+    psqlOutput(databaseUrl.toString(), `update public.document_chunks set fts_norwegian = ''::tsvector; update public.document_chunks set fts_norwegian = public.norwegian_document_chunk_fts(fts);`, "backfill existing lexemes");
+    assert.match(keywordMatches("hendelse"), new RegExp(chunks[1][0]), "explicit backfill repairs existing rows");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts(to_tsvector('simple', 'beta alpha')) @@ websearch_to_tsquery('norwegian', '"alpha beta"');`, "phrase order"), "f", "stemming cannot invent word order");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts(to_tsvector('simple', 'alpha og beta')) @@ websearch_to_tsquery('norwegian', '"alpha beta"');`, "phrase gap"), "f", "stop-word removal must retain source positions");
+    assert.equal(psqlOutput(databaseUrl.toString(), `select public.norwegian_document_chunk_fts('''logg'':2A,5B ''logger'':9C'::tsvector)::text;`, "stem merge"), "'logg':2A,5B,9C", "merged stems retain all positions and weights");
   } finally {
     runPsql(liveDatabaseUrl, `drop database if exists "${databaseName}" with (force)`);
   }

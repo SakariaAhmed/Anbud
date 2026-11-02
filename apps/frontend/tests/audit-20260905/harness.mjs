@@ -103,6 +103,7 @@ export function workflow(names, overrides = {}) {
     ...jiti(path.join(frontend, 'lib/project-job-progress.ts')),
     ...jiti(path.join(frontend, 'lib/server/use-cases/elapsed-progress.ts')),
     ...jiti(path.join(frontend, 'lib/server/project-job-result-projection.ts')),
+    buildIngestionRequirementRegister: jiti(path.join(frontend, 'lib/server/requirements/ingestion-register.ts')).buildIngestionRequirementRegister,
     saveCustomerAnalysis, getFreshCustomerAnalysis: freshAnalysis,
     getProjectSourceRevision: async () => revision(), listProjectDocumentsForAnalysis: async () => [document()],
     getProjectSnapshotAfterCommit: async () => ({ id: P }),

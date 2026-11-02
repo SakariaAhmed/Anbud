@@ -14,6 +14,7 @@ const REQUIRED_PROJECT_JOB_COLUMNS = [
   "terminal_metadata",
   "parent_job_id",
   "idempotency_key",
+  "run_class",
 ];
 
 const REQUIRED_AUDIT_EVENT_COLUMNS = ["subject_project_id"];
@@ -42,6 +43,12 @@ const REQUIRED_FUNCTIONS = [
   // Suggested upload roles depend on it; without it the app refuses them.
   "insert_vacant_primary_project_document",
   "vacant_primary_document_insert_preflight",
+  "record_upload_analysis_request",
+  "schedule_ready_customer_analysis",
+  "dispatch_ready_customer_analyses",
+  "finish_automatic_customer_analysis",
+  "automatic_customer_analysis_preflight",
+  "scheduled_worker_capacity_preflight",
 ];
 
 const FENCING_VERSION = "authoritative-lease-fencing-v1";
@@ -130,6 +137,7 @@ export async function preflightRemoteProjectJobSchema({
   for (const [table, columns] of [
     ["projects", "snapshot_revision"], ["customer_analyses", "revision"],
     ["project_result_history", "id,project_id,result_json"],
+    ["project_analysis_requests", "project_id,request_id,status,job_id,source_revision,reason_code,updated_at,last_checked_at"],
   ]) {
     const consistencyUrl = new URL(`${rootUrl}/${table}`);
     consistencyUrl.searchParams.set("select", columns);
@@ -289,6 +297,27 @@ export async function preflightRemoteProjectJobSchema({
     );
   }
 
+  const automaticAnalysisResponse = await fetchImpl(new URL(`${rootUrl}/rpc/automatic_customer_analysis_preflight`), {
+    method: "POST",
+    headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}`, accept: "application/json", "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!automaticAnalysisResponse.ok) {
+    throw new Error(`Automatic customer-analysis preflight failed with HTTP ${automaticAnalysisResponse.status}.`);
+  }
+  const automaticAnalysisVersion = await automaticAnalysisResponse.json();
+  if (automaticAnalysisVersion !== "automatic-customer-analysis-v1") {
+    throw new Error("Automatic customer-analysis version is missing or unexpected.");
+  }
+
+  const scheduledCapacityResponse = await fetchImpl(new URL(`${rootUrl}/rpc/scheduled_worker_capacity_preflight`), {
+    method: "POST",
+    headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}`, accept: "application/json", "content-type": "application/json" }, body: "{}",
+  });
+  if (!scheduledCapacityResponse.ok) throw new Error(`Scheduled worker-capacity preflight failed with HTTP ${scheduledCapacityResponse.status}.`);
+  const scheduledCapacityVersion = await scheduledCapacityResponse.json();
+  if (scheduledCapacityVersion !== "scheduled-worker-capacity-v1") throw new Error("Scheduled worker-capacity version is missing or unexpected.");
+
   return {
     host: url.host,
     columns: [...REQUIRED_PROJECT_JOB_COLUMNS],
@@ -298,6 +327,8 @@ export async function preflightRemoteProjectJobSchema({
     rollbackBridgeVersion,
     serviceDocumentWriteVersion,
     vacantPrimaryInsertVersion,
+    automaticAnalysisVersion,
+    scheduledCapacityVersion,
   };
 }
 
@@ -333,6 +364,8 @@ async function main() {
         stable_rollback_bridge_version: result.rollbackBridgeVersion,
         atomic_service_document_write_version:
           result.serviceDocumentWriteVersion,
+        scheduled_worker_capacity_version: result.scheduledCapacityVersion,
+        automatic_customer_analysis_version: result.automaticAnalysisVersion,
         vacant_primary_document_insert_version:
           result.vacantPrimaryInsertVersion,
       }),

@@ -1,8 +1,11 @@
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
+import { dispatchReadyCustomerAnalyses, scheduleReadyCustomerAnalysis } from "@/lib/server/repositories/automatic-analysis";
 import { projectJobResultForRead } from "@/lib/server/project-job-result-projection";
 import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
 
 import { randomUUID } from "node:crypto";
+import { recordWorkflowPerformance } from "@/lib/server/workflow-performance";
 
 import {
   normalizeArtifactInstructions,
@@ -64,6 +67,7 @@ import {
 } from "@/lib/server/use-cases/project-workflows";
 import type {
   DocumentIngestionJobResult,
+  DocumentFileFormat,
   GeneratedArtifactType,
   ProjectJobKind,
   ProjectJobRecord,
@@ -276,6 +280,7 @@ export async function claimAndScheduleProjectJobAutorun(
 
 type QueuedProjectJobDrainRuntime = {
   findNext?: typeof findOldestQueuedProjectJob;
+  scheduleAnalysis?: typeof scheduleReadyCustomerAnalysis;
   autorun?: (
     jobId: string,
     input: ProjectWorkflowInput,
@@ -294,6 +299,11 @@ export async function drainNextQueuedProjectJob(
   // The scheduled worker stops its server after the HTTP response, so work
   // handed to its in-memory queue would be interrupted.
   if (envFlag("PROJECT_JOB_WORKER_PROCESS")) return null;
+  try { await (runtime.scheduleAnalysis ?? scheduleReadyCustomerAnalysis)(projectId, null); }
+  catch (error) {
+    if (isProjectJobLeaseLostError(error)) throw error;
+    console.error(JSON.stringify({ event: "automatic_analysis_dispatch_failed", ...safeErrorTelemetry(error) }));
+  }
   const includeDoclingEnhancement = envFlag("DOCLING_ASYNC_AUTO_RUN", false);
   const next = await (runtime.findNext ?? findOldestQueuedProjectJob)(
     projectId,
@@ -404,18 +414,24 @@ function logJobPhase(input: {
   );
 }
 
-function createJobPhaseTimer(jobId: string, kind: ProjectJobRecord["kind"]) {
+function createJobPhaseTimer(jobId: string, input: ProjectWorkflowInput) {
+  const kind = input.kind;
+  let documentClass: DocumentFileFormat | undefined;
+  const documentId = "documentId" in input ? input.documentId : undefined;
   const totalStartedAt = Date.now();
   let phaseStartedAt = totalStartedAt;
   let lastCompletedPhase = "oppstart";
   const timings: Array<{ phase: string; duration_ms: number }> = [];
 
   return {
+    documentClass(value: DocumentFileFormat) { documentClass = value; },
     mark(phase: string) {
       const now = Date.now();
       const durationMs = now - phaseStartedAt;
       timings.push({ phase, duration_ms: durationMs });
       logJobPhase({ jobId, kind, phase, durationMs });
+      recordWorkflowPerformance({ traceId: documentId ?? jobId, projectId: input.projectId,
+        jobId, documentId, documentClass, operation: documentId ? "document" : "generation", phase, durationMs });
       phaseStartedAt = now;
       lastCompletedPhase = phase;
     },
@@ -747,7 +763,7 @@ async function runProjectJob(
   context: JobRunContext,
   activeLease?: ActiveProjectJobLease,
 ): Promise<ProjectJobRunOutcome> {
-  const phaseTimer = createJobPhaseTimer(jobId, input.kind);
+  const phaseTimer = createJobPhaseTimer(jobId, input);
   if (context.persisted) {
     getLocallyManagedPersistedJobIds().add(jobId);
   }
@@ -760,6 +776,16 @@ async function runProjectJob(
 
   try {
     lease.assertActive();
+    const executionStartedAt = Date.now();
+    const recordQueueWait = (queued: ProjectJobRecord | null | undefined) => {
+      if (queued) recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
+      projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
+      operation: "documentId" in input ? "document" : "generation", phase: "queue_wait",
+      durationMs: executionStartedAt - Date.parse(queued.created_at) });
+    };
+    const queued = getStore().get(jobId);
+    if (queued) recordQueueWait(queued);
+    else if (context.persisted) void findProjectJob(input.projectId, jobId).then(recordQueueWait).catch(() => { /* Optional telemetry cannot block execution. */ });
     updateJob(jobId, { status: "running" }, context, { markStarted: true });
     const result = await runProjectWorkflowWithDeadline({
       kind: input.kind,
@@ -793,6 +819,7 @@ async function runProjectJob(
             const committed = context.persisted ? await recoverCommittedProjectJobResult(input.projectId, jobId) : null;
             const completeCheckpoint = committed && !("completion_status" in committed && committed.completion_status === "evaluation_pending");
             const workflowResult = completeCheckpoint ? committed : await runProjectWorkflow(input, {
+              onDocumentClass: phaseTimer.documentClass,
               setProgress(message) {
                 assertWorkflowActive();
                 updateJob(jobId, { message, status: "running" }, context);
@@ -824,6 +851,17 @@ async function runProjectJob(
               );
               assertWorkflowActive();
               workflowResult.docling_enhancement_job_id = queuedEnhancement.id;
+            }
+
+            if (input.kind === "document_ingestion" || input.kind === "document_docling_enhancement") {
+              // Optional follow-up scheduling must not turn already published
+              // document readiness into an ingestion failure.
+              try { await scheduleReadyCustomerAnalysis(input.projectId); }
+              catch (error) {
+                if (isProjectJobLeaseLostError(error)) throw error;
+                console.error(JSON.stringify({ event: "automatic_analysis_scheduling_failed", project_id: input.projectId, ...safeErrorTelemetry(error) }));
+              }
+              assertWorkflowActive();
             }
 
             return workflowResult;
@@ -938,6 +976,10 @@ async function runProjectJob(
           });
         }
         lease.stop();
+        recordWorkflowPerformance({ traceId: "documentId" in input ? input.documentId : jobId,
+          projectId: input.projectId, jobId, documentId: "documentId" in input ? input.documentId : undefined,
+          operation: "documentId" in input ? "document" : "generation", phase: "total",
+          durationMs: phaseTimer.total(), status: terminalPatch.status === "completed" && terminalPersisted ? "completed" : "failed" });
       }
     } finally {
       lease.stop();
@@ -962,6 +1004,7 @@ export async function getProjectJob(projectId: string, jobId: string) {
 export async function queueArtifactGenerationJob(input: {
   projectId: string;
   artifactType: GeneratedArtifactType;
+  regenerateRequirements?: RequirementRegenerationSelection;
   instructions?: string;
   sourceDocumentIds?: string[];
   useSolutionEvaluationContext?: boolean;
@@ -972,6 +1015,7 @@ export async function queueArtifactGenerationJob(input: {
       kind: "artifact_generation",
       projectId: input.projectId,
       artifactType: input.artifactType,
+      regenerateRequirements: parseRequirementRegeneration(input.regenerateRequirements),
       instructions: normalizeArtifactInstructions(input.instructions),
       sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
       useSolutionEvaluationContext: input.useSolutionEvaluationContext === true,
@@ -984,12 +1028,14 @@ export async function queueArtifactGenerationJob(input: {
 export async function queueDocumentIngestionJob(input: {
   projectId: string;
   documentId: string;
+  requestAutoAnalysis?: boolean;
 }, options: QueueJobOptions = {}) {
   return enqueueProjectJob(
     {
       kind: "document_ingestion",
       projectId: input.projectId,
       documentId: input.documentId,
+      ...(input.requestAutoAnalysis !== undefined ? { requestAutoAnalysis: input.requestAutoAnalysis } : {}),
     },
     options,
   );
@@ -1119,7 +1165,14 @@ export async function runAvailableProjectJobs(options: {
     deadlineAt: options.deadlineAt,
     now: options.now ?? Date.now,
     maxJobs: options.limit ?? 1,
-    listQueuedJobIds: listQueuedProjectJobIds,
+    async listQueuedJobIds(limit) {
+      try { await dispatchReadyCustomerAnalyses(); }
+      catch (error) {
+        if (isProjectJobLeaseLostError(error)) throw error;
+        console.error(JSON.stringify({ event: "automatic_analysis_dispatch_failed", ...safeErrorTelemetry(error) }));
+      }
+      return listQueuedProjectJobIds(limit);
+    },
     async readQueuedInput(jobId) {
       const queuedInput = await getQueuedProjectJobInput(jobId);
       return queuedInput ? parseProjectWorkflowInput(queuedInput) : null;

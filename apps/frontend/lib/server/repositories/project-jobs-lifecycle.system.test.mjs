@@ -368,6 +368,7 @@ test("drain claims the oldest queued job through the autorun path", async () => 
     const lookups = [];
     const started = [];
     const claimed = await drainNextQueuedProjectJob("p1", {
+      scheduleAnalysis: async () => {},
       async findNext(projectId, options) {
         lookups.push([projectId, options]);
         return { id: "second-upload", input: { kind: "document_ingestion", projectId, documentId: "doc-2" } };
@@ -388,6 +389,7 @@ test("drain leaves Docling enhancement to the worker unless async autorun is on"
   await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined, DOCLING_ASYNC_AUTO_RUN: undefined }, async () => {
     const result = await drainNextQueuedProjectJob("p1", {
       findNext: async () => docling,
+      scheduleAnalysis: async () => {},
       autorun: async () => assert.fail("Docling enhancement must stay queued"),
     });
     assert.equal(result, null);
@@ -396,6 +398,7 @@ test("drain leaves Docling enhancement to the worker unless async autorun is on"
     const options = [];
     const started = [];
     await drainNextQueuedProjectJob("p1", {
+      scheduleAnalysis: async () => {},
       async findNext(_projectId, lookup) { options.push(lookup); return docling; },
       async autorun(jobId) { started.push(jobId); return { leaseToken: "lease" }; },
     });
@@ -408,6 +411,7 @@ test("drain does nothing inside the scheduled worker process", async () => {
   await withEnv({ PROJECT_JOB_WORKER_PROCESS: "1" }, async () => {
     const result = await drainNextQueuedProjectJob("p1", {
       findNext: async () => assert.fail("worker server must not look up follow-up work"),
+      scheduleAnalysis: async () => assert.fail("worker server must not enqueue follow-up work in its web drain"),
       autorun: async () => assert.fail("worker server must not schedule follow-up work"),
     });
     assert.equal(result, null);
@@ -418,6 +422,7 @@ test("drain respects release claim gating by leaving the job queued", async () =
   await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined }, async () => {
     const result = await drainNextQueuedProjectJob("p1", {
       findNext: async () => ({ id: "queued", input: { kind: "customer_analysis", projectId: "p1" } }),
+      scheduleAnalysis: async () => {},
       autorun: (jobId, input) => claimAndScheduleProjectJobAutorun(jobId, input, {
         async claim() { throw new Error("PROJECT_JOB_CLAIMS_CLOSED: project-job claims are disabled for deployment cutover"); },
         schedule() { assert.fail("closed claims must not schedule"); },
@@ -1707,4 +1712,20 @@ test("deployment claim pause keeps a durable job queued, while unrelated errors 
   await assert.rejects(claimAndScheduleProjectJobAutorun("unrelated-failure",workflow,{
     ...runtime, async claim() { throw new Error("Unexpected database failure"); },
   }), /Unexpected database failure/);
+});
+
+test("web drain still starts ordinary queued work when automatic scheduling fails", async t => {
+  const logs = [];
+  t.mock.method(console, "error", value => logs.push(value));
+  await withEnv({ PROJECT_JOB_WORKER_PROCESS: undefined }, async () => {
+    let started = false;
+    const result = await drainNextQueuedProjectJob("p1", {
+      scheduleAnalysis: async () => { throw new Error("private scheduling backend details"); },
+      findNext: async () => ({ id: "ordinary", input: { kind: "customer_analysis", projectId: "p1" } }),
+      autorun: async () => { started = true; return { leaseToken: "ordinary-lease" }; },
+    });
+    assert.equal(started, true); assert.equal(result.leaseToken, "ordinary-lease");
+    assert.equal(JSON.parse(logs[0]).event, "automatic_analysis_dispatch_failed");
+    assert.doesNotMatch(logs.join(""), /private scheduling backend details/u);
+  });
 });

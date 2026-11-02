@@ -177,7 +177,18 @@ const lease = '00000000-0000-4000-8000-000000005331';
 function ingestionRepository(chunks) {
   sql(`insert into project_jobs(id,project_id,kind,status,message,input_json,lease_token) values (${quote(J)},${quote(P)},'document_ingestion','running','Audit','{}',${quote(lease)})`);
   const crypto = jiti(path.join(frontend, 'lib/server/crypto.ts'));
+  const { storeDocumentIntelligenceArtifact } = actual('lib/server/document-intelligence/repository.ts', ['storeDocumentIntelligenceArtifact'], {
+    ...crypto, SAVE_ARTIFACT_FUNCTION: 'save_document_intelligence_artifact',
+    createServiceClient: () => ({ rpc: async (name, a) => {
+      assert.equal(name, 'save_document_intelligence_artifact');
+      return { data: sql(`select public.save_document_intelligence_artifact(${quote(a.p_document_id)},${quote(a.p_project_id)},${a.p_source_revision},${quote(a.p_compiler_version)},${quote(a.p_content_hash)},${quote(a.p_parser_used)},${json(a.p_quality)},${json(a.p_evidence_counts)},${json(a.p_artifact_encrypted)},${quote(a.p_analysis_context_encrypted)},${quote(a.p_updated_at)})`) === 't', error: null };
+    } }),
+  });
   return actual(storeFile, ['saveDocumentIngestionResult', 'updateDocumentProcessingState', 'publishDocumentReadiness'], {
+    compileDocumentIntelligenceArtifact: jiti(path.join(frontend, 'lib/server/document-intelligence/evidence-compiler.ts')).compileDocumentIntelligenceArtifact,
+    isHighImpactDocument: jiti(path.join(frontend, 'lib/server/document-intelligence/document-policy.ts')).isHighImpactDocument,
+    isAzureDocumentIntelligenceConfigured: () => false, isDoclingEnabled: () => false,
+    storeDocumentIntelligenceArtifact, recordDocumentIntelligenceEvent: noop,
     ...crypto, fetchSingleDocumentRow: async () => { const v = sql(`select row_to_json(d) from documents d where id=${quote(D)}`); return v ? JSON.parse(v) : null; },
     getProjectWorkflowLease: () => ({jobId: J, leaseToken: lease}),
     createServiceClient: () => ({rpc: async (name,args) => { try { return {data: JSON.parse(sql(`select public.publish_document_readiness(${quote(args.p_project_id)},${quote(args.p_document_id)},${args.p_source_revision},${quote(args.p_status)},${quote(args.p_message)},${quote(args.p_parser_used)},${quote(J)},${quote(lease)})`)),error:null}; } catch(error) { return {data:null,error:{message:error.message}}; } }}), pageCountFromStructureMap: () => null, pageCountFromRawText: () => null,
@@ -389,6 +400,7 @@ test('CONTROL META: actual ingestion keeps primary document processing through i
   });
   await runDocumentIngestionWorkflow({ kind: 'document_ingestion', projectId: P, documentId: D }, handlers);
   assert.deepEqual(statuses, ['processing','processing']); assert.equal(document().processing_status, 'enhanced_ready');
+  assert.equal(sql(`select count(*) from document_intelligence_artifacts where document_id=${quote(D)} and source_revision=(select chunk_source_revision from documents where id=${quote(D)})`), '1', 'The actual register artifact is persisted at the ready source revision');
 });
 
 test('REGRESSION UI5: delayed ingestion result refreshes current project and preserves newer analysis', async () => {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ProjectChatPopoutPage } from "@/components/projects/project-chat-popout-page";
 import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
+import { requireProjectPermission } from "@/lib/server/authorization";
 import { getProjectShell, listProjects } from "@/lib/server/repositories/data-store";
 
 function parseSessionId(value: string | string[] | undefined) {
@@ -21,6 +22,7 @@ export default async function ProjectChatPage({
 }) {
   try {
     const [{ id }, query] = await Promise.all([params, searchParams]);
+    const access = await requireProjectPermission(id, "project.read");
     const ownerId = (await headers()).get(AUTH_PRINCIPAL_HEADER);
     const [project, projects] = await Promise.all([
       getProjectShell(id),
@@ -29,6 +31,7 @@ export default async function ProjectChatPage({
 
     return (
       <ProjectChatPopoutPage
+        canDownloadDocuments={access.permissions.includes("document.download")}
         projectId={project.id}
         projectName={project.name}
         customerName={project.customer_name}

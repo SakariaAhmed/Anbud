@@ -116,6 +116,7 @@ import {
   requirementDisplayRef,
   requirementDisplaySource,
   requirementGroupHeading,
+  isClarificationRequirementEntry,
   requirementLedgerSource,
   requirementTableMarkdown,
   sortRequirementLedgerInDocumentOrder,
@@ -2262,22 +2263,6 @@ function requirementCoverageSummary(input: {
     .join(" ");
 }
 
-function isClarificationRequirementEntry(entry: RequirementLedgerEntry) {
-  const content = normalizeComparableText(
-    `${entry.id} ${entry.text} ${entry.heading} ${entry.service ?? ""}`,
-  );
-  if (
-    /\b(clarification question deadline|customer answers to clarification)\b/i.test(
-      entry.text,
-    )
-  ) {
-    return false;
-  }
-
-  return /\b(known unclear|clarification required|clarification needs|tbd|avklaringspunkt|avklaring kreves|uavklart|uklar)\b/i.test(
-    content,
-  );
-}
 
 function buildRequirementResponseMarkdown(input: {
   ledger: RequirementLedgerEntry[];
@@ -2331,15 +2316,7 @@ function buildRequirementResponseMarkdown(input: {
     ? [
         "## Avklaringspunkter",
         "",
-        ...clarificationRows.map((row) => {
-          const answer = row.answer
-            .replace(/^Avklaringspunkt:\s*/i, "")
-            .replace(/\s+/g, " ")
-            .trim();
-          return `- **${markdownTableCell(
-            requirementDisplayRef(row.entry, requirementGroupHeading(row.entry)),
-          )}:** ${answer}`;
-        }),
+        ...clarificationRows.map((row) => `- **${markdownTableCell(requirementDisplayRef(row.entry, requirementGroupHeading(row.entry)))}:** Se svar i kravtabellen, rad ${indexedRows.indexOf(row) + 1}.`),
         "",
       ]
     : [];

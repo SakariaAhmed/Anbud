@@ -1,5 +1,8 @@
 export type RequirementLedgerEntry = {
   id: string;
+  /** Observed in the source, bounded inference, or a local review identifier. */
+  idOrigin?: "source" | "inferred" | "generated";
+  originalId?: string;
   text: string;
   pages: number[];
   heading: string;
@@ -17,6 +20,7 @@ export type RequirementLedgerEntry = {
     documentTitle: string;
     pages: number[];
     excerpt: string;
+    heading?: string;
   };
   answerExcerpt?: string;
   answerEvidenceExcerpt?: string;

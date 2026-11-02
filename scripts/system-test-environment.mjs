@@ -82,12 +82,13 @@ if (command === "stop") {
   runtime.env.OPENAI_API_KEY = "local-budget-proxy-only";
   runtime.env.OPENAI_BASE_URL = "http://127.0.0.1:4340/v1";
   runtime.env.RAG_MODEL_RERANK = "on";
+  runtime.env.PROJECT_JOB_WORKER_PROCESS = process.argv.includes("--web-mode") ? "0" : "1";
   for (const key of ["AZURE_COMMUNICATION_EMAIL_ENDPOINT", "AZURE_COMMUNICATION_EMAIL_SENDER", "AZURE_COMMUNICATION_EMAIL_CONNECTION_STRING", "MICROSOFT_ENTRA_CLIENT_ID", "MICROSOFT_ENTRA_CLIENT_SECRET", "MICROSOFT_ENTRA_TENANT_SUBDOMAIN"]) runtime.env[key] = "";
   writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
   try { process.kill(-state.appPid, "SIGTERM"); } catch { /* Already stopped. */ }
   await waitFor(async () => { try { await available(ports.app); return true; } catch { return false; } }, "App shutdown");
   await startApplication(state, runtime.env);
-  writeFileSync(statusPath, JSON.stringify({ ...status, aiMode: "budgeted loopback model proxy" }, null, 2));
+  writeFileSync(statusPath, JSON.stringify({ ...status, appMode: "development", aiMode: "budgeted loopback model proxy" }, null, 2));
   console.log("Restarted the owned app with the explicit budgeted loopback model proxy. No AI requests were sent by this command.");
 } else if (command === "start") {
   isolatedApplicationEnvironment(frontend, {});

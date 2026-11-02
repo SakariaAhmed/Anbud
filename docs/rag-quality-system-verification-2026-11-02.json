@@ -1,0 +1,276 @@
+{
+  "code_commit": "8d103839c725ff0c84b0f24dab834bc4ede2eceb",
+  "recorded_at": "2026-11-02T04:06:19.251Z",
+  "environment": "Owned isolated local development stack, synthetic TXT documents; no production sources",
+  "checks": {
+    "frontend_tests": 1399,
+    "root_tests": 156,
+    "audit_reproductions": 46,
+    "failures": 0,
+    "skips": 0,
+    "parser_goldens": true,
+    "additive_upgrade": true,
+    "lint": true,
+    "types": true,
+    "production_build": true
+  },
+  "system": {
+    "project_id": "391d05be-73f9-4eec-8325-f65c009c3545",
+    "completed_jobs": [
+      {
+        "kind": "document_ingestion",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 4437
+      },
+      {
+        "kind": "document_ingestion",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 1485
+      },
+      {
+        "kind": "document_ingestion",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 448
+      },
+      {
+        "kind": "customer_analysis",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 77061
+      },
+      {
+        "kind": "artifact_generation",
+        "status": "completed",
+        "artifact_type": "forbedret_kravsvar",
+        "observed_duration_ms": 4956
+      },
+      {
+        "kind": "artifact_generation",
+        "status": "completed",
+        "artifact_type": "losningsutkast",
+        "observed_duration_ms": 4207
+      },
+      {
+        "kind": "artifact_generation",
+        "status": "completed",
+        "artifact_type": "gjennomforing_og_risiko",
+        "observed_duration_ms": 9224
+      },
+      {
+        "kind": "artifact_generation",
+        "status": "completed",
+        "artifact_type": "bilag1_rekonstruksjon",
+        "observed_duration_ms": 52188
+      },
+      {
+        "kind": "solution_evaluation",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 92888
+      },
+      {
+        "kind": "executive_summary",
+        "status": "completed",
+        "artifact_type": null,
+        "observed_duration_ms": 2949
+      }
+    ],
+    "completed_ai_jobs": 7,
+    "evidence_manifests": {
+      "requirements": {
+        "version": 1,
+        "references": 3,
+        "issues": 0
+      },
+      "bilag": {
+        "version": 1,
+        "references": 11,
+        "issues": 0
+      },
+      "evaluation": {
+        "version": 1,
+        "references": 10,
+        "issues": 0
+      },
+      "summary": {
+        "version": 1,
+        "references": 0,
+        "issues": 0
+      }
+    },
+    "http_checks": [
+      "liveness",
+      "anonymous access denied",
+      "admin password authentication and persisted session",
+      "authenticated readiness of the configured system dependencies",
+      "reused the owned synthetic project whose AI jobs already completed",
+      "source-revision-bound persisted requirement register through the actual read route",
+      "dashboard aggregate counts through real PostgREST RPC",
+      "short numeric source expansion denied to restricted viewers and allowed to downloaders",
+      "repeated source probes are rate limited with no source text",
+      "restricted viewer original-excerpt verification, invented quote/stale revision/foreign source denied",
+      "guest authentication, allowed read, denied source download/generation/chat/admin access",
+      "guest-owned project creation and global admin access without a project grant",
+      "persisted AI outputs retain customer facts, all three requirement IDs, explicit freshness and selected solution provenance",
+      "deterministic evidence contract persists across requirement answers, Bilag 1, evaluation and executive summary",
+      "reused the completed persisted response from the original streamed chat",
+      "validated chat source IDs, sparse citation numbers, original quotation and revision survive actual persistence/reload"
+    ],
+    "all_generators_completed": true,
+    "validation_resumed_without_repeating_paid_jobs": true,
+    "completed_streamed_chat_reused": true,
+    "initial_harness_failure": "A document-name text assertion rejected a valid answer with numbered source links. The corrected harness verifies persisted source identity, quotation, revision and the actual source-evidence route.",
+    "restriction": "No live Entra, PDF/OCR HTTP upload or full production-mode dependency test",
+    "ai_mode": "budgeted loopback model proxy",
+    "observed_models": [
+      "gpt-5.4",
+      "gpt-5.4-mini"
+    ],
+    "model_observation_source": "Owned app.log model records; no per-workflow model attribution inferred",
+    "evidence_manifest_limit": "The executive summary has zero references. Its zero-issue manifest does not establish quotation coverage or semantic groundedness.",
+    "final_current_artifact_freshness": [
+      {
+        "artifact_type": "bilag1_rekonstruksjon",
+        "artifact_version": 1,
+        "source_is_current": true
+      },
+      {
+        "artifact_type": "gjennomforing_og_risiko",
+        "artifact_version": 1,
+        "source_is_current": false
+      },
+      {
+        "artifact_type": "losningsutkast",
+        "artifact_version": 1,
+        "source_is_current": false
+      },
+      {
+        "artifact_type": "forbedret_kravsvar",
+        "artifact_version": 1,
+        "source_is_current": false
+      }
+    ],
+    "freshness_limit": "Requirement answers, solution proposal and risk plan were explicitly stale at the end after later cross-type knowledge changes. Completion at publication is distinct from final source freshness; no regeneration was repeated for report validation.",
+    "evaluation_free_text_limit": "After evidence downgrades, deterministic coverage counts/verdict and downgraded row guidance are reconciled in current code. Other top-level free-form evaluation narratives are not re-evaluated and may remain overoptimistic. Coverage-only source issues do not create a page-level warning; this remains release-quality debt."
+  },
+  "recorded_retrieval": [
+    {
+      "suite": "complex-tender-116.v1",
+      "cases": 116,
+      "answerable_cases": 116,
+      "missing_id_cases": 0,
+      "gate_passed": true,
+      "embedding_fixture": {
+        "requests": 0,
+        "recordedInputs": 0,
+        "replayedInputs": 240,
+        "missingInputs": 0
+      },
+      "groups": {
+        "id_lookup": {
+          "cases": 60,
+          "recall_at_5": 1,
+          "recall_at_10": 1,
+          "mrr": 1,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 52.36666666666667
+        },
+        "conceptual": {
+          "cases": 36,
+          "recall_at_5": 0.6944444444444444,
+          "recall_at_10": 0.8333333333333334,
+          "mrr": 0.5650903880070547,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 62.361111111111114
+        },
+        "held_out": {
+          "cases": 20,
+          "recall_at_5": 0.95,
+          "recall_at_10": 1,
+          "mrr": 0.8958333333333334,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 63.85
+        }
+      },
+      "network_model_calls": 0,
+      "memory_fallback_cases": 0
+    },
+    {
+      "suite": "mixed-source-retrieval.v1",
+      "cases": 55,
+      "answerable_cases": 50,
+      "missing_id_cases": 5,
+      "gate_passed": true,
+      "embedding_fixture": {
+        "requests": 0,
+        "recordedInputs": 0,
+        "replayedInputs": 276,
+        "missingInputs": 0
+      },
+      "groups": {
+        "stress": {
+          "cases": 20,
+          "recall_at_5": 0.9,
+          "recall_at_10": 0.9,
+          "mrr": 0.8708333333333332,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 98.45
+        },
+        "follow_up": {
+          "cases": 5,
+          "recall_at_5": 1,
+          "recall_at_10": 1,
+          "mrr": 0.74,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 51.4
+        },
+        "tender_ids": {
+          "cases": 23,
+          "recall_at_5": 1,
+          "recall_at_10": 1,
+          "mrr": 1,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 45.04347826086956
+        },
+        "amendment": {
+          "cases": 2,
+          "recall_at_5": 1,
+          "recall_at_10": 1,
+          "mrr": 1,
+          "citation_accuracy": null,
+          "citation_count": 0,
+          "avg_latency_ms": 78.5
+        },
+        "missing_id": {
+          "cases": 5,
+          "correct_low_evidence": 5,
+          "low_evidence_rate": 1
+        }
+      },
+      "network_model_calls": 0,
+      "memory_fallback_cases": 0
+    }
+  ],
+  "sql_replay_attempt": "The supplement parallel replay timed out at local psql insertion; the unchanged suite passed alone. No provider calls or labels changed.",
+  "budget": {
+    "authorized_cumulative_limit_usd": 10,
+    "accounted_upper_bound_usd": 6.331864,
+    "remaining_usd": 3.668136,
+    "uncertain_requests_charged_conservatively": 5,
+    "snapshot_source": "Budget proxy backed by persisted anbud-followups-ai-budget.json request metadata; upper bound independently recomputed from accounted costs/reservations"
+  },
+  "production": {
+    "migrations_applied": false,
+    "deployed": false
+  },
+  "remaining": "All 18 recommendations are not complete; conceptual release recall remains below 95%. Independent review rejected one case in the latest model smoke, making groundedness/citation correctness at most 9/10 (the other nine cases were not independently audited) (exit-plan deadline conflated with completing exit), below the release gate. HTTP completion and deterministic quotation membership do not establish semantic groundedness. No v3 model run is claimed; broader reliability/human/production measurements remain."
+}

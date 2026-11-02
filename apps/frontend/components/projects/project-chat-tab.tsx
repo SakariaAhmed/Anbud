@@ -1,4 +1,6 @@
 "use client";
+import { parseChatSourceReferences } from "@/lib/chat-source-references";
+import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 
 import {
   type ChangeEvent,
@@ -71,17 +73,10 @@ function compactAttachmentSize(bytes: number) {
 }
 
 function messageSourceReferences(message: ChatMessage): ChatSourceReference[] {
-  if (message.source_references?.length) {
-    return message.source_references;
-  }
-
+  if (message.source_references?.length) return parseChatSourceReferences(message.source_references);
   const snapshot = message.context_snapshot;
-  if (!snapshot || typeof snapshot !== "object") {
-    return [];
-  }
-
-  const value = (snapshot as { source_references?: unknown }).source_references;
-  return Array.isArray(value) ? (value as ChatSourceReference[]) : [];
+  return snapshot && typeof snapshot === "object" && "source_references" in snapshot
+    ? parseChatSourceReferences(snapshot.source_references) : [];
 }
 
 function messagePromptAttachments(message: ChatMessage): ChatPromptAttachmentMetadata[] {
@@ -154,7 +149,8 @@ function sourceLabel(source: ChatSourceReference) {
         : `side ${source.page_start}`
       : "";
   const reference = [source.reference, page].filter(Boolean).join(", ");
-  return reference ? `${source.document_title} · ${reference}` : source.document_title;
+  const label = reference ? `${source.document_title} · ${reference}` : source.document_title;
+  return source.citation_number ? `Kilde ${source.citation_number}: ${label}` : label;
 }
 
 function attachmentLabel(attachment: ChatPromptAttachmentMetadata) {
@@ -218,6 +214,8 @@ function ChatAttachmentCard({
 }
 
 export function ProjectChatTab({
+  projectId,
+  canDownloadDocuments = false,
   chatMessages,
   chatInput,
   streamingMessage,
@@ -234,6 +232,8 @@ export function ProjectChatTab({
   documentUploadState = { status: "idle" },
   onRegenerateResponse,
 }: {
+  projectId?: string;
+  canDownloadDocuments?: boolean;
   chatMessages: ChatMessage[];
   chatInput: string;
   streamingMessage: string;
@@ -542,7 +542,7 @@ export function ProjectChatTab({
                               key={`${source.source_id}-${source.reference}-${index}`}
                               className="leading-5"
                             >
-                              {sourceLabel(source)}
+                              <SourceEvidenceButton source={source} projectId={projectId} canDownloadDocuments={canDownloadDocuments}>{sourceLabel(source)}</SourceEvidenceButton>
                             </div>
                           ))}
                         </div>

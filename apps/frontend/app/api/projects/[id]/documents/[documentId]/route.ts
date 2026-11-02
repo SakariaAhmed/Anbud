@@ -10,7 +10,7 @@ import {
 import { routeErrorResponse } from "@/lib/server/api-responses";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string; documentId: string }> },
 ) {
   try {
@@ -21,10 +21,16 @@ export async function GET(
       { project_id: id, document_id: documentId },
       async () => {
         const document = await getDocumentDetail(id, documentId);
+        const sourceRevision = new URL(request.url).searchParams.get("source_revision");
+        if (sourceRevision !== null) {
+          if (!/^\d+$/u.test(sourceRevision) || !Number.isSafeInteger(Number(sourceRevision))) return NextResponse.json({ error: "Ugyldig kildeversjon." }, { status: 400 });
+          if (Number(sourceRevision) !== (document.chunk_source_revision ?? 0)) return NextResponse.json({ error: "Kilden er endret. Oppdater resultatet og kontroller henvisningen på nytt." }, { status: 409 });
+        }
         const buffer = Buffer.from(document.file_base64, "base64");
         const encodedFileName = encodeURIComponent(document.file_name);
+        const disposition = new URL(request.url).searchParams.get("disposition") === "inline" ? "inline" : "attachment";
         const contentDisposition =
-          `attachment; filename="download"; filename*=UTF-8''${encodedFileName}`;
+          `${disposition}; filename="download"; filename*=UTF-8''${encodedFileName}`;
 
         return new NextResponse(buffer, {
           headers: {

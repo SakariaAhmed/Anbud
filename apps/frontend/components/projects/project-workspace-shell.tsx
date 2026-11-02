@@ -1,4 +1,7 @@
 "use client";
+import type { RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
+import { ProjectFollowUpPanel } from "@/components/projects/project-follow-up";
+import { ProjectRequirementRegisterPreview } from "@/components/projects/project-requirement-register";
 
 import "./project-workspace.css";
 
@@ -202,6 +205,8 @@ type WorkspaceStatusMessagesProps = {
 };
 
 export type ProjectWorkspaceTabContentProps = {
+  canDownloadDocuments?: boolean;
+  readOnly?: boolean;
   activeTab: ProjectWorkspaceTab;
   project: ProjectDetail;
   serviceDescriptions: ProjectServiceDescription[];
@@ -222,6 +227,7 @@ export type ProjectWorkspaceTabContentProps = {
   busyMessage: string;
   busyProgress: number;
   projectJobs: ProjectJobRecord[];
+  automaticAnalysis?: import("@/lib/types").AutomaticAnalysisRequest | null;
   /** Set while the server would refuse a new generation (busy or indexing). */
   workflowBlockedReason: string | null;
   onProjectJobRecorded: (job: ProjectJobRecord) => void;
@@ -273,6 +279,7 @@ export type ProjectWorkspaceTabContentProps = {
       acknowledge_deterministic_repairs?: boolean;
     },
   ) => Promise<void>;
+  onRegenerateRequirements: (selection: RequirementRegenerationSelection) => Promise<void>;
   onGenerateRequirementResponse: (
     event: FormEvent<HTMLFormElement>,
   ) => Promise<void>;
@@ -620,6 +627,8 @@ function DeferredSectionLoader({ label }: { label: string }) {
 }
 
 export function ProjectWorkspaceTabContent({
+  canDownloadDocuments = false,
+  readOnly = false,
   activeTab,
   project,
   serviceDescriptions,
@@ -640,6 +649,7 @@ export function ProjectWorkspaceTabContent({
   busyMessage,
   busyProgress,
   projectJobs,
+  automaticAnalysis,
   workflowBlockedReason,
   onProjectJobRecorded,
   onRefreshProjectJobs,
@@ -671,15 +681,21 @@ export function ProjectWorkspaceTabContent({
   onUploadRequirementDocument,
   onUpdateRequirementArtifact,
   onGenerateRequirementResponse,
+  onRegenerateRequirements,
   onGenerateExecutiveSummary,
   onGenerateArtifact,
 }: ProjectWorkspaceTabContentProps) {
+  const registerRefreshKey = project.documents.map(document => `${document.id}:${document.chunk_source_revision}:${document.processing_status}`).join("|");
+  const documentsProcessing = projectJobs.some(job => (job.kind === "document_ingestion" || job.kind === "document_docling_enhancement") && (job.status === "queued" || job.status === "running"));
   return (
     <>
+      {(activeTab === "requirements" || (activeTab === "analysis" && !customerAnalysis)) && project.documents.length > 0 ? <ProjectRequirementRegisterPreview projectId={project.id} refreshKey={registerRefreshKey} processing={documentsProcessing} /> : null}
+      {activeTab === "requirements" || activeTab === "evaluation" ? <ProjectFollowUpPanel artifacts={requirementArtifacts} analysis={customerAnalysis} evaluation={solutionEvaluation} /> : null}
       <ProjectWorkflowJobs
         key={`jobs-${project.id}`}
         projectId={project.id}
         jobs={projectJobs}
+        automaticAnalysis={automaticAnalysis}
         blockedReason={workflowBlockedReason}
         onJobStarted={onProjectJobRecorded}
         onRefreshJobs={onRefreshProjectJobs}
@@ -718,6 +734,8 @@ export function ProjectWorkspaceTabContent({
             </div>
           ) : (
             <ProjectAnalysisTab
+              canDownloadDocuments={canDownloadDocuments}
+              readOnly={readOnly}
               projectId={project.id}
               documents={project.documents}
               customerAnalysis={customerAnalysis ?? fallback}
@@ -757,6 +775,8 @@ export function ProjectWorkspaceTabContent({
           </div>
         ) : (
           <ProjectEvaluationTab
+            projectId={project.id}
+            canDownloadDocuments={canDownloadDocuments}
             documents={architectureDocumentCandidates}
             solutionEvaluation={solutionEvaluation}
             hasSolutionDocument={architectureDocumentCandidates.some(
@@ -775,6 +795,8 @@ export function ProjectWorkspaceTabContent({
 
       {activeTab === "bilag1" ? (
         <ProjectBilag1Tab
+          projectId={project.id}
+          canDownloadDocuments={canDownloadDocuments}
           documents={project.documents}
           artifacts={bilag1Artifacts}
           busy={Boolean(busy)}
@@ -811,6 +833,8 @@ export function ProjectWorkspaceTabContent({
       {activeTab === "requirements" ? (
         <ProjectRequirementResponseTab
           projectId={project.id}
+          canDownloadDocuments={canDownloadDocuments}
+          readOnly={readOnly}
           documents={project.documents}
           artifacts={requirementArtifacts}
           uploadBusy={Boolean(busy)}
@@ -827,6 +851,7 @@ export function ProjectWorkspaceTabContent({
           onUpdateArtifact={onUpdateRequirementArtifact}
           onDeleteArtifact={onDeleteArtifact}
           onSubmit={onGenerateRequirementResponse}
+          onRegenerateRequirements={onRegenerateRequirements}
         />
       ) : null}
 
@@ -835,6 +860,8 @@ export function ProjectWorkspaceTabContent({
           <DeferredSectionLoader label="Laster lederoppsummering ..." />
         ) : (
           <ProjectExecutiveSummaryTab
+            projectId={project.id}
+            canDownloadDocuments={canDownloadDocuments}
             executiveSummary={executiveSummary}
             hasSolutionEvaluation={
               Boolean(solutionEvaluation) || project.solution_evaluation_generated

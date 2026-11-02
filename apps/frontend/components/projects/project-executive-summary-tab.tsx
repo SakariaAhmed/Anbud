@@ -12,7 +12,9 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import type { ExecutiveSummaryResult } from "@/lib/types";
 
-function ExecutiveList({ title, items }: { title: string; items: string[] }) {
+function ExecutiveList({ title, items, projectId, canDownloadDocuments, sourceEvidence, evidencePath }: {
+  title: string; items: string[]; projectId: string; canDownloadDocuments: boolean; sourceEvidence?: unknown; evidencePath: string;
+}) {
   if (!items.length) return null;
 
   return (
@@ -21,7 +23,7 @@ function ExecutiveList({ title, items }: { title: string; items: string[] }) {
       <ol className="mt-3 list-decimal space-y-3 pl-5 marker:text-slate-500">
         {items.map((item, index) => (
           <li key={`${title}-${index}`} className="pl-1">
-            <MarkdownViewer content={item} className="analysis-prose text-sm leading-6 text-slate-700" />
+            <MarkdownViewer content={item} projectId={projectId} canDownloadDocuments={canDownloadDocuments} sourceEvidence={sourceEvidence} evidencePath={`${evidencePath}.${index}`} className="analysis-prose text-sm leading-6 text-slate-700" />
           </li>
         ))}
       </ol>
@@ -30,6 +32,7 @@ function ExecutiveList({ title, items }: { title: string; items: string[] }) {
 }
 
 export function ProjectExecutiveSummaryTab({
+  projectId, canDownloadDocuments = false,
   executiveSummary: summary,
   hasSolutionEvaluation,
   busy,
@@ -38,6 +41,8 @@ export function ProjectExecutiveSummaryTab({
   workflowBlockedReason,
   onGenerate,
 }: {
+  projectId: string;
+  canDownloadDocuments?: boolean;
   executiveSummary: ExecutiveSummaryResult | null;
   hasSolutionEvaluation: boolean;
   busy: boolean;
@@ -48,12 +53,13 @@ export function ProjectExecutiveSummaryTab({
 }) {
   const score = summary?.likely_score_assessment;
   const metrics = score ? [
-    { label: "Kvalitet", value: score.quality },
-    { label: "Gjennomføring", value: score.delivery_confidence },
-    { label: "Risiko", value: score.risk },
-    { label: "Konkurransekraft", value: score.competitiveness },
+    { field: "quality", label: "Kvalitet", value: score.quality },
+    { field: "delivery_confidence", label: "Gjennomføring", value: score.delivery_confidence },
+    { field: "risk", label: "Risiko", value: score.risk },
+    { field: "competitiveness", label: "Konkurransekraft", value: score.competitiveness },
   ] : [];
 
+  const evidenceProps = { projectId, canDownloadDocuments, sourceEvidence: summary?.source_evidence };
   return (
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col items-end gap-2 text-right">
@@ -74,24 +80,24 @@ export function ProjectExecutiveSummaryTab({
           <div className="grid min-w-0 gap-6 lg:grid-cols-2">
             <section className="min-w-0">
               <h3 className="text-sm font-semibold text-slate-950">Hovedkonklusjon</h3>
-              <MarkdownViewer content={summary.executive_summary} className="analysis-prose mt-3 text-sm leading-7 text-slate-700" />
+              <MarkdownViewer {...evidenceProps} evidencePath="result.executive_summary" content={summary.executive_summary} className="analysis-prose mt-3 text-sm leading-7 text-slate-700" />
             </section>
             <section className="min-w-0">
               <h3 className="text-sm font-semibold text-slate-950">Samsvar med kundebehov</h3>
-              <MarkdownViewer content={summary.fit_to_customer_needs} className="analysis-prose mt-3 text-sm leading-7 text-slate-700" />
+              <MarkdownViewer {...evidenceProps} evidencePath="result.fit_to_customer_needs" content={summary.fit_to_customer_needs} className="analysis-prose mt-3 text-sm leading-7 text-slate-700" />
             </section>
           </div>
           <div className="grid min-w-0 gap-5 border-t border-slate-200 pt-4 sm:grid-cols-2 xl:grid-cols-4">
             {metrics.map((metric) => (
               <section key={metric.label} className="min-w-0">
                 <h3 className="text-sm font-semibold text-slate-950">{metric.label}</h3>
-                <MarkdownViewer content={metric.value} className="analysis-prose mt-2 text-sm leading-6 text-slate-700" />
+                <MarkdownViewer {...evidenceProps} evidencePath={`result.likely_score_assessment.${metric.field}`} content={metric.value} className="analysis-prose mt-2 text-sm leading-6 text-slate-700" />
               </section>
             ))}
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
-            <ExecutiveList title="Hva taler for" items={summary.strengths} />
-            <ExecutiveList title="Hva må håndteres" items={summary.weaknesses} />
+            <ExecutiveList {...evidenceProps} evidencePath="result.strengths" title="Hva taler for" items={summary.strengths} />
+            <ExecutiveList {...evidenceProps} evidencePath="result.weaknesses" title="Hva må håndteres" items={summary.weaknesses} />
           </div>
         </>
       ) : (

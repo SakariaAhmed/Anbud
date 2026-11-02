@@ -1,0 +1,34 @@
+{
+  "version": "mixed-source-retrieval.v1",
+  "scope": "Authored Norwegian development questions against checked-in fictional sources. Original held-out questions are unchanged.",
+  "stress": [
+    {"document":"fjordhavn-port-operations","page":1,"heading":"Effekt som styret har låst","question":"Hvor kort skal lastebilens opphold ved gate være i Fjordhavn, og når skal målet nås?"},
+    {"document":"fjordhavn-port-operations","page":1,"heading":"E-post: havnedirektør -> anskaffelse","question":"Har Fjordhavn allerede bestemt offentlig sky og bestilt biometrisk adgang?"},
+    {"document":"fjordhavn-port-operations","page":2,"heading":"Sikkerhet","question":"Hvor skal Fjordhavns produksjonsdata behandles, og hvor lenge skal adgangsendringer kunne revideres?"},
+    {"document":"fjordhavn-port-operations","page":2,"heading":"E-post: beredskapsleder","question":"Hvor lenge skal Fjordhavns gate kunne fungere lokalt hvis den sentrale løsningen faller ut?"},
+    {"document":"niva-health-scheduling","page":1,"heading":"Resultatmål - må ikke omskrives til ambisjon","question":"Hvilken andel uteblitte pasienter og hvilken behandlingstid skal Niva oppnå?"},
+    {"document":"niva-health-scheduling","page":1,"heading":"E-post: medisinsk direktør","question":"Skal leverandøren automatisere medisinske beslutninger for Niva?"},
+    {"document":"niva-health-scheduling","page":2,"heading":"Personvern og sikkerhet","question":"Hvor lenge skal Niva bevare logg over oppslag i pasientrelaterte data?"},
+    {"document":"niva-health-scheduling","page":2,"heading":"E-post: driftsansvarlig","question":"Hva krever Niva ved gjenoppretting for å unngå at allerede sendte påminnelser sendes igjen?"},
+    {"document":"frostmat-cold-chain","page":1,"heading":"Tre styringsmål, godkjent i ledergruppen","question":"Hvilke tre forbedringer skal FrostMat oppnå innen september 2027?"},
+    {"document":"frostmat-cold-chain","page":1,"heading":"E-post: kvalitetsdirektør","question":"Hvem beslutter faktisk sperring ved FrostMats tilbakekallinger, og hvor raskt må partiet spores?"},
+    {"document":"frostmat-cold-chain","page":2,"heading":"Beredskap","question":"Har historisk analyse og ekspedisjon samme gjenopprettingsfrist hos FrostMat?"},
+    {"document":"frostmat-cold-chain","page":2,"heading":"E-post: innkjøp","question":"Hvilke pilotlagre bruker FrostMat, og i hvilke uker bør produksjonssetting unngås?"},
+    {"document":"vestbo-building-energy","page":1,"heading":"Mål vedtatt av konsernledelsen","question":"Hva er Vestbos baseline og mål for energi, effekttopper og inneklimaklager?"},
+    {"document":"vestbo-building-energy","page":1,"heading":"E-post: eiendomsdirektør","question":"Skal automatisk styring fjerne den lokale driftslederens overstyring hos Vestbo?"},
+    {"document":"vestbo-building-energy","page":2,"heading":"Sikkerhet og drift","question":"Hvilken gjenoppretting og varsling av kritiske sikkerhetsfunn krever Vestbo?"},
+    {"document":"vestbo-building-energy","page":2,"heading":"E-post: programleder","question":"Når skal Vestbos pilot og utrulling være ferdig, og hvor ligger pilotbyggene?"},
+    {"document":"nordkraft-grid-field-operations","page":1,"heading":"Effektmål fra beredskapsutvalget","question":"Hva er Nordkrafts mål for SAIDI og tid fra verifisert feil til utsendt lag?"},
+    {"document":"nordkraft-grid-field-operations","page":1,"heading":"E-post: beredskapssjef","question":"Kan en språkmodell godkjenne kobling i Nordkrafts strømnett?"},
+    {"document":"nordkraft-grid-field-operations","page":2,"heading":"Beredskap og volum","question":"Hvor mange feltbrukere og driftssentralbrukere skal Nordkraft støtte under en regional storm?"},
+    {"document":"nordkraft-grid-field-operations","page":2,"heading":"Sikkerhetsarkitektens notat","question":"Hva krever Nordkraft om PAM, loggbevaring og frist for hendelsesvarsling?"}
+  ],
+  "follow_ups": [
+    {"document":"fjordhavn-port-operations","page":2,"heading":"E-post: beredskapsleder","previous_question":"Hva gjelder for beredskapen i Fjordhavn?","question":"Og hvor lenge kan gate jobbe lokalt?"},
+    {"document":"niva-health-scheduling","page":2,"heading":"Personvern og sikkerhet","previous_question":"Hva sier Nivas grunnlag om personvern og pasientdata?","question":"Hvor lenge skal oppslagsloggen bevares?"},
+    {"document":"frostmat-cold-chain","page":2,"heading":"E-post: innkjøp","previous_question":"Beskriv FrostMats pilot og produksjonssetting.","question":"Hvilke uker skal vi unngå?"},
+    {"document":"vestbo-building-energy","page":2,"heading":"E-post: programleder","previous_question":"Hva er Vestbos leveranseløp for energioppfølging?","question":"Når skal pilot godkjennes?"},
+    {"document":"nordkraft-grid-field-operations","page":2,"heading":"Beredskap og volum","previous_question":"Hva er Nordkrafts dimensjonering ved storm?","question":"Hvor mange brukere må støttes da?"}
+  ],
+  "missing_ids": ["HAL-999", "K-99.9", "FROST-444", "K-800", "K42"]
+}

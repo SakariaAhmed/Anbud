@@ -148,7 +148,7 @@ param doclingEnhancementMode string = 'async'
 param doclingAsyncAutoRun string = 'off'
 
 @description('Cron schedule for the same-image project job worker. Evaluated in UTC.')
-param projectJobWorkerCron string = '*/5 * * * *'
+param projectJobWorkerCron string = '* * * * *'
 
 @description('Legacy per-execution job limit (PROJECT_JOB_WORKER_LIMIT). Worker images without the replica-time budget exit unless it is 1, and a rollback restores only the image, so it stays 1.')
 @minValue(1)

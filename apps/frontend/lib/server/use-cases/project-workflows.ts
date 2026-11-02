@@ -1,9 +1,11 @@
+import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
 import { runWithElapsedProgress } from "@/lib/server/use-cases/elapsed-progress";
 
 import { WorkflowError, WorkflowPreconditionError } from "@/lib/server/workflow-errors";
+import { getAutomaticAnalysisRequest } from "@/lib/server/repositories/automatic-analysis";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -29,7 +31,8 @@ import {
   generateHighLevelDesign,
   regenerateCustomerAnalysisSection,
 } from "@/lib/server/ai";
-import { extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
+import { type extractRequirementLedgerForDocument, extractRequirementLedgerWithCorrections } from "@/lib/server/requirements/source-ledger";
+import { buildIngestionRequirementRegister } from "@/lib/server/requirements/ingestion-register";
 import { normalizeRequirementId } from "@/lib/server/requirements/normalization";
 import { detectExplicitRequirementIds } from "@/lib/server/requirements/id-detection";
 import { generateExecutiveSummary } from "@/lib/server/ai/executive-summary";
@@ -101,13 +104,13 @@ import {
 } from "@/lib/server/requirements/source-readiness";
 
 export type ProjectWorkflowInput =
-  | { kind: "document_ingestion"; projectId: string; documentId: string }
+  | { kind: "document_ingestion"; projectId: string; documentId: string; requestAutoAnalysis?: boolean }
   | {
       kind: "document_docling_enhancement";
       projectId: string;
       documentId: string;
     }
-  | { kind: "customer_analysis"; projectId: string; model?: string }
+  | { kind: "customer_analysis"; projectId: string; model?: string; automaticRequestId?: string; automaticSourceRevision?: number }
   | {
       kind: "solution_evaluation";
       projectId: string;
@@ -118,6 +121,7 @@ export type ProjectWorkflowInput =
       kind: "artifact_generation";
       projectId: string;
       artifactType: GeneratedArtifactType;
+      regenerateRequirements?: RequirementRegenerationSelection;
       instructions?: string;
       sourceDocumentIds?: string[];
       useSolutionEvaluationContext?: boolean;
@@ -130,6 +134,7 @@ export type ProjectWorkflowInput =
 export type ProjectWorkflowPhaseHandler = (phase: string) => void;
 
 export interface ProjectWorkflowHandlers {
+  onDocumentClass?: (value: ProjectDocumentDetail["file_format"]) => void;
   setProgress: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
   assertActive?: () => void;
@@ -395,8 +400,10 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
 
   switch (input.kind) {
     case "document_ingestion":
+      if (input.requestAutoAnalysis !== undefined && typeof input.requestAutoAnalysis !== "boolean") throw new Error("Ugyldig valg for automatisk analyse.");
       return {
         kind: "document_ingestion",
+        ...(input.requestAutoAnalysis !== undefined ? { requestAutoAnalysis: input.requestAutoAnalysis } : {}),
         projectId,
         documentId: requiredWorkflowString(
           input.documentId,
@@ -413,7 +420,9 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         ),
       };
     case "customer_analysis":
-      return { kind: "customer_analysis", projectId, model };
+      if (input.automaticRequestId !== undefined && (typeof input.automaticRequestId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(input.automaticRequestId) || !Number.isSafeInteger(input.automaticSourceRevision) || Number(input.automaticSourceRevision) < 0)) throw new Error("Ugyldig automatisk analyseforespørsel.");
+      if (input.automaticRequestId === undefined && input.automaticSourceRevision !== undefined) throw new Error("Automatisk analyse mangler forespørsel.");
+      return { kind: "customer_analysis", projectId, model, ...(input.automaticRequestId !== undefined ? { automaticRequestId: input.automaticRequestId as string, automaticSourceRevision: Number(input.automaticSourceRevision) } : {}) };
     case "solution_evaluation":
       return {
         kind: "solution_evaluation",
@@ -426,6 +435,7 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         kind: "artifact_generation",
         projectId,
         artifactType: parseWorkflowArtifactType(input.artifactType),
+        regenerateRequirements: parseRequirementRegeneration(input.regenerateRequirements),
         instructions: normalizeArtifactInstructions(input.instructions),
         sourceDocumentIds: normalizeSourceDocumentIds(input.sourceDocumentIds),
         useSolutionEvaluationContext:
@@ -668,6 +678,7 @@ async function runDocumentIngestionWorkflow(
       error: null,
     });
     const document = await getDocumentDetail(input.projectId, input.documentId);
+    handlers.onDocumentClass?.(document.file_format);
     handlers.onPhase?.("filhenting");
 
     if (!document.file_base64) {
@@ -787,6 +798,7 @@ async function runDocumentIngestionWorkflow(
           handlers.setProgress(formatJobProgress(90, "Bygger Docling-baserte chunks ..."));
           assertWorkflowActive(handlers);
           const enhancedDocument = await saveDocumentIngestionResult({
+            requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
             projectId: input.projectId,
             documentId: input.documentId,
             role: document.role,
@@ -854,6 +866,7 @@ async function runDocumentIngestionWorkflow(
     );
     assertWorkflowActive(handlers);
     const basicDocument = await saveDocumentIngestionResult({
+      requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }, { indexChunks: !shouldRunInlineDocling }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -963,6 +976,7 @@ async function runDocumentIngestionWorkflow(
       handlers.setProgress(formatJobProgress(90, "Oppdaterer forbedrede chunks ..."));
       assertWorkflowActive(handlers);
       const enhancedDocument = await saveDocumentIngestionResult({
+        requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
         projectId: input.projectId,
         documentId: input.documentId,
         role: document.role,
@@ -991,6 +1005,7 @@ async function runDocumentIngestionWorkflow(
 
     assertWorkflowActive(handlers);
     const fallbackDocument = await saveDocumentIngestionResult({
+      requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: parsed.rawText, structure_map: parsed.sourceMap, file_format: parsed.fileFormat }),
       projectId: input.projectId,
       documentId: input.documentId,
       role: document.role,
@@ -1040,6 +1055,7 @@ async function runDocumentDoclingEnhancementWorkflow(
 ): Promise<DocumentDoclingEnhancementJobResult> {
   handlers.setProgress(formatJobProgress(8, "Henter dokument for Docling-forbedring ...", 76));
   const document = await getDocumentDetail(input.projectId, input.documentId);
+  handlers.onDocumentClass?.(document.file_format);
   handlers.onPhase?.("filhenting");
 
   const readyStatus =
@@ -1141,6 +1157,7 @@ async function runDocumentDoclingEnhancementWorkflow(
   handlers.setProgress(formatJobProgress(88, "Erstatter chunks med Docling-forbedret struktur ...", 88));
   assertWorkflowActive(handlers);
   const enhancedDocument = await saveDocumentIngestionResult({
+    requirementRegister: await buildIngestionRequirementRegister({ ...document, raw_text: enhanced.rawText, structure_map: enhanced.sourceMap, file_format: enhanced.fileFormat }),
     projectId: input.projectId,
     documentId: input.documentId,
     role: document.role,
@@ -1177,6 +1194,8 @@ export async function generateCustomerAnalysis(input: {
   projectId: string;
   model?: string;
   section?: CustomerAnalysisSection | null;
+  automaticRequestId?: string;
+  automaticSourceRevision?: number;
   onProgress?: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
   assertActive?: () => void;
@@ -1206,6 +1225,13 @@ export async function generateCustomerAnalysis(input: {
 
   if (!customerDocument) {
     throw new WorkflowPreconditionError("Last opp minst ett dokument først.");
+  }
+
+  if (input.automaticRequestId) {
+    const request = await getAutomaticAnalysisRequest(input.projectId);
+    if (request?.request_id !== input.automaticRequestId || request.status !== "scheduled" || request.source_revision !== input.automaticSourceRevision) throw new WorkflowPreconditionError("Den automatiske analysen er avbrutt eller erstattet. Start kundeanalysen manuelt ved behov.");
+    if (previousAnalysis) return { analysis: previousAnalysis, project: await getProjectSnapshotAfterCommit(input.projectId), customerDocument, supportingDocumentCount: supportingDocuments.length };
+    if (sourceSnapshot.sourceRevision !== input.automaticSourceRevision) throw new WorkflowPreconditionError("Dokumentgrunnlaget er endret. Kontroller dokumentene og start kundeanalysen manuelt.");
   }
 
   assertCustomerAnalysisRequirementSourcesReady([
@@ -1263,6 +1289,7 @@ export async function generateCustomerAnalysis(input: {
     result,
     {
       expectedSourceRevision: sourceSnapshot.sourceRevision,
+      ...(input.automaticRequestId ? { expectedAnalysisRevision: null, automaticRequestId: input.automaticRequestId } : {}),
       previousAnalysis,
       updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
       historySource: section ? "section_regeneration" : "full_regeneration",
@@ -1285,6 +1312,8 @@ async function runCustomerAnalysisWorkflow(
   const { analysis, project } = await generateCustomerAnalysis({
     projectId: input.projectId,
     model: input.model,
+    automaticRequestId: input.automaticRequestId,
+    automaticSourceRevision: input.automaticSourceRevision,
     onProgress: handlers.setProgress,
     onPhase: handlers.onPhase,
     assertActive: () => assertWorkflowActive(handlers),
@@ -1299,6 +1328,7 @@ async function runArtifactGenerationWorkflow(
   return generateAndSaveProjectArtifact({
     projectId: input.projectId,
     artifactType: input.artifactType,
+    regenerateRequirements: input.regenerateRequirements,
     instructions: input.instructions,
     sourceDocumentIds: input.sourceDocumentIds,
     useSolutionEvaluationContext: input.useSolutionEvaluationContext,
@@ -1546,10 +1576,11 @@ async function runExecutiveSummaryWorkflow(
   handlers: ProjectWorkflowHandlers,
 ) {
   handlers.setProgress(formatJobProgress(18, "Laster prosjekt, kundeanalyse og vurdering ...", 88));
-  const [project, customerAnalysis] = await Promise.all([
-    getProjectGenerationContext(input.projectId),
-    getFreshCustomerAnalysis(input.projectId),
-  ]);
+  const snapshot = await readStableProjectSourceSnapshot({
+    readSourceRevision: () => getProjectSourceRevision(input.projectId),
+    readValue: () => Promise.all([getProjectGenerationContext(input.projectId), getFreshCustomerAnalysis(input.projectId), listProjectDocumentsForAnalysis(input.projectId)]),
+  });
+  const [project, customerAnalysis, sourceDocuments] = snapshot.value;
   const evaluationSnapshot = project.solutionEvaluationSnapshot;
   handlers.onPhase?.("dokumenthenting");
 
@@ -1564,6 +1595,7 @@ async function runExecutiveSummaryWorkflow(
     projectName: project.name,
     customerAnalysis,
     solutionEvaluation,
+    sourceDocuments: sourceDocuments.map(document => ({ document, sourceType: "project_document" as const })),
     model: input.model,
   });
   handlers.onPhase?.("ai_oppsummering");

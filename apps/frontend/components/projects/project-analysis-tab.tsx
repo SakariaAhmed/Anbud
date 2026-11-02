@@ -1,4 +1,5 @@
 "use client";
+import { SourceEvidenceButton } from "@/components/projects/source-evidence-panel";
 
 import { useEffect, useState } from "react";
 import {
@@ -443,24 +444,27 @@ function NeedSignalCard({
   requirement,
   projectId,
   documents,
+  canDownloadDocuments,
 }: {
   requirement: AnalysisRequirement;
   projectId: string;
   documents: ProjectDocument[];
+  canDownloadDocuments: boolean;
 }) {
   const referencedDocument = findDocumentForReference(documents, requirement.source_reference);
-  const documentHref = referencedDocument
-    ? `/api/projects/${projectId}/documents/${referencedDocument.id}?disposition=inline`
-    : null;
   return (
     <article className="analysis-need min-w-0">
       <h5 className="text-sm font-semibold text-slate-950">{requirement.title}</h5>
       <MarkdownViewer content={getNeedAsk(requirement)} className="analysis-prose mt-2 max-w-none text-sm leading-7 text-slate-700" />
       {requirement.source_reference ? (
         <p className="mt-2 text-xs leading-5 text-slate-500">
-          Kilde: {documentHref ? (
-            <a href={documentHref} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">{requirement.source_reference}</a>
-          ) : requirement.source_reference}
+          {referencedDocument ? <SourceEvidenceButton projectId={projectId} canDownloadDocuments={canDownloadDocuments} source={{
+            document_title: referencedDocument.title, source_id: referencedDocument.id,
+            source_type: "project_document", reference: requirement.source_reference,
+            heading_path: [], page_start: null, page_end: null,
+            original_quote: requirement.source_excerpt || undefined,
+            document_role: referencedDocument.role, classification: "needs_clarification",
+          }}>{`Kilde: ${requirement.source_reference}`}</SourceEvidenceButton> : `Kilde: ${requirement.source_reference}`}
         </p>
       ) : null}
     </article>
@@ -468,6 +472,7 @@ function NeedSignalCard({
 }
 
 export function ProjectAnalysisTab({
+  canDownloadDocuments = false,
   projectId,
   documents,
   customerAnalysis: latestCustomerAnalysis,
@@ -482,6 +487,7 @@ export function ProjectAnalysisTab({
   sourceChanged = false,
   workflowBlockedReason = null,
 }: {
+  canDownloadDocuments?: boolean;
   projectId: string;
   documents: ProjectDocument[];
   customerAnalysis: CustomerAnalysisResult | null;
@@ -1701,7 +1707,7 @@ export function ProjectAnalysisTab({
                 {topImplicitRequirements.length ? (
                   <div className="grid min-w-0 gap-5 xl:grid-cols-3">
                     {topImplicitRequirements.map((requirement, index) => (
-                      <NeedSignalCard key={`need-${index}`} requirement={requirement} projectId={projectId} documents={documents} />
+                      <NeedSignalCard key={`need-${index}`} requirement={requirement} projectId={projectId} documents={documents} canDownloadDocuments={canDownloadDocuments} />
                     ))}
                   </div>
                 ) : (

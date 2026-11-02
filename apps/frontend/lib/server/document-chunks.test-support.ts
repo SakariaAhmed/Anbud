@@ -15,9 +15,15 @@ function sourceKey(sourceType: string, sourceId: string) {
 
 export function resetDocumentChunksTestRuntime() {
   manifests.clear();
+  requirementRegisters.clear();
   embeddingRequestCount = 0;
   retrievalRows = null;
   rpcCalls = [];
+}
+
+const requirementRegisters = new Map<string, unknown>();
+export function setDocumentChunksTestRequirementRegister(documentId: string, artifactEncrypted: unknown) {
+  requirementRegisters.set(documentId, { artifact_encrypted: artifactEncrypted });
 }
 
 export function getDocumentChunksTestRpcCalls() {
@@ -57,6 +63,11 @@ export default class OpenAITestDouble {
 export function createServiceClient() {
   return {
     from(table: string) {
+      if (table === "document_intelligence_artifacts") {
+        let documentId = "";
+        const query = { select() { return query; }, eq(column: string, value: unknown) { if (column === "document_id") documentId = String(value); return query; }, async maybeSingle() { return { data: requirementRegisters.get(documentId) ?? null, error: null }; } };
+        return query;
+      }
       if (table !== "document_chunks") {
         throw new Error(`Unexpected document-chunk test table: ${table}`);
       }

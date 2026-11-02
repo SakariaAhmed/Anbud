@@ -55,7 +55,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
       if (name === "next/headers") return { headers: async () => new Headers({ "x-principal": "principal", "x-session": "session" }) };
       if (name === "@/lib/password-auth") return { AUTH_PRINCIPAL_HEADER: "x-principal", AUTH_SESSION_HEADER: "x-session" };
       if (name === "@/lib/server/data-api") return { createServiceClient: () => db };
-      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types", "@/lib/requirement-regeneration"].includes(name)) return load(`${name.slice(2)}.ts`);
       if (name === "@/lib/server/multipart") return { MultipartRequestError: class MultipartRequestError extends Error {} };
       return service;
     };
@@ -66,7 +66,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
 }
 const endpoints = [
   ["chat", "GET"], ["chat", "POST"], ["generate", "GET"], ["generate", "PATCH"], ["generate", "DELETE"], ["generate", "POST"],
-  ["documents", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
+  ["documents", "POST"], ["requirement-register", "GET"], ["source-evidence", "POST"], ["performance", "POST"], ["service-descriptions", "GET"], ["service-descriptions", "PATCH"], ["artifact-authority", "GET"],
   ["executive-summary", "GET"], ["executive-summary", "POST"], ["solution-evaluation", "GET"], ["solution-evaluation", "POST"],
   ["customer-analysis", "GET"], ["customer-analysis", "POST"], ["customer-analysis", "PUT"],
   ["jobs", "GET"], ["jobs", "POST"], ["jobs/[jobId]", "GET"], ["jobs/[jobId]/events", "GET"],
@@ -116,7 +116,32 @@ test("global administrators can download source documents without a project gran
   const response = await invoke(h, "documents/[documentId]", "GET", projectId);
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "Synthetic source");
+  assert.match(response.headers.get("content-disposition"), /^attachment;/u);
   assert.ok(h.dataCalls.some(call => call.name === "getDocumentDetail"));
+});
+
+test("inline source opening preserves original bytes and the same download permission", async () => {
+  for (const options of [{ admin: true }, { role: "viewer" }, { role: "restricted_viewer" }]) {
+    const h = harness(options);
+    const { GET } = h.load("app/api/projects/[id]/documents/[documentId]/route.ts");
+    const response = await GET(new Request(`http://localhost/api/projects/${projectId}/documents/document-test?disposition=inline`), { params: Promise.resolve({ id: projectId, documentId: "document-test" }) });
+    const allowed = options.admin || options.role === "viewer";
+    assert.equal(response.status, allowed ? 200 : 403);
+    if (allowed) {
+      assert.match(response.headers.get("content-disposition"), /^inline;/u);
+      assert.equal(await response.text(), "Synthetic source");
+    } else assert.deepEqual(h.dataCalls, []);
+  }
+});
+
+test("revision-bound source opening refuses changed documents and invalid revision inputs", async () => {
+  for (const [revision, status] of [["0", 200], ["1", 409], ["-1", 400], ["9007199254740992", 400], ["2abc", 400]]) {
+    const h = harness({ role: "viewer" });
+    const { GET } = h.load("app/api/projects/[id]/documents/[documentId]/route.ts");
+    const response = await GET(new Request(`http://localhost/api/projects/${projectId}/documents/document-test?disposition=inline&source_revision=${revision}`), { params: Promise.resolve({ id: projectId, documentId: "document-test" }) });
+    assert.equal(response.status, status);
+    if (status !== 200) assert.doesNotMatch(await response.text(), /Synthetic source/u);
+  }
 });
 
 test("admin invitations reject invalid group scope before creating credentials or sending mail", async () => {
@@ -170,5 +195,25 @@ test("permitted reads retain role and uppercase UUID compatibility", async () =>
       assert.ok(h.dataCalls.some(({ name }) => String(name).startsWith("list")));
       assert.ok(h.calls.filter(({ filters }) => filters.project_id).every(({ filters }) => filters.project_id === projectId));
     }
+  }
+});
+
+test("malformed selected-regeneration bodies return 400 before enqueue", async () => {
+  for (const regenerate_requirements of [null, {}, { artifactId: projectId, artifactVersion: 1, rows: [] }]) {
+    const h = harness({ admin: true });
+    const handler = h.load("app/api/projects/[id]/jobs/route.ts").POST;
+    const response = await handler(new Request(`http://localhost/api/projects/${projectId}/jobs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: "artifact_generation", artifact_type: "forbedret_kravsvar", regenerate_requirements }) }), { params: Promise.resolve({ id: projectId }) });
+    assert.equal(response.status, 400);
+    assert.ok(!h.dataCalls.some(call => String(call.name).startsWith("queue")), "Invalid input cannot reach queue persistence.");
+  }
+});
+
+test("malformed source-check JSON returns 400 before reading source data", async () => {
+  for (const body of ["{", "[]", "null", '"text"']) {
+    const h = harness({ role: "restricted_viewer" });
+    const handler = h.load("app/api/projects/[id]/source-evidence/route.ts").POST;
+    const response = await handler(new Request(`http://localhost/api/projects/${projectId}/source-evidence`, { method: "POST", headers: { "content-type": "application/json" }, body }), { params: Promise.resolve({ id: projectId }) });
+    assert.equal(response.status, 400);
+    assert.deepEqual(h.dataCalls, []);
   }
 });

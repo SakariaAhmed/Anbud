@@ -358,7 +358,14 @@ export interface CustomerAnalysisResult {
   section_histories?: CustomerAnalysisSectionHistories;
 }
 
+export interface SourceEvidenceManifest {
+  version: 1;
+  references: Array<{ path: string; source: ChatSourceReference }>;
+  issues?: Array<{ path: string; code: "unverified_quote" | "unknown_requirement"; message: string }>;
+}
+
 export interface SolutionEvaluationResult {
+  source_evidence?: SourceEvidenceManifest;
   customer_document_id?: string | null;
   solution_document_id?: string | null;
   evaluated_generated_artifact_id?: string | null;
@@ -461,6 +468,7 @@ export interface SolutionEvaluationResult {
 }
 
 export interface ExecutiveSummaryResult {
+  source_evidence?: SourceEvidenceManifest;
   source_solution_evaluation_present: boolean;
   executive_summary: string;
   fit_to_customer_needs: string;
@@ -514,13 +522,37 @@ export type ChatDomainHint =
   | "Dokument og kildegrunnlag";
 
 export interface ChatSourceReference {
+  /** Assigned only by an authoritative requirement-register lookup. */
+  requirement_id?: string;
+  citation_number?: number;
+  quotation_excerpts?: string[];
+  /** Optional only for messages saved before evidence contract v1. */
+  evidence_id?: string;
+  chunk_id?: string | null;
+  source_revision?: number;
+  source_fingerprint?: string;
+  original_quote?: string;
+  document_role?: ProjectDocumentRole;
+  classification?: "documented" | "interpretation" | "needs_clarification";
   document_title: string;
   reference: string;
   heading_path: string[];
   page_start: number | null;
   page_end: number | null;
-  source_type: "project_document" | "service_document";
+  source_type: "project_document" | "service_document" | "chat_attachment" | "generated_artifact";
   source_id: string;
+}
+
+export interface ProjectRequirementRegister {
+  source_revision: number;
+  documents: Array<{
+    id: string;
+    title: string;
+    source_revision: number;
+    document_ready: boolean;
+    register_available: boolean;
+    rows: Array<{ id: string; text: string; heading: string; pages: number[]; id_origin: "source" | "inferred" | "generated"; original_id?: string }>;
+  }>;
 }
 
 export interface ChatMessage {
@@ -626,6 +658,12 @@ export interface ExecutiveSummaryJobResult {
   executive_summary: ExecutiveSummaryResult;
   project: ProjectSnapshotResult | null;
 }
+
+export type AutomaticAnalysisRequest = {
+  request_id: string; status: "pending" | "scheduled" | "completed" | "failed" | "cancelled";
+  job_id: string | null; source_revision: number | null; reason_code: string | null; updated_at: string;
+};
+export type ProjectActivitySnapshot = { jobs: ProjectJobRecord[]; automatic_analysis: AutomaticAnalysisRequest | null };
 
 export interface DocumentIngestionJobResult {
   // Null when a stored result's document can no longer be read.

@@ -745,3 +745,20 @@ test("kravsvar validation reads columns through the shared heading locator", () 
   assert.equal(report.metrics.missingSources, 0);
   assert.equal(report.status, "pass");
 });
+
+test("manual answer or evidence changes discard only that cell's inherited source proof", () => {
+  const parent = manualEditParentSnapshot();
+  const proof = id => ({ evidence_id: id, source_type: "project_document", source_id: "source", document_title: "Krav", reference: "Drift", original_quote: "Original ordlyd", source_revision: 1, source_fingerprint: "hash" });
+  parent.source_evidence = { version: 1, references: [
+    { path: "rows.0.answer", source: proof("old-answer") },
+    { path: "rows.0.evidence", source: proof("old-evidence") },
+    { path: "rows.1.answer", source: proof("unchanged") },
+  ] };
+  for (const [changed, expected] of [
+    [manualRowOne.replace("Atea dokumenterer logging", "Atea tilbyr etterprøvbar logging"), ["rows.0.evidence", "rows.1.answer"]],
+    [manualRowOne.replace("Svaret beskriver ansvar", "Ny dokumentasjon beskriver ansvar"), ["rows.0.answer", "rows.1.answer"]],
+  ]) {
+    const result = buildValidatedManualArtifactInputSnapshot({ artifactType: "forbedret_kravsvar", title: "Kravbesvarelse", parentContentMarkdown: manualEditMarkdown([manualRowOne, manualRowTwo]), contentMarkdown: manualEditMarkdown([changed, manualRowTwo]), parentInputSnapshot: parent, parentArtifactId: "v1", editedAt: "2026-11-02T00:00:00Z" });
+    assert.deepEqual(result.source_evidence.references.map(entry => entry.path), expected);
+  }
+});

@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { supplementalRetrievalFixtures } from "./rag_supplemental_fixtures.mjs";
 import { scoreRetrievalCases } from "./rag_eval.mjs";
 import { evaluateRetrievalGate } from "./rag_retrieval_gate.mjs";
 
@@ -53,12 +54,38 @@ const databaseUrl = option("--database-url");
 const outputPath = option("--output");
 const useModelRerank = option("--rerank") === "model";
 const useLiveEmbeddings = option("--embeddings") === "live";
+const useRecordedEmbeddings = option("--embeddings") === "recorded";
+const recordEmbeddings = args.includes("--record-embeddings");
+const useStoredEmbeddings = useLiveEmbeddings || useRecordedEmbeddings;
+const embeddingsFile = path.resolve(option("--embedding-fixtures") ?? path.join(repositoryRoot, "test-data/rag-retrieval/embeddings.json"));
 const withoutStructure = args.includes("--without-structure");
-if ((useModelRerank || useLiveEmbeddings) && !process.env.OPENAI_API_KEY) {
+const extendedSuite = args.includes("--extended-suite");
+const replayWithModelRerank = args.includes("--replay-with-model-rerank");
+const caseGroup = option("--case-group");
+if (caseGroup && args.includes("--gate")) throw new Error("A case subset cannot pass the complete regression gate.");
+if (replayWithModelRerank && (!useRecordedEmbeddings || !useModelRerank || process.env.OPENAI_BASE_URL !== "http://127.0.0.1:4340/v1")) throw new Error("Paid replay requires recorded embeddings, model reranking and the owned loopback budget proxy.");
+if (replayWithModelRerank) {
+  const response = await fetch("http://127.0.0.1:4340/budget");
+  const budget = await response.json();
+  if (!response.ok || !(budget.remainingUsd > 0 && budget.proxyPhaseBudgetUsd > 0)) throw new Error("A finite evaluation budget is required.");
+  process.env.RAG_EVAL_ALLOW_MODEL_RERANK = "1";
+} else delete process.env.RAG_EVAL_ALLOW_MODEL_RERANK;
+if ((useModelRerank || useLiveEmbeddings || recordEmbeddings) && !process.env.OPENAI_API_KEY) {
   throw new Error("--rerank=model and --embeddings=live need OPENAI_API_KEY.");
 }
-if (useLiveEmbeddings && !databaseUrl) {
-  throw new Error("--embeddings=live needs --database-url for a disposable database.");
+if (recordEmbeddings && !useRecordedEmbeddings) throw new Error("Recording requires --embeddings=recorded.");
+if (useRecordedEmbeddings && useModelRerank && !replayWithModelRerank) throw new Error("Recorded embedding replay cannot run a model reranker; use the explicit live evaluation tier.");
+if (useStoredEmbeddings && !databaseUrl) {
+  throw new Error("Stored retrieval needs --database-url for a disposable database.");
+}
+if (databaseUrl && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(databaseUrl).hostname)) {
+  throw new Error("Retrieval evaluations require a loopback disposable database.");
+}
+if (useRecordedEmbeddings) {
+  process.env.RAG_EVAL_EMBEDDINGS_FILE = embeddingsFile;
+  process.env.RAG_EVAL_FRONTEND_ROOT = frontendRoot;
+  process.env.RAG_EVAL_RECORD_EMBEDDINGS = recordEmbeddings ? "1" : "0";
+  if (!recordEmbeddings && !replayWithModelRerank) process.env.OPENAI_API_KEY = "recorded-embeddings-no-network";
 }
 
 const corpusRoot = path.join(repositoryRoot, "output/pdf/complex-tender-corpus");
@@ -74,11 +101,15 @@ const unavailableDataApi = path.join(scratch, "data-api.cjs");
 writeFileSync(unavailableDataApi, `
 const missing = { message: "Could not find the table 'public.document_chunks' in the schema cache" };
 exports.createServiceClient = () => ({
-  from: () => ({ select: () => ({ limit: async () => ({ data: null, error: missing }), in: async () => ({ data: null, error: missing }) }) }),
+  from: table => {
+    const result = async () => ({ data: null, error: { message: "Could not find the table 'public." + table + "' in the schema cache" } });
+    const query = { select: () => query, eq: () => query, limit: result, in: result, maybeSingle: result };
+    return query;
+  },
   rpc: async () => ({ data: null, error: missing }),
 });`);
 process.env.APP_ENCRYPTION_KEY ??= "rag-retrieval-eval-encryption-key";
-if (!useModelRerank && !useLiveEmbeddings) delete process.env.OPENAI_API_KEY;
+if (!useModelRerank && !useStoredEmbeddings) delete process.env.OPENAI_API_KEY;
 
 const require = createRequire(import.meta.url);
 const { createJiti } = require(path.join(frontendRoot, "node_modules", "jiti"));
@@ -88,7 +119,12 @@ const load = (aliases = {}, moduleCache = false) => createJiti(path.join(scratch
   moduleCache,
   alias: { ...aliases, "@": frontendRoot, "server-only": "/dev/null" },
 });
-const app = load({ "@/lib/server/data-api": useLiveEmbeddings
+const app = load({
+  ...(useRecordedEmbeddings ? {
+    "openai/error": path.join(frontendRoot, "node_modules/openai/error.js"),
+    openai: path.join(repositoryRoot, "scripts/rag_embedding_fixtures.cjs"),
+  } : {}),
+  "@/lib/server/data-api": useStoredEmbeddings
   ? path.join(repositoryRoot, "scripts/rag_retrieval_eval_store.cjs")
   : unavailableDataApi });
 const { retrieveDocumentSnippetsWithMetadata, buildKeywordSearchQuery, replaceProjectDocumentChunks } = app(path.join(frontendRoot, "lib/server/document-chunks.ts"));
@@ -102,9 +138,9 @@ const { extractExactRetrievalTerms } = app(path.join(frontendRoot, "lib/server/a
 process.env.RAG_QUERY_REWRITE = "off";
 process.env.RAG_MODEL_RERANK = useModelRerank ? "on" : "off";
 const { buildProjectChatRetrievalRequest } = app(path.join(frontendRoot, "lib/server/ai/project-chat.ts"));
-const retrievalRequest = async (question) => buildProjectChatRetrievalRequest
+const retrievalRequest = async (question, previousQuestion) => buildProjectChatRetrievalRequest
   ? (await buildProjectChatRetrievalRequest({
-      question, recentMessages: [], customerDocument: documents[0], solutionDocument: documents[1],
+      question, recentMessages: previousQuestion ? [{ role: "user", content: previousQuestion }] : [], customerDocument: documents[0], solutionDocument: documents[1],
       supportingDocuments: documents.slice(2),
     })).request
   : { query: question, projectId, documents, exactTerms: extractExactRetrievalTerms(question), limit: 12 };
@@ -145,7 +181,9 @@ const expectation = (requirementId) => {
   if (!requirement) throw new Error(`Ukjent krav i eval: ${requirementId}`);
   return { expected_requirement_id: requirementId, expected_texts: [requirement.text.slice(0, 70)] };
 };
-const cases = [
+const supplementary = extendedSuite ? supplementalRetrievalFixtures(repositoryRoot, documentUuid, documents.length) : null;
+if (supplementary) documents.push(...supplementary.documents.map(document => withoutStructure ? { ...document, structure_map: [] } : document));
+const cases = supplementary?.cases ?? [
   ...[...requirements.keys()].map((id) => ({ kind: "id_lookup", question: `Hva krever ${id}?`, ...expectation(id) })),
   ...conceptual.questions.map((item) => ({ kind: "conceptual", question: item.question, ...expectation(item.expected_requirement_id) })),
   ...heldOut.questions.map((item) => ({ kind: "held_out", question: item.question, ...expectation(item.expected_requirement_id) })),
@@ -153,31 +191,41 @@ const cases = [
 
 // Result count of the keyword-search measurement; chat sets its own.
 const limit = 12;
-const live = useLiveEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
+const live = useStoredEmbeddings ? await storeChunksWithLiveEmbeddings() : null;
 const results = [];
 // The disposable database goes even when a case throws.
 try {
-  for (const item of cases) await runCase(item);
+  for (const item of cases.filter(item => !caseGroup || item.kind === caseGroup)) await runCase(item);
+  if (!results.length) throw new Error("No cases matched the requested group.");
 } finally {
   live?.drop();
 }
+const fixtureStats = useRecordedEmbeddings ? require("./rag_embedding_fixtures.cjs").fixtureStats(embeddingsFile) : null;
+if (useRecordedEmbeddings && (!fixtureStats || fixtureStats.missingInputs)) throw new Error("Recorded embedding replay was incomplete; lexical fallback cannot pass this gate.");
+if (live && results.some(row => !row.used_hybrid_search)) throw new Error("Stored retrieval did not execute hybrid search for every case.");
+if (live && results.some(row => row.used_memory_fallback)) throw new Error("Stored retrieval used an in-memory fallback; source metadata or stored chunks are incomplete.");
 
 async function runCase(item) {
   const startedAt = Date.now();
-  const request = await retrievalRequest(item.question);
+  const request = await retrievalRequest(item.question, item.previous_question);
   const retrieval = await retrieveDocumentSnippetsWithMetadata(request);
   results.push({
     ...item,
     retrieval_latency_ms: Date.now() - startedAt,
     used_hybrid_search: retrieval.telemetry.usedHybridSearch,
     used_broadened_search: retrieval.telemetry.usedBroadenedSearch ?? false,
+    used_memory_fallback: retrieval.telemetry.usedMemoryFallback ?? false,
     used_model_rerank: retrieval.telemetry.usedModelRerank ?? false,
+    retrieval_sufficient: retrieval.telemetry.quality.sufficient,
+    missing_requirement_ids: retrieval.telemetry.missingRequirementIds ?? [],
     context_chars_top5: retrieval.snippets.slice(0, 5).reduce((sum, snippet) => sum + snippet.text.length, 0),
     retrieved: retrieval.snippets.map((snippet) => ({
       source_id: snippet.sourceId,
       document_title: snippet.documentTitle,
       reference: snippet.reference,
       heading_path: snippet.headingPath,
+      page_start: snippet.pageStart,
+      page_end: snippet.pageEnd,
       text: snippet.text,
     })),
   });
@@ -204,52 +252,69 @@ function summary(rows) {
 }
 
 const report = {
+  suite: supplementary?.version ?? "complex-tender-116.v1",
   frontend_root: path.relative(repositoryRoot, frontendRoot) || ".",
   documents: documents.length,
   limit,
   model_rerank: useModelRerank,
+  model_calls_with_recorded_embeddings: replayWithModelRerank,
+  case_group: caseGroup ?? null,
   structure_map: withoutStructure ? "removed" : "parser",
-  retrieval: useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
+  retrieval: useRecordedEmbeddings ? "stored_hybrid_recorded_embeddings" : useLiveEmbeddings ? "stored_hybrid_live_embeddings" : "in_process",
+  embedding_fixture: fixtureStats,
   request: buildProjectChatRetrievalRequest ? "project_chat" : "question_only",
   cases_using_broadened_search: results.filter((row) => row.used_broadened_search).length,
+  cases_using_memory_fallback: results.filter(row => row.used_memory_fallback).length,
   ...(live ? {
     stored_chunks: live.chunks,
     embedded_chunks: live.embeddedChunks,
     cases_using_hybrid_search: results.filter((row) => row.used_hybrid_search).length,
     cases_using_model_rerank: results.filter((row) => row.used_model_rerank).length,
+    persisted_register_reads: require("./rag_retrieval_eval_store.cjs").registerReadCount(),
   } : {}),
   results: {
-    all: summary(results),
+    all: summary(results.filter(row => !row.expected_abstention)),
+    ...(supplementary ? {
+      stress: summary(results.filter(row => row.kind === "stress")),
+      follow_up: summary(results.filter(row => row.kind === "follow_up")),
+      tender_ids: summary(results.filter(row => row.kind === "tender_ids")),
+      amendment: summary(results.filter(row => row.kind === "amendment")),
+      missing_id: { cases: results.filter(row => row.kind === "missing_id").length, correct_low_evidence: results.filter(row => row.kind === "missing_id" && row.retrieval_sufficient === false && row.missing_requirement_ids.includes(row.expected_requirement_id)).length },
+    } : {}),
     id_lookup: summary(results.filter((row) => row.kind === "id_lookup")),
     conceptual: summary(results.filter((row) => row.kind === "conceptual")),
     held_out: summary(results.filter((row) => row.kind === "held_out")),
   },
 };
 
-if (databaseUrl && !useLiveEmbeddings) {
+if (databaseUrl && !useStoredEmbeddings) {
   report.keyword_search = await measureKeywordSearch();
 }
 if (outputPath) writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`);
 if (args.includes("--gate")) {
-  report.gate = evaluateRetrievalGate(results, useLiveEmbeddings ? "live" : "offline");
+  report.gate = evaluateRetrievalGate(results, extendedSuite ? "extended" : args.includes("--release-gate") ? "release" : useRecordedEmbeddings ? "recorded" : useStoredEmbeddings ? "live" : "offline");
   if (!report.gate.passed) process.exitCode = 2;
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 function psql(url, sql) {
-  const result = spawnSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { input: sql, encoding: "utf8" });
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  const result = spawnSync("psql", [url, "-X", "-v", "ON_ERROR_STOP=1", "-Atq"], { input: sql, encoding: "utf8", timeout: 60_000 });
+  if (result.error || result.status !== 0) throw new Error(result.error?.message || result.stderr || result.stdout);
   return result.stdout.trim();
 }
 
 function retrievalFunctions() {
-  const migration = readFileSync(path.join(repositoryRoot, "database/migrations/20260711124500_selected_service_document_retrieval.sql"), "utf8");
+  const migration = readFileSync(path.join(repositoryRoot, "database/schema.sql"), "utf8");
   const definition = (name) => {
-    const sql = migration.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`, "u"))?.[0];
+    const sql = migration.match(new RegExp(`create or replace function (?:public\\.)?${name}\\([\\s\\S]*?\\n\\$\\$;`, "u"))?.[0];
     if (!sql) throw new Error(`${name} definition is missing`);
     return sql;
   };
-  return { match: definition("match_document_chunks"), hybrid: definition("hybrid_match_document_chunks") };
+  const upgrade = readFileSync(path.join(repositoryRoot, "database/migrations/20261101210000_norwegian_hybrid_retrieval.sql"), "utf8");
+  const start = upgrade.indexOf("-- Derive"), end = upgrade.indexOf("create or replace function public.hybrid_match");
+  if (start < 0 || end <= start) throw new Error("Norwegian retrieval setup boundaries are missing.");
+  const setup = upgrade.slice(start, end);
+  return { match: definition("match_document_chunks"), hybrid: definition("hybrid_match_document_chunks"), setup };
 }
 
 function createDisposableDatabase() {
@@ -257,14 +322,16 @@ function createDisposableDatabase() {
   const target = new URL(databaseUrl);
   target.pathname = `/${name}`;
   const drop = () => psql(databaseUrl, `drop database if exists "${name}" with (force);`);
-  const { match, hybrid } = retrievalFunctions();
+  const { match, hybrid, setup } = retrievalFunctions();
   psql(databaseUrl, `create database "${name}";`);
   try {
     psql(target.toString(), `
       create schema extensions;
       create extension vector with schema extensions;
+      create table public.document_intelligence_artifacts(project_id uuid not null, document_id uuid not null, source_revision bigint not null, artifact_encrypted jsonb not null, primary key(project_id,document_id,source_revision));
       create table public.document_chunks (id uuid primary key, source_type text not null, source_id uuid not null,
         project_id uuid, chunk_index integer not null, fts tsvector not null, embedding extensions.vector(1536));
+      ${setup}
       ${match}
       ${hybrid}`);
   } catch (error) {
@@ -279,17 +346,22 @@ async function storeChunksWithLiveEmbeddings() {
   const database = createDisposableDatabase();
   process.env.RAG_EVAL_STORE_URL = database.url;
   try {
+    const { extractRequirementLedgerForDocument } = app(path.join(frontendRoot, "lib/server/requirements/source-ledger.ts"));
+    const { encryptJson } = app(path.join(frontendRoot, "lib/server/crypto.ts"));
+    const { storeRequirementRegister } = require("./rag_retrieval_eval_store.cjs");
     for (const document of documents) {
+      const rows = await extractRequirementLedgerForDocument(document);
+      storeRequirementRegister(document, encryptJson({ documentId: document.id, projectId: document.project_id, sourceRevision: document.chunk_source_revision, requirementRegister: { version: 1, rows } }));
       await replaceProjectDocumentChunks({
         documentId: document.id, projectId: document.project_id, role: document.role,
-        supportingSubtype: null, title: document.title, fileName: document.file_name,
+        supportingSubtype: document.supporting_subtype ?? null, title: document.title, fileName: document.file_name,
         fileFormat: document.file_format, rawText: document.raw_text,
         structureMap: document.structure_map, sourceRevision: 0,
       });
     }
     const [chunks, embeddedChunks] = psql(database.url,
       "select count(*), count(embedding) from public.document_chunks;").split("|").map(Number);
-    if (!embeddedChunks) throw new Error("No chunk was embedded; check OPENAI_API_KEY and the embedding logs.");
+    if (!chunks || embeddedChunks !== chunks) throw new Error("Every stored chunk must be embedded; lexical fallback cannot pass this gate.");
     return { chunks, embeddedChunks, drop: database.drop };
   } catch (error) {
     database.drop();
@@ -317,7 +389,7 @@ function measureKeywordSearch() {
     for (const document of documents) {
       await chunksModule.replaceProjectDocumentChunks({
         documentId: document.id, projectId: document.project_id, role: document.role,
-        supportingSubtype: null, title: document.title, fileName: document.file_name,
+        supportingSubtype: document.supporting_subtype ?? null, title: document.title, fileName: document.file_name,
         fileFormat: document.file_format, rawText: document.raw_text,
         structureMap: document.structure_map, sourceRevision: 0,
       });

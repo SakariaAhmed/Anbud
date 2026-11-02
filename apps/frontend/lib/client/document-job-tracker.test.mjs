@@ -34,17 +34,17 @@ function harness(watch, refresh = async () => ({ id: "project", documents: [docu
   };
 }
 
-test("completed ingestion and enhancement refresh the persisted project once", async () => {
+test("basic ingestion is published before enhancement and the final persisted state is refreshed", async () => {
   const h = harness(async ({ jobId, onStatus }) => {
     onStatus({ id: jobId, status: "completed" });
     return jobId === "ingestion"
-      ? { ...completed, result: { docling_enhancement_job_id: "enhancement" } } : completed;
+      ? { ...completed, result: { docling_enhancement_job_id: "enhancement" } } : (assert.equal(h.projects.length, 1), completed);
   });
   assert.deepEqual(await h.run(), document);
   assert.deepEqual(h.watched, ["ingestion", "enhancement"]);
   assert.equal(h.enhancements.length, 1);
-  assert.equal(h.projects.length, 1);
-  assert.equal(h.refreshed.length, 1);
+  assert.equal(h.projects.length, 2);
+  assert.equal(h.refreshed.length, 2);
 });
 
 for (const failedPhase of ["ingestion", "enhancement"]) {
@@ -60,11 +60,13 @@ for (const failedPhase of ["ingestion", "enhancement"]) {
     await assert.rejects(h.run(), error => {
       assert.ok(error instanceof DocumentProcessingFailure);
       assert.equal(error.kind, "server");
+      assert.equal(error.phase, failedPhase);
+      if (failedPhase === "enhancement") assert.match(error.message, /Grunnversjonen er lagret/u);
       assert.doesNotMatch(error.message, /private backend/);
       return true;
     });
-    assert.deepEqual(h.projects, [failedProject]);
-    assert.equal(h.refreshed.length, 1);
+    assert.deepEqual(h.projects, Array(failedPhase === "enhancement" ? 2 : 1).fill(failedProject));
+    assert.equal(h.refreshed.length, failedPhase === "enhancement" ? 2 : 1);
   });
 }
 

@@ -162,16 +162,17 @@ export function GenerationProgress({
   message: string;
   progress: number;
 }) {
-  const safeProgress = Math.min(100, Math.max(3, Math.round(progress)));
+  const measured = Number.isFinite(progress) && progress >= 0;
+  const safeProgress = measured ? Math.min(100, Math.max(0, Math.round(progress))) : null;
 
   return (
-    <div className="min-w-0 border-l-2 border-primary bg-primary/5 px-3 py-3" aria-live="polite">
-      <div className="mb-2 flex items-center justify-between gap-3 text-xs font-semibold text-primary">
-        <span className="min-w-0 truncate">{message}</span>
-        <span className="shrink-0 tabular-nums">{safeProgress}%</span>
+    <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 px-3 py-3" aria-live="polite">
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-primary">
+        <span className="min-w-0 break-words">{message}</span>
+        {safeProgress === null ? <Spinner aria-label="Laster" className="size-4 shrink-0" /> : <span className="shrink-0 tabular-nums">{safeProgress}%</span>}
       </div>
-      <div
-        className="h-1.5 overflow-hidden bg-primary/15"
+      {safeProgress !== null && <div
+        className="mt-2 h-1.5 overflow-hidden bg-primary/15"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
@@ -181,7 +182,7 @@ export function GenerationProgress({
           className="h-full bg-primary transition-[width] duration-500 ease-out"
           style={{ width: `${safeProgress}%` }}
         />
-      </div>
+      </div>}
     </div>
   );
 }
