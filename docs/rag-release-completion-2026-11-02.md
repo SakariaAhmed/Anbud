@@ -1348,3 +1348,61 @@ were not run. Logs: `/private/tmp/anbud-preview-wakeup-before.log`,
 `/private/tmp/anbud-preview-wakeup-build-final.log`,
 `/private/tmp/anbud-preview-wakeup-lint-final.log`, and
 `/private/tmp/anbud-preview-wakeup-secrets.log`.
+
+## Frozen semantic run at `88dece52`: judge input rejected
+
+All four PR checks and both round-21 code reviews passed before dispatch.
+The frozen 80-case run used the owned local HTTP app and disposable SQL, mini
+answers, Luna judging, batches of four, and a $6 semantic phase within the same
+separate $10 ledger. No cases, models, thresholds or denominators were changed.
+All 80 answer attempts completed and retained matching streamed/persisted evidence;
+this does not mean all answers passed validation. Of 60 factual cases, 15 failed
+the output-completeness check and 13 failed citation integrity. One of the 20
+negative cases also failed citation integrity. These counts can overlap.
+
+The first four-case judge request returned HTTP 400. Zero cases were judged;
+the issued batch remains `failed_or_uncertain`, and the report remains failed.
+Its zero judge-derived metrics are missing-judgement floors, not measured semantic
+quality. The original checkpoint, answers, raw error, failed-batch reservation and
+full 80-case denominator are retained. The batch was not retried and the checkpoint
+will not be relabelled for corrected code.
+
+Two tiny synthetic requests under a separate $0.10 diagnostic phase identified
+the request-format error without resending any frozen source, answer or label.
+JSON mode accepted an input containing the word `JSON` and rejected the otherwise
+equivalent input without it, even though both separate instruction fields asked
+for JSON. The provider error identified `input`: response input messages must
+contain `json` for `text.format: json_object`. Offline reconstruction matched the
+failed batch's exact request hash and confirmed that its serialized input lacked
+that word. The runner now adds an explicit JSON response-format instruction to
+the input object; judge criteria, data, models, token limits, write-ahead records,
+no-retry behavior and budget enforcement remain unchanged. The same payload owner
+supplies both forecasting and dispatch, so the extra input is also budgeted.
+
+Accounting after both diagnostics: **414 requests, $2.360242 accounted upper
+bound, $7.639758 remaining**, with no pending reservations. This includes the
+171 retrieval requests ($1.278359), setup/answer work ($1.037605), the failed judge's
+retained reservation ($0.042869), and diagnostics ($0.001409). Both proxy processes
+are stopped. The old unavailable ledger was neither recreated nor imported.
+
+Private evidence remains under `tmp/rag-evaluation-2026-11-02-v2/`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `holdout-88dece52-judge-checkpoint.json` | `6706cfca7feff137e02a36156ac587c3af4ee17ad0cf2e80bd53193540fa65f0` |
+| `holdout-88dece52-judge-report.json` | `4f4eb9427fd091142c7a707766644da7ed88300466cca8d6bceb3c6ee813f157` |
+| `budget-after-diagnostics.json` | `98fc18363d0b23088c7e25915f9f594bf07160d1ab73294a6aba3d97357f62c8` |
+| `judge-http400-diagnosis.json` | `f8522487ffe38c53a2987e116be3ca9de359ce193870e31b560ff40b59a20439` |
+
+The provider-boundary regression rejects the prior request with HTTP 400 and
+passes after the correction. All 49 focused holdout/budget/retrieval-gate tests
+pass with outbound network denied. These tests validate request handling, not
+live semantic quality. The failed run is not a passing release holdout. Semantic
+smoke, feature behavior, browser/provider-stream, latency, pinned Docling, Entra,
+production and human acceptance remain open; all 18 recommendations are incomplete.
+
+Correction verification: 1,532 frontend + 204 root tests (1,736 total), zero
+failures/skips, plus parser goldens; lint, syntax, secret scan and whitespace
+checks pass. Full tests used the four disposable SQL test URLs. An application
+build and paid/SQL retrieval evaluations were not repeated for this root-runner
+change. Logs are `/private/tmp/anbud-judge-format-{before,focused,full-tests,lint,secrets}.log`.

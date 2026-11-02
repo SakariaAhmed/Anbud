@@ -298,6 +298,32 @@ test("projected answer and judge costs stop before issuing an unaffordable final
   assert.ok(higher.projected_remaining_usd>state.budget_projection.projected_remaining_usd);
 });
 
+test("judge JSON mode includes the format instruction in input even when fixture data never mentions JSON", async () => {
+  const state = checkpoint(), item = state.cases[0]; completeAnswer(state, item);
+  const fixture = { version: "fixture.v1", documents: [], saved_analysis: {} };
+  assert.doesNotMatch(JSON.stringify(judgeInput(fixture, state.cases, state.projects[fixture.version])), /json/iu);
+  let dispatched = 0; const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => {
+    dispatched++;
+    const payload = JSON.parse(options.body);
+    assert.equal(payload.text.format.type, "json_object");
+    assert.match(payload.instructions, /json/iu, "Instructions alone do not satisfy the provider's input requirement.");
+    if (!/json/iu.test(payload.input)) return Response.json({ error: { param: "input", message: "Input messages must contain json." } }, { status: 400 });
+    const input = JSON.parse(payload.input);
+    assert.deepEqual(input.cases, judgeInput(fixture, state.cases, state.projects[fixture.version]).cases);
+    return Response.json({ status: "completed", model: state.identity.judge_model, output_text: JSON.stringify({ cases: [goodVerdict(item.contract.id)] }) });
+  };
+  try {
+    const runtime = { readProof: async () => clone(state.projects[fixture.version].proof), route: id => `/api/projects/${id}`, request: async () => Response.json({ messages: [
+      { role: "user", content: item.contract.question }, { role: "assistant", id: item.answer_attempt.message_id, content: item.answer_attempt.answer, source_references: item.answer_attempt.sources, context_snapshot: item.answer_attempt.context_snapshot },
+    ] }) };
+    await judgeCases({ checkpoint: state, fixtures: [fixture], runtime, batchSize: 2, save: () => {}, guardBudget: async () => budget() });
+    assert.equal(dispatched, 1);
+    assert.equal(item.judge_attempt.status, "completed");
+    validateCheckpoint(state, identity(), [contract()]);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("judge is bounded, durably issued before HTTP, preserves malformed raw output and never retries it on judge-only resume", async () => {
   const contracts = [contract("one"), contract("two"), contract("three")], state = checkpoint(contracts);
   state.projects["fixture.v1"].documents = { original: { id: "document-one" } };

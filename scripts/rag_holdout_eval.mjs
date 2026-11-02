@@ -127,7 +127,10 @@ export async function setupProjects({ checkpoint, fixtures, runtime, save, guard
 }
 
 function judgePayload(checkpoint, fixture, cases, mapping) {
-  return { model: checkpoint.identity.judge_model, store: false, stream: false, instructions: JUDGE_INSTRUCTIONS, input: JSON.stringify(judgeInput(fixture, cases, mapping)), reasoning: { effort: "low" }, text: { format: { type: "json_object" } }, max_output_tokens: 6400, prompt_cache_key: `${RUNNER_VERSION}:${fixture.version}` };
+  // JSON mode requires an explicit JSON instruction in input messages, not only
+  // in the separate instructions field. Fixture wording must not decide validity.
+  const input = { response_format_instruction: "Return JSON as specified in the instructions.", ...judgeInput(fixture, cases, mapping) };
+  return { model: checkpoint.identity.judge_model, store: false, stream: false, instructions: JUDGE_INSTRUCTIONS, input: JSON.stringify(input), reasoning: { effort: "low" }, text: { format: { type: "json_object" } }, max_output_tokens: 6400, prompt_cache_key: `${RUNNER_VERSION}:${fixture.version}` };
 }
 
 /** Planning estimate, never a reservation or a substitute for the hard proxy.
