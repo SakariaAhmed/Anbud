@@ -410,8 +410,8 @@ not the Dockerfile's pinned 2.142.1. The earlier local stack disappeared before
 its in-progress test completed, so that run was not counted; a new isolated
 stack supplied this proof.
 
-Both free recorded SQL regression gates passed again (116 original and 55
-extended cases, no model calls or memory fallback). Conceptual retrieval remains
+Both recorded SQL regression gates passed again (116 original and 55
+extended cases), without model calls or memory fallback. Conceptual retrieval remains
 30/36, MRR 0.565; stress remains 18/20. These are regression passes, not the
 unchanged release-quality thresholds. No paid evaluation, budget increase,
 production action or new semantic-quality claim accompanies these corrections.
@@ -474,3 +474,52 @@ the build. Logs: `/private/tmp/anbud-round6-full-tests.log`,
 `/private/tmp/anbud-round6-extended.log`. No additional HTTP/OCR, browser or
 provider run was needed or claimed for these prompt/lookup corrections. Fresh
 council and CI review of the resulting commit remains pending.
+
+## Council round 7 and source-intent corrections
+
+Both members rejected `129b31a2` (Sol 8/10, Opus 7/10). The round-6 comparison
+claim above was too broad: the tested questions lacked a leading scoped source.
+Adding one could still discard a second source while reporting sufficient
+evidence. Negated and indirect cross-references, solution-only scope, and a
+parenthesized chapter exposed further gaps. Opus also found that an explicit
+artifact follow-up lost the rewritten topic when ranking its sections.
+
+The correction preserves the complete source set for recognized comparisons,
+exclusions and cross-references, or whenever another mentioned document lacks
+the scoping preposition. Non-requirement document requests retain the
+requirement sources. One-word alphabetic titles require their original casing
+to avoid interpreting a generic topic as a source restriction. The chapter
+parser accepts closing parentheses, curly/single quotes, and `kap` with or
+without a period. The clarification includes a literal syntax example.
+Relevant amendment sections recognized by the existing correction parser stay
+in the source set; tests exercise both the whole-document prompt and a persisted
+row whose authority is the separate amendment. This does not claim recognition
+of arbitrary unstructured amendment language.
+
+Artifact selection uses the current question to identify an explicit artifact
+and the standalone query to rank its sections. A shared title such as “Bilag 1”
+alone no longer exempts a factual question from the weak-evidence gate; the
+question must also request generated interpretation. Mixed project/attachment
+questions retain project failed-register, truncation, missing-ID and weak-source
+gates. A matching ID in the attachment cannot supply missing project authority.
+Attachment-only questions still work. These address CodeRabbit's two additional
+major findings; its minor report wording correction is included.
+
+Verification: 30 focused tests pass, including the real retrieval owner and
+small-project prompt assembly with stubbed completions. Four test groups fail
+against the previous owner and pass with the correction. Full tests pass 1,519
+frontend plus 202 root cases (1,721 total), zero failures/skips, and parser
+goldens. Production build, full lint/type validation, workflow boundaries,
+tracked-secret scan and whitespace checks pass. Both recorded SQL regression
+gates pass (116 original and 55 extended), with no provider calls or memory
+fallback. Conceptual recall remains 30/36, MRR .565, and stress remains 18/20.
+Logs: `/private/tmp/anbud-r8-before.log`, `/private/tmp/anbud-r8-focused.log`,
+`/private/tmp/anbud-r8-full-tests.log`, `/private/tmp/anbud-r8-build.log`,
+`/private/tmp/anbud-r8-retrieval.log` and `/private/tmp/anbud-r8-extended.log`.
+The owned app restarted with AI disabled and liveness returned 200.
+
+No new HTTP/OCR, browser, provider-stream or semantic evaluation is claimed.
+These checks establish deterministic evidence selection and refusal behavior,
+not live model answer quality. The recorded budget, unresolved quality/runtime
+and external release gates, and accepted Greptile gap remain unchanged. Fresh
+council, CodeRabbit and CI review of this correction is required.

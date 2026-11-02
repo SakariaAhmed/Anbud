@@ -654,18 +654,40 @@ test("current question controls evidence gates and named source scope, independe
       assert.equal(state.calls, 0, "An artifact inherited only through rewriting/history cannot unlock the model.");
     }
     process.env.RAG_QUERY_REWRITE = "on";
+    assert.match(await run("Hva er den bindende exit-fristen i Bilag 1?"), /ikke nok kildegrunnlag/u);
+    assert.equal(state.calls, 0, "A named generated draft is not evidence for a binding source fact.");
     assert.equal(await run("Oppsummer Bilag 1 som et forslag."), "Lokalt testsvar.");
     assert.equal(state.calls, 1, "Explicit current artifact questions remain available.");
     state.rewrittenQuery = "Annet tema";
     const competingArtifacts = Array.from({length: 9}, (_, index) => ({ ...input.generatedArtifacts[0], id: `other-${index}`, title: "Annet tema", artifact_type: "verdiargumentasjon", content_markdown: "Annet tema uten det etterspurte utkastet." }));
     await run("Oppsummer Bilag 1 som et forslag.", { generatedArtifacts: [...competingArtifacts, ...input.generatedArtifacts] });
     assert.match(state.prompts.at(-1).user, /Et generert forslag\./u, "The explicit current artifact must enter the prompt even when rewriting drops its name.");
+    const topicalArtifact = { ...input.generatedArtifacts[0], title: "Verdiargumentasjon", artifact_type: "verdiargumentasjon",
+      content_markdown: Array.from({length: 12}, (_, index) => `# Tema ${index}\nAnnet innhold uten temaet.`).join("\n\n") + "\n\n# Exit\nAvslutning med eksport og tilbakelevering." };
+    state.rewrittenQuery = "Hva sier verdiargumentasjonen om exit, eksport og tilbakelevering?";
+    assert.equal(await run("Hva sier verdiargumentasjonen om det?", { generatedArtifacts: [topicalArtifact] }), "Lokalt testsvar.");
+    assert.match(state.prompts.at(-1).user, /Avslutning med eksport og tilbakelevering/u, "A named follow-up retains the rewritten topic when ranking late sections.");
     delete state.rewrittenQuery;
     state.telemetry = { requirementLookupTruncated: true, missingRequirementIds: ["K-42"] };
     assert.equal(await run("Skriv en e-post om K-42."), "Lokalt testsvar.");
     assert.equal(await run("Hva sier K-42 i vedlegget?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), "Lokalt testsvar.");
     assert.match(await run("Hva sier K-42 i prosjektet?", { promptAttachments: [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }] }), /finnes flere steder/u);
     assert.equal(state.calls, 0, "An unrelated attachment does not bypass the repeated-ID guard.");
+    const attachment = [{ title: "Mitt vedlegg", rawText: "K-42 Leverandøren skal holde fire kurs.", fileName: "vedlegg.txt" }];
+    for (const [telemetry, refusal] of [
+      [{ requirementLookupFailed: true }, /Kravregisteret/u],
+      [{ requirementLookupTruncated: true }, /finnes flere steder/u],
+      [{ missingRequirementIds: ["K-42"] }, /kunne ikke knyttes/u],
+      [{}, /ikke nok kildegrunnlag/u],
+    ]) {
+      state.telemetry = telemetry;
+      for (const question of ["Hva sier K-42 i prosjektet og vedlegget?", "Sammenlign K-42 i vedlegget med Bilag 1."]) {
+        assert.match(await run(question, { promptAttachments: attachment }), refusal, question);
+        assert.equal(state.calls, 0, "The attachment must not fill the project side of a mixed question.");
+      }
+      assert.equal(await run("Hva sier K-42 i vedlegget?", { promptAttachments: attachment }), "Lokalt testsvar.");
+    }
+    state.telemetry = {};
     const scoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42 i Bilag 2, kapittel 3.2?" });
     assert.deepEqual(scoped.request.documents.map(item => item.id), ["two"]);
     assert.equal(scoped.request.requirementHeading, "3.2");
@@ -673,10 +695,29 @@ test("current question controls evidence gates and named source scope, independe
     assert.equal(quoted.request.requirementHeading, "Drift og sikkerhet");
     const unscoped = await buildProjectChatRetrievalRequest({ ...input, question: "Hva sier K-42?" });
     assert.deepEqual(unscoped.request.documents.map(item => item.id), ["one", "two"], "Prior rewritten names cannot restrict the source collection.");
-    for (const question of ["Hva sier K-42 i Bilag 1 og 2?", "Hvordan henger K-42 sammen med Bilag 2?", "Er K-42 i strid med Bilag 2?", "K-42 viser til Bilag 2, hva betyr det?"]) {
+    for (const question of ["Hva sier K-42 i Bilag 1 og 2?", "Hvordan henger K-42 sammen med Bilag 2?", "Er K-42 i strid med Bilag 2?", "K-42 viser til Bilag 2, hva betyr det?", "Sammenlign K-42 i Bilag 2 med Bilag 1.", "K-42 i Bilag 2 viser til Bilag 1, hva betyr det?", "K-42 står ikke i Bilag 2, hvor står det?", "K-42 viser til kravene i Bilag 2, hva betyr det?"]) {
       const result = await buildProjectChatRetrievalRequest({ ...input, question });
       assert.deepEqual(result.request.documents.map(item => item.id), ["one", "two"], question);
     }
+    for (const question of ['Hva sier K-42 i Bilag 2 (kapittel 3)?', 'Hva sier K-42 i dokumentet Bilag 2, kap 3?']) {
+      const result = await buildProjectChatRetrievalRequest({ ...input, question });
+      assert.deepEqual(result.request.documents.map(item => item.id), ["two"]);
+      assert.equal(result.request.requirementHeading, "3");
+    }
+    for (const quote of ['“Drift og sikkerhet”', "'Drift og sikkerhet'"]) {
+      const result = await buildProjectChatRetrievalRequest({ ...input, question: `K-42 i Bilag 2, kapittel ${quote}` });
+      assert.equal(result.request.requirementHeading, "Drift og sikkerhet");
+    }
+    const namedDocuments = [document("spec", "Kravspesifikasjon"), document("ops", "Driftsavtale")];
+    for (const question of ["Hva sier K-42 i Kravspesifikasjon og Driftsavtale?", "Hva sier K-42 i Kravspesifikasjon eller Driftsavtale?"]) {
+      const result = await buildProjectChatRetrievalRequest({ ...input, customerDocument: namedDocuments[0], supportingDocuments: [namedDocuments[1]], question });
+      assert.equal(result.request.documents.length, 2);
+    }
+    const solution = { ...document("solution-only", "Løsningsbeskrivelse"), role: "primary_solution_document" };
+    const solutionScope = await buildProjectChatRetrievalRequest({ ...input, solutionDocument: solution, question: "Hva sier K-42 i Løsningsbeskrivelse?" });
+    assert.equal(solutionScope.request.documents.length, 3, "Solution references retain their authoritative requirement source.");
+    const topical = await buildProjectChatRetrievalRequest({ ...input, supportingDocuments: [document("ops", "Drift")], question: "Hva krever K-42 under drift?" });
+    assert.equal(topical.request.documents.length, 2);
     const security = await buildProjectChatRetrievalRequest({ ...input, supportingDocuments: [second, document("security", "Sikkerhet")], question: "Hva sier K-42 om sikkerhet?" });
     assert.equal(security.request.documents.length, 3);
     const underscore = await buildProjectChatRetrievalRequest({ ...input, supportingDocuments: [document("underscored", "03_Bilag_2_Drift")], question: "Hva sier K-42 fra Bilag 2?" });
@@ -692,6 +733,14 @@ test("current question controls evidence gates and named source scope, independe
     const result = await streamProjectChat({ ...small, question: "Hva sier K-42 i Bilag 2?" });
     assert.deepEqual(result.sourceReferences.filter(source => source.source_type === "project_document").map(source => [source.source_id, source.citation_number]), [["two", 1]]);
     for await (const _chunk of result.stream) { /* Complete the real validation path. */ }
+    await run("Sammenlign K-42 i Bilag 1 med Bilag 2.", small);
+    assert.match(state.prompts.at(-1).user, /UTENFOR_SCOPE_KUNDE/u);
+    assert.match(state.prompts.at(-1).user, /INNENFOR_SCOPE/u);
+    assert.doesNotMatch(state.prompts.at(-1).user, /\[Kilde 0\]/u);
+    const amendment = { ...document("amendment", "Rettelser"), role: "supporting_document", raw_text: "# Rettelser\nK-42 i Bilag 2 endres til «Leverandøren skal levere rapport hver uke»." };
+    await run("Hva sier K-42 i Bilag 2?", { ...small, supportingDocuments: [...small.supportingDocuments, amendment] });
+    assert.match(state.prompts.at(-1).user, /rapport hver uke/u, "An explicit source scope retains the source parser's relevant amendment.");
+
 
   } finally {
     if (previousMode === undefined) delete process.env.RAG_QUERY_REWRITE; else process.env.RAG_QUERY_REWRITE = previousMode;

@@ -129,7 +129,7 @@ test("coordinated and comparative source mentions retain real retrieval ambiguit
   const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
   const documents = fixture.documents.map((document, index) => ({ ...document, title: `Bilag ${index + 1} Drift`, file_name: `0${index + 1}_Bilag_${index + 1}_Drift.pdf`, raw_text: `${document.raw_text}\n${"Fiktiv bakgrunn. ".repeat(6500)}` }));
   const id = fixture.cases[0].expected_requirement_id;
-  for (const question of [`Hva sier ${id} i Bilag 1 og 2?`, `Hvordan henger ${id} sammen med Bilag 2?`, `Er ${id} i strid med Bilag 2?`, `${id} viser til Bilag 2, hva betyr det?`]) {
+  for (const question of [`Hva sier ${id} i Bilag 1 og 2?`, `Hvordan henger ${id} sammen med Bilag 2?`, `Er ${id} i strid med Bilag 2?`, `${id} viser til Bilag 2, hva betyr det?`, `Sammenlign ${id} i Bilag 2 med Bilag 1.`, `${id} i Bilag 2 viser til Bilag 1, hva betyr det?`, `${id} står ikke i Bilag 2, hvor står det?`, `${id} viser til kravene i Bilag 2, hva betyr det?`]) {
     const { request } = await buildProjectChatRetrievalRequest({ question, recentMessages: [], customerDocument: documents[0], solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
     const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
     assert.equal(result.telemetry.requirementLookupTruncated, true, question);
@@ -139,4 +139,42 @@ test("coordinated and comparative source mentions retain real retrieval ambiguit
   const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
   assert.equal(result.telemetry.requirementLookupTruncated, false);
   assert.deepEqual(result.snippets.filter(row => row.kind === "requirement_row").map(row => row.sourceId), [documents[1].id]);
+});
+
+
+test("parenthesized chapter scope reaches the real authoritative lookup", async () => {
+  seed();
+  const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
+  const id = fixture.cases[0].expected_requirement_id;
+  const documents = fixture.documents.map((document, index) => ({ ...document, title: `Bilag ${index + 1} Drift` }));
+  const source = documents[0];
+  setDocumentChunksTestRequirementRegister(source.id, encryptJson({ documentId: source.id, projectId: source.project_id, sourceRevision: source.chunk_source_revision,
+    requirementRegister: { version: 1, rows: fixture.registers[source.id].map((row, index) => ({ ...row, heading: `${index + 1} Beredskap` })) } }));
+  for (const question of [`Hva sier ${id} i Bilag 1 (kapittel 3)?`, `Hva sier ${id} i Bilag 1, kapittel 3?`]) {
+    const { request } = await buildProjectChatRetrievalRequest({ question, recentMessages: [], customerDocument: source, solutionDocument: null, supportingDocuments: [documents[1]] }, { skipRewrite: true });
+    assert.equal(request.requirementHeading, "3");
+    const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 2, rerank: undefined });
+    assert.equal(result.telemetry.requirementLookupTruncated, false);
+    const rows = result.snippets.filter(item => item.kind === "requirement_row");
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0].headingPath, ["3 Beredskap"]);
+  }
+});
+
+
+test("an original-source scope retains the persisted row's amendment authority", async () => {
+  seed();
+  const { buildProjectChatRetrievalRequest } = chatLoad("../ai/project-chat.ts");
+  const id = fixture.cases[0].expected_requirement_id;
+  const source = { ...fixture.documents[0], title: "Bilag 1 Drift", chunk_source_revision: 2 };
+  const amendment = { ...fixture.documents[1], id: "contract-v2-amendment", title: "Rettelser", raw_text: `# Rettelser\n${id} endres til «Leverandøren skal holde fire kurs».`, structure_map: [] };
+  const rows = fixture.registers[source.id].slice(0, 1).map(row => ({ ...row,
+    text: "Leverandøren skal holde fire kurs", correctionSource: { documentId: amendment.id, documentTitle: amendment.title, pages: [], excerpt: amendment.raw_text.split("\n")[1] } }));
+  setDocumentChunksTestRequirementRegister(source.id, encryptJson({ documentId: source.id, projectId: source.project_id, sourceRevision: source.chunk_source_revision,
+    requirementRegister: { version: 1, rows } }));
+  const { request } = await buildProjectChatRetrievalRequest({ question: `Hva sier ${id} i Bilag 1?`, recentMessages: [], customerDocument: source, solutionDocument: null, supportingDocuments: [amendment] }, { skipRewrite: true });
+  assert.deepEqual(request.documents.map(document => document.id), [source.id, amendment.id]);
+  const result = await retrieveDocumentSnippetsWithMetadata({ ...request, limit: 3, rerank: undefined });
+  const authoritative = result.snippets.filter(item => item.kind === "requirement_row");
+  assert.ok(authoritative.some(row => row.sourceId === amendment.id && row.text.includes("holde fire kurs")));
 });

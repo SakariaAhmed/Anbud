@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import type { Untrusted } from "@/lib/unknown-values";
 import { repairChatCitationParagraph } from "@/lib/server/ai/chat-citation-repair";
 import { parseChatSourceReferences } from "@/lib/chat-source-references";
+import { findCorrectionsSections } from "@/lib/server/requirements/corrections";
+import { isRequirementDocument } from "@/lib/document-processing";
 import { stripCustomerAnalysisHistory } from "@/lib/customer-analysis-history";
 import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/ai/completion";
 import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
@@ -594,7 +596,7 @@ function wholeSourceReference(input: { sourceId: string; sourceType: "project_do
 /** Rank sections across every authorized current artifact before budgeting the
  * prompt. A late relevant section does not lose to five unrelated documents. */
 export function selectProjectChatArtifactSections(input: {
-  artifacts: readonly GeneratedArtifact[]; projectId?: string; question: string;
+  artifacts: readonly GeneratedArtifact[]; projectId?: string; question: string; relevanceQuestion?: string;
   limit?: number; characterBudget?: number;
 }) {
   const aliases: Record<string, string[]> = {
@@ -603,7 +605,7 @@ export function selectProjectChatArtifactSections(input: {
     verdiargumentasjon: ["verdiargumentasjon"], anbefalt_arkitektur: ["anbefalt arkitektur"],
     gjennomforing_og_risiko: ["gjennomføring", "risikoplan"],
   };
-  const question = comparableChatText(input.question), terms = chatAttachmentTerms(input.question);
+  const question = comparableChatText(input.question), terms = chatAttachmentTerms(input.relevanceQuestion ?? input.question);
   const artifacts = selectProjectChatArtifacts({ ...input, limit: input.artifacts.length });
   const sections = artifacts.flatMap((artifact, artifactOrder) => {
     const explicitlyNamed = [artifact.title, ...(aliases[artifact.artifact_type] ?? [])]
@@ -815,19 +817,41 @@ function buildChatAnswerStructureContext(input: {
   );
 }
 
+function chatDocumentMentions(question: string, documents: ProjectDocumentDetail[]) {
+  const normalize = (value: string) => value.replace(/[_.]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const originalQuery = ` ${normalize(question)} `;
+  const query = originalQuery.toLocaleLowerCase("nb-NO");
+  return documents.flatMap(document => {
+    const names = [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
+      .map(normalize).flatMap(name => [name, name.match(/\bbilag\s+\d+[a-z]?\b/iu)?.[0] ?? ""])
+      .filter(name => name.length >= 4 && (!/^[\p{L}]+$/u.test(name) || originalQuery.includes(` ${name} `)))
+      .map(name => name.toLocaleLowerCase("nb-NO"));
+    const mentioned = names.filter(name => query.includes(` ${name} `));
+    if (!mentioned.length) return [];
+    const scoped = mentioned.some(name => ["i", "fra", "ifølge", "under"]
+      .some(preposition => query.includes(` ${preposition} ${name} `) || query.includes(` ${preposition} dokumentet ${name} `)));
+    return [{ document, scoped }];
+  });
+}
+
 function requestedChatSourceScope(question: string, documents: ProjectDocumentDetail[]) {
   if (!extractRequirementIdentifiers(question).length) return { documents, requirementHeading: undefined };
-  const normalize = (value: string) => value.toLocaleLowerCase("nb-NO").replace(/[_.]/gu, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  const query = ` ${normalize(question)} `;
-  // A mention can be a comparison or cross-reference, not a restriction.
-  // Ambiguous coordinated names retain the full occurrence set.
+  // Comparisons, exclusions and references require the complete occurrence set.
+  // A second mentioned source must never disappear merely because it lacks a
+  // repeated preposition. Ambiguous scope falls back to the normal ID gate.
+  const relational = /\b(?:ikke|utenom|unntatt|viser\s+til|henviser\s+til|i\s+strid|sammenlign\w*|forskjell\w*)\b/iu.test(question);
   const coordinated = /\bbilag\s+\d+[a-z]?\s*(?:og|eller|samt|,|\/|–|-)\s*(?:bilag\s+)?\d+/iu.test(question.replace(/_/gu, " "));
-  const named = coordinated ? [] : documents.filter(document => [document.title, (document.file_name ?? "").replace(/\.[^.]+$/u, "")]
-    .map(normalize)
-    .flatMap(name => [name, name.match(/\bbilag\s+\d+[a-z]?\b/iu)?.[0] ?? ""])
-    .some(name => name.length >= 4 && ["i", "fra", "ifølge", "under"].some(preposition => query.includes(` ${preposition} ${name} `))));
-  const heading = question.match(/\b(?:kapittel|kap\.|seksjon)\s+(?:[«"]([^»"]+)[»"]|(\d+(?:\.\d+)*))(?=\s|[,.?!;:]|$)/iu);
-  return { documents: named.length ? named : documents, requirementHeading: heading?.[1] ?? heading?.[2] };
+  const mentioned = chatDocumentMentions(question, documents);
+  const named = mentioned.filter(item => item.scoped).map(item => item.document);
+  const canNarrow = !relational && !coordinated && named.length > 0 && named.length === mentioned.length && named.some(isRequirementDocument);
+  const heading = relational ? null : question.match(/\b(?:kapittel|kap\.?|seksjon)\s+(?:[«“"']([^»”"']+)[»”"']|(\d+(?:\.\d+)*))(?=\s|[,.?!;:)\]]|$)/iu);
+  const requestedIds = extractRequirementIdentifiers(question);
+  // The correction parser may persist a row whose authority is another
+  // document. Keep that amendment available in retrieval and whole-source
+  // prompts even when the question names the original requirement document.
+  const scopedDocuments = canNarrow ? documents.filter(document => named.includes(document)
+    || findCorrectionsSections(document.raw_text).some(section => extractRequirementIdentifiers(section).some(id => requestedIds.includes(id)))) : documents;
+  return { documents: scopedDocuments, requirementHeading: heading?.[1] ?? heading?.[2] };
 }
 
 /**
@@ -944,12 +968,12 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     sourceId: `attachment-${createHash("sha256").update(`${input.projectId ?? ""}\0${attachment.rawText}`).digest("hex")}`,
     sourceType: "chat_attachment", title: attachment.title, text: attachment.rawText, revision: 0,
   }));
-  const currentArtifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: input.question });
-  const artifactSections = currentArtifactSections.some(section => section.explicitlyNamed) ? currentArtifactSections : selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id, question: retrievalPlan.standalone_query || input.question });
-  // An analysis being present is not evidence for an arbitrary factual query.
-  // Keep explicit questions about generated interpretation available while
-  // factual source questions still obey the retrieval gate on large projects.
-  const asksForAvailableInterpretation = currentArtifactSections.some(section => section.explicitlyNamed)
+  const artifactSections = selectProjectChatArtifactSections({ artifacts: input.generatedArtifacts ?? [], projectId: input.projectId ?? input.customerDocument?.project_id ?? input.solutionDocument?.project_id,
+    question: input.question, relevanceQuestion: retrievalPlan.standalone_query || input.question });
+  // A source title such as "Bilag 1" can also name a generated draft. Only an
+  // explicit interpretation request may use that draft without primary evidence.
+  const interpretationIntent = /\b(?:generert\w*|utkast\w*|forslag\w*|tolkning\w*|verdiargumentasjon\w*|tilbudsstrategi\w*|løsningsutkast\w*|anbefalt\s+arkitektur|kravsvar\w*|kravbesvarelse\w*)\b/iu.test(input.question);
+  const asksForAvailableInterpretation = (interpretationIntent && artifactSections.some(section => section.explicitlyNamed))
     || Boolean(input.customerAnalysis && /\b(?:kundeanalys(?:e|en)|analysen|prosjektoversikt)\b/iu.test(input.question))
     || Boolean(input.solutionEvaluation && /\b(?:løsningsvurdering(?:en)?|vurderingen)\b/iu.test(input.question));
   const artifactReferences: ChatSourceReference[] = artifactSections.map(({ artifact, heading, text }) => {
@@ -959,14 +983,18 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
   });
   const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
   const requestedIds = extractRequirementIdentifiers(input.question);
-  const attachmentQuestion = attachmentReferences.some(source => {
+  const projectDocuments = [input.customerDocument, input.solutionDocument, ...(input.supportingDocuments ?? [])]
+    .filter((document): document is ProjectDocumentDetail => Boolean(document));
+  const mentionsProjectEvidence = /\b(?:prosjekt\w*|kund\w*|konkurransegrunnlag\w*|kravspesifikasjon\w*|sammenlign\w*|sammenhold\w*|forskjell\w*|strid|opp\s+mot)\b/iu.test(input.question)
+    || chatDocumentMentions(input.question, projectDocuments).length > 0;
+  const attachmentQuestion = !mentionsProjectEvidence && attachmentReferences.some(source => {
     const title = comparableChatText(source.document_title);
     const explicitlyNamed = title.length > 3 && comparableChatText(input.question).includes(title);
     return (explicitlyNamed || /\b(?:vedlegget|chatvedlegget|vedlagte|vedlagt)\b/iu.test(input.question))
       && requestedIds.every(id => extractRequirementIdentifiers(source.original_quote ?? "").includes(id));
   });
   const needsProjectDocumentEvidence = needsDocumentEvidence && !attachmentQuestion;
-  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => !attachmentReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)) && (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
+  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
   // full text. Coverage is checked per source: a document available only
@@ -1131,10 +1159,10 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     abstentionMessage: retrievalResult.telemetry.requirementLookupFailed && needsProjectDocumentEvidence
       ? "Kravregisteret kunne ikke leses sikkert. Kontroller dokumentstatusen og kravgrunnlaget før du prøver igjen."
       : retrievalResult.telemetry.requirementLookupTruncated && needsProjectDocumentEvidence && !fullDocumentsInContext
-      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Gjenta krav-ID-en sammen med dokumenttittel og kapittelnummer eller kapitteltittel i anførselstegn, slik at ingen forekomster utelates fra svaret."
+      ? "Krav-ID-en finnes flere steder enn søket kan vise samtidig. Gjenta krav-ID-en sammen med dokumenttittel og kapittelnummer eller kapitteltittel i anførselstegn, for eksempel «K-42 i Bilag 2, kapittel 3», slik at ingen forekomster utelates fra svaret."
       : unresolvedRequirementId && needsProjectDocumentEvidence
       ? "Kravreferansen kunne ikke knyttes sikkert til et krav i dokumentgrunnlaget. Kontroller krav-ID-en og eventuelle rettelser, eller legg til det manglende kravdokumentet før du prøver igjen."
-      : needsProjectDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !promptAttachments.length && !asksForAvailableInterpretation
+      : needsProjectDocumentEvidence && !fullDocumentsInContext && !hasStrongRetrieval && request.documents.length > 0 && !asksForAvailableInterpretation
       ? `Jeg fant ikke nok kildegrunnlag til å svare sikkert${retrievalResult.telemetry.usedBroadenedSearch ? " etter et nytt søk" : " i de tilgjengelige kildene"}. Kontroller at disse kildene er ferdig behandlet og inneholder opplysningene du spør etter: ${request.documents.map(document => document.title).join(", ")}. Legg til det manglende dokumentet eller oppgi krav-ID, kapittel eller side, og prøv igjen.`
       : null,
   };
