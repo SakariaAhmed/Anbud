@@ -33,7 +33,7 @@ test("source checks propagate cancellation", async t => {
   await assert.rejects(verifyProjectSourceEvidence("project", source, abort.signal), error => error.name === "AbortError");
 });
 test("rate limiting reports the server wait without claiming a quotation mismatch or retrying", async t => {
-  for (const retryAfter of ["37", null, "invalid"]) {
+  for (const retryAfter of ["37", "1", null, "invalid"]) {
     let calls = 0;
     t.mock.method(globalThis, "fetch", async () => {
       calls++;
@@ -41,11 +41,25 @@ test("rate limiting reports the server wait without claiming a quotation mismatc
     });
     await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), error => {
       assert.match(error.message, /For mange kildekontroller/u);
-      assert.match(error.message, retryAfter === "37" ? /Vent 37 sekunder/u : /Vent litt/u);
+      assert.match(error.message, retryAfter === "37" ? /Vent 37 sekunder/u : retryAfter === "1" ? /Vent 1 sekund før/u : /Vent litt/u);
       assert.doesNotMatch(error.message, /ikke bekreftes/u);
       return true;
     });
     assert.equal(calls, 1);
+    t.mock.restoreAll();
+  }
+});
+test("auth, service, malformed and network failures do not claim the original quotation is absent", async t => {
+  const responses = [
+    ...[401, 403, 500].map(status => () => Response.json({ error: "Unavailable" }, { status })),
+    ...[502, 504].map(status => () => new Response("<html>Bad gateway</html>", { status })),
+    () => new Response("not JSON", { status: 200 }),
+    () => Response.json({ source: null }),
+    () => { throw new TypeError("fetch failed"); },
+  ];
+  for (const response of responses) {
+    t.mock.method(globalThis, "fetch", async () => response());
+    await assert.rejects(verifyProjectSourceEvidence("project", { ...source, quotation_excerpts: undefined }, new AbortController().signal), { message: "Kunne ikke kontrollere kilden. Prøv igjen." });
     t.mock.restoreAll();
   }
 });

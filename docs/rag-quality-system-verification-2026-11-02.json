@@ -123,7 +123,37 @@
     "validation_resumed_without_repeating_paid_jobs": true,
     "completed_streamed_chat_reused": true,
     "initial_harness_failure": "A document-name text assertion rejected a valid answer with numbered source links. The corrected harness verifies persisted source identity, quotation, revision and the actual source-evidence route.",
-    "restriction": "No live Entra, PDF/OCR HTTP upload or full production-mode dependency test"
+    "restriction": "No live Entra, PDF/OCR HTTP upload or full production-mode dependency test",
+    "ai_mode": "budgeted loopback model proxy",
+    "observed_models": [
+      "gpt-5.4",
+      "gpt-5.4-mini"
+    ],
+    "model_observation_source": "Owned app.log model records; no per-workflow model attribution inferred",
+    "evidence_manifest_limit": "The executive summary has zero references. Its zero-issue manifest does not establish quotation coverage or semantic groundedness.",
+    "final_current_artifact_freshness": [
+      {
+        "artifact_type": "bilag1_rekonstruksjon",
+        "artifact_version": 1,
+        "source_is_current": true
+      },
+      {
+        "artifact_type": "gjennomforing_og_risiko",
+        "artifact_version": 1,
+        "source_is_current": false
+      },
+      {
+        "artifact_type": "losningsutkast",
+        "artifact_version": 1,
+        "source_is_current": false
+      },
+      {
+        "artifact_type": "forbedret_kravsvar",
+        "artifact_version": 1,
+        "source_is_current": false
+      }
+    ],
+    "freshness_limit": "Requirement answers, solution proposal and risk plan were explicitly stale at the end after later cross-type knowledge changes. Completion at publication is distinct from final source freshness; no regeneration was repeated for report validation."
   },
   "recorded_retrieval": [
     {
@@ -234,7 +264,8 @@
     "authorized_cumulative_limit_usd": 10,
     "accounted_upper_bound_usd": 6.331864,
     "remaining_usd": 3.668136,
-    "uncertain_requests_charged_conservatively": 5
+    "uncertain_requests_charged_conservatively": 5,
+    "snapshot_source": "Budget proxy backed by persisted anbud-followups-ai-budget.json request metadata; upper bound independently recomputed from accounted costs/reservations"
   },
   "production": {
     "migrations_applied": false,

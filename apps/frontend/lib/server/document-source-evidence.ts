@@ -7,8 +7,9 @@ import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail 
 /** Resolve quotation membership and locators from the current source itself.
  * Requested page/heading values never become evidence. Repeated passages have
  * no precise locator unless the source structure identifies one unique place. */
-export function bindDocumentSourceEvidence(document: ProjectDocumentDetail | ServiceDocumentDetail, quote: string, options: { sourceType?: "project_document" | "service_document" } = {}): ChatSourceReference | null {
-  const index = new SourceQuoteIndex(document.raw_text);
+export function bindDocumentSourceEvidence(document: ProjectDocumentDetail | ServiceDocumentDetail, quote: string, options: { sourceType?: "project_document" | "service_document"; index?: SourceQuoteIndex } = {}): ChatSourceReference | null {
+  // Bulk output review supplies the index owned by this same source snapshot.
+  const index = options.index ?? new SourceQuoteIndex(document.raw_text);
   const match = locateSourceEvidenceQuote(document.raw_text, quote, index);
   if (!match) return null;
   const original = match.text, at = match.start;

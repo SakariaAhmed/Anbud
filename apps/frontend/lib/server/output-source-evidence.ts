@@ -45,7 +45,7 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
         const original = source.index.find(quote, { tokenBoundaries: true });
         if (!original) return [];
         knownShortOccurrence ||= short;
-        const reference = bindDocumentSourceEvidence(source.document, quote, { sourceType: source.sourceType });
+        const reference = bindDocumentSourceEvidence(source.document, quote, { sourceType: source.sourceType, index: source.index });
         return reference ? [reference] : [];
       });
       for (const artifact of artifacts) {

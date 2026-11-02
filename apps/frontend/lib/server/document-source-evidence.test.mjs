@@ -3,7 +3,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 const app = createJiti(import.meta.url, { alias: { "@": new URL("../..", import.meta.url).pathname, "server-only": "/dev/null" } });
 const { bindDocumentSourceEvidence } = app("./document-source-evidence.ts");
-const { validateChatEvidence, sourceEvidenceExcerpt } = app("./source-evidence.ts");
+const { validateChatEvidence, sourceEvidenceExcerpt, SourceQuoteIndex } = app("./source-evidence.ts");
 const document = { id: "document", title: "Fiktive krav", chunk_source_revision: 7, role: "primary_customer_document", raw_text: "[[SIDE:2]]\nK-1 Leverandøren skal lagre data i Norge.\n[[SIDE:3]]\nK-2 Logger skal bevares i ett år.", structure_map: [] };
 test("source drawers bind original quote, source revision and explicit page markers", () => {
   const source = bindDocumentSourceEvidence(document, "K-1 Leverandøren skal lagre data i Norge.");
@@ -74,5 +74,12 @@ test("whitespace-variant repeated passages never acquire a unique page or headin
       assert.deepEqual(source.heading_path, []);
       assert.match(source.reference, /nøyaktig plassering ikke oppgitt/u);
     }
+  }
+});
+test("reusing one document index preserves evidence identity and repeated-quote locators across fields", () => {
+  const input = { ...document, raw_text: document.raw_text + "\n[[SIDE:9]]\nK-1 Leverandøren skal\nlagre data i Norge." };
+  const index = new SourceQuoteIndex(input.raw_text);
+  for (const quote of ["K-1 Leverandøren skal lagre data i Norge.", "K-2 Logger skal bevares i ett år.", "Ukjent kravtekst."]) {
+    assert.deepEqual(bindDocumentSourceEvidence(input, quote, { index }), bindDocumentSourceEvidence(input, quote));
   }
 });

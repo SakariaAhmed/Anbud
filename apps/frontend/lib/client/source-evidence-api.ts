@@ -4,24 +4,32 @@ import type { ChatSourceReference } from "@/lib/types";
 /** Recheck every displayed quotation, including sparse chat citations, against
  * one current document revision. A saved evidence ID is historical proof. */
 export async function verifyProjectSourceEvidence(projectId: string, source: ChatSourceReference, signal: AbortSignal): Promise<ChatSourceReference> {
+  const unavailable = "Kunne ikke kontrollere kilden. Prøv igjen.";
+  const failRequest = (error: unknown): never => {
+    if (signal.aborted || error instanceof Error && error.name === "AbortError") throw error;
+    throw new Error(unavailable);
+  };
   const quotes = source.quotation_excerpts?.length ? source.quotation_excerpts : [source.original_quote ?? ""];
   const verified = await Promise.all(quotes.map(async quote => {
     const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/source-evidence`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ documentId: source.source_id, quote, sourceRevision: source.source_revision }), signal,
-    });
+    }).catch(failRequest);
     if (response.status === 429) {
       const retryAfter = response.headers.get("Retry-After");
       const seconds = retryAfter && /^\d+$/u.test(retryAfter) ? Number(retryAfter) : null;
       throw new Error(seconds !== null && Number.isSafeInteger(seconds)
-        ? `For mange kildekontroller. Vent ${seconds} sekunder før du åpner kilden igjen.`
+        ? `For mange kildekontroller. Vent ${seconds} ${seconds === 1 ? "sekund" : "sekunder"} før du åpner kilden igjen.`
         : "For mange kildekontroller. Vent litt før du åpner kilden igjen.");
     }
-    const payload: unknown = await response.json();
-    const value = payload && typeof payload === "object" && "source" in payload ? parseChatSourceReferences([payload.source])[0] : undefined;
-    if (!response.ok || !value?.evidence_id) throw new Error(response.status === 409
+    if (!response.ok) throw new Error(response.status === 409
       ? "Kilden er endret. Oppdater resultatet og kontroller henvisningen på nytt."
-      : "Utdraget kunne ikke bekreftes ordrett. Kontroller originaldokumentet fra dokumentlisten.");
+      : response.status === 422
+        ? "Utdraget kunne ikke bekreftes ordrett. Kontroller originaldokumentet fra dokumentlisten."
+        : unavailable);
+    const payload: unknown = await response.json().catch(failRequest);
+    const value = payload && typeof payload === "object" && "source" in payload ? parseChatSourceReferences([payload.source])[0] : undefined;
+    if (!value?.evidence_id) throw new Error(unavailable);
     return value;
   }));
   const first = verified[0];

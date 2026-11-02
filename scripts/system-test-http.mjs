@@ -239,6 +239,8 @@ if (aiEnabled) {
       assert.ok(currentDocuments.some(document => document.id === reference.source_id && document.title === reference.document_title));
       const verified = await (await request(`/api/projects/${project.id}/source-evidence`, json("POST", { documentId: reference.source_id, quote: reference.original_quote, sourceRevision: reference.source_revision }))).json();
       assert.equal(verified.source.classification, "documented");
+      assert.equal(verified.source.source_fingerprint, reference.source_fingerprint);
+      assert.equal(verified.source.original_quote, reference.original_quote);
     }
   }
   checks.push("validated chat source IDs, sparse citation numbers, original quotation and revision survive actual persistence/reload");
