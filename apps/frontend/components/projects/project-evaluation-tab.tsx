@@ -463,7 +463,7 @@ function RequirementCoveragePanel({
               return (
                 <article
                   key={`${item.reference}-${index}`}
-                  className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
+                  className={`min-w-0 border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
                 >
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
@@ -564,7 +564,7 @@ function DocumentFindingsPanel({
         </div>
       </div>
 
-      <div className="grid gap-3 px-5 py-5 md:px-6">
+      <div className="grid min-w-0 gap-3 px-5 py-5 md:px-6">
         {findings.map((finding, index) => {
           const tone = findingTone(finding);
           const Icon = tone.icon;
@@ -572,7 +572,7 @@ function DocumentFindingsPanel({
           return (
             <article
               key={`${finding.reference}-${finding.finding}-${index}`}
-              className={`border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
+              className={`min-w-0 border-t border-slate-200 border-l-[3px] px-3 py-4 ${tone.accent}`}
             >
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 max-w-full items-start gap-3">
