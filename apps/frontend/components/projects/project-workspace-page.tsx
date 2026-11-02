@@ -515,6 +515,7 @@ export function ProjectWorkspacePage({
 
   const {
     jobs: projectJobs,
+    automaticAnalysis,
     blockingReason: workflowBlockedReason,
     recordJob,
     refreshJobs,
@@ -902,6 +903,7 @@ export function ProjectWorkspacePage({
 
   async function onUploadDocument(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const automaticAnalysisChoice = new FormData(event.currentTarget).get("request_auto_analysis");
     if (!file) {
       setError("Velg en fil først.");
       return;
@@ -911,6 +913,7 @@ export function ProjectWorkspacePage({
       formData.append("file", file);
       formData.append("title", docTitle);
       formData.append("role", uploadRole);
+      if (uploadRole !== "primary_solution_document") formData.append("request_auto_analysis", String(automaticAnalysisChoice === "on"));
       // Only the user's own choice may replace a current primary document.
       const roleSource = uploadRoleChosenRef.current ? "explicit" : "suggested";
       formData.append("role_source", roleSource);
@@ -1822,6 +1825,7 @@ export function ProjectWorkspacePage({
         busyMessage={busyMessage}
         busyProgress={busyProgress}
         projectJobs={projectJobs}
+        automaticAnalysis={automaticAnalysis}
         workflowBlockedReason={readOnly ? null : workflowBlockedReason}
         onProjectJobRecorded={recordJob}
         onRefreshProjectJobs={refreshJobs}

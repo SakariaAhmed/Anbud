@@ -78,6 +78,12 @@ test("ordinary P1 terminology does not become a missing-ID refusal while an obse
   setDocumentChunksTestRequirementRegister(formal.id, encryptJson({ documentId: formal.id, projectId: formal.project_id, sourceRevision: formal.chunk_source_revision ?? 0, requirementRegister: { version: 1, rows: [{ id: "P1", idOrigin: "source", text: "Leverandøren skal tilby døgnåpen beredskap.", heading: "Drift", pages: [] }] } }));
   const observed = await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier P1?", exactTerms: ["P1"], documents: [formal] });
   assert.equal(observed.snippets[0]?.requirementId, "P1");
+  const missing = await retrieveDocumentSnippetsWithMetadata({ query: "Hva sier P2?", exactTerms: ["P2"], documents: [formal] });
+  assert.deepEqual(missing.telemetry.authoritativeRequirementIds, ["P1"]);
+  assert.deepEqual(missing.telemetry.missingRequirementIds, ["P2"]);
+  assert.equal(missing.telemetry.quality.sufficient, false);
+  const broad = await retrieveDocumentSnippetsWithMetadata({ query: "Oppsummer beredskapen", documents: [formal] });
+  assert.deepEqual(broad.telemetry.authoritativeRequirementIds, ["P1"], "Authority is independent of both the requested ID and the returned row snippets.");
 });
 
 function projectDocument(overrides = {}) {

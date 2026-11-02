@@ -5,6 +5,7 @@ import { formatJobProgress } from "@/lib/project-job-progress";
 import { runWithElapsedProgress } from "@/lib/server/use-cases/elapsed-progress";
 
 import { WorkflowError, WorkflowPreconditionError } from "@/lib/server/workflow-errors";
+import { getAutomaticAnalysisRequest } from "@/lib/server/repositories/automatic-analysis";
 import { projectJobDocumentSummary } from "@/lib/server/project-job-result-projection";
 import { findWorkflowArtifact, pendingEvaluationResult } from "@/lib/server/project-job-results";
 import { getProjectWorkflowLease } from "@/lib/server/project-workflow-cancellation";
@@ -102,13 +103,13 @@ import {
 } from "@/lib/server/requirements/source-readiness";
 
 export type ProjectWorkflowInput =
-  | { kind: "document_ingestion"; projectId: string; documentId: string }
+  | { kind: "document_ingestion"; projectId: string; documentId: string; requestAutoAnalysis?: boolean }
   | {
       kind: "document_docling_enhancement";
       projectId: string;
       documentId: string;
     }
-  | { kind: "customer_analysis"; projectId: string; model?: string }
+  | { kind: "customer_analysis"; projectId: string; model?: string; automaticRequestId?: string; automaticSourceRevision?: number }
   | {
       kind: "solution_evaluation";
       projectId: string;
@@ -398,8 +399,10 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
 
   switch (input.kind) {
     case "document_ingestion":
+      if (input.requestAutoAnalysis !== undefined && typeof input.requestAutoAnalysis !== "boolean") throw new Error("Ugyldig valg for automatisk analyse.");
       return {
         kind: "document_ingestion",
+        ...(input.requestAutoAnalysis !== undefined ? { requestAutoAnalysis: input.requestAutoAnalysis } : {}),
         projectId,
         documentId: requiredWorkflowString(
           input.documentId,
@@ -416,7 +419,9 @@ export function parseProjectWorkflowInput(value: unknown): ProjectWorkflowInput 
         ),
       };
     case "customer_analysis":
-      return { kind: "customer_analysis", projectId, model };
+      if (input.automaticRequestId !== undefined && (typeof input.automaticRequestId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(input.automaticRequestId) || !Number.isSafeInteger(input.automaticSourceRevision) || Number(input.automaticSourceRevision) < 0)) throw new Error("Ugyldig automatisk analyseforespørsel.");
+      if (input.automaticRequestId === undefined && input.automaticSourceRevision !== undefined) throw new Error("Automatisk analyse mangler forespørsel.");
+      return { kind: "customer_analysis", projectId, model, ...(input.automaticRequestId !== undefined ? { automaticRequestId: input.automaticRequestId as string, automaticSourceRevision: Number(input.automaticSourceRevision) } : {}) };
     case "solution_evaluation":
       return {
         kind: "solution_evaluation",
@@ -1188,6 +1193,8 @@ export async function generateCustomerAnalysis(input: {
   projectId: string;
   model?: string;
   section?: CustomerAnalysisSection | null;
+  automaticRequestId?: string;
+  automaticSourceRevision?: number;
   onProgress?: (message: string) => void;
   onPhase?: ProjectWorkflowPhaseHandler;
   assertActive?: () => void;
@@ -1217,6 +1224,13 @@ export async function generateCustomerAnalysis(input: {
 
   if (!customerDocument) {
     throw new WorkflowPreconditionError("Last opp minst ett dokument først.");
+  }
+
+  if (input.automaticRequestId) {
+    const request = await getAutomaticAnalysisRequest(input.projectId);
+    if (request?.request_id !== input.automaticRequestId || request.status !== "scheduled" || request.source_revision !== input.automaticSourceRevision) throw new WorkflowPreconditionError("Den automatiske analysen er avbrutt eller erstattet. Start kundeanalysen manuelt ved behov.");
+    if (previousAnalysis) return { analysis: previousAnalysis, project: await getProjectSnapshotAfterCommit(input.projectId), customerDocument, supportingDocumentCount: supportingDocuments.length };
+    if (sourceSnapshot.sourceRevision !== input.automaticSourceRevision) throw new WorkflowPreconditionError("Dokumentgrunnlaget er endret. Kontroller dokumentene og start kundeanalysen manuelt.");
   }
 
   assertCustomerAnalysisRequirementSourcesReady([
@@ -1274,6 +1288,7 @@ export async function generateCustomerAnalysis(input: {
     result,
     {
       expectedSourceRevision: sourceSnapshot.sourceRevision,
+      ...(input.automaticRequestId ? { expectedAnalysisRevision: null, automaticRequestId: input.automaticRequestId } : {}),
       previousAnalysis,
       updatedSections: section ? [section] : [...CUSTOMER_ANALYSIS_SECTIONS],
       historySource: section ? "section_regeneration" : "full_regeneration",
@@ -1296,6 +1311,8 @@ async function runCustomerAnalysisWorkflow(
   const { analysis, project } = await generateCustomerAnalysis({
     projectId: input.projectId,
     model: input.model,
+    automaticRequestId: input.automaticRequestId,
+    automaticSourceRevision: input.automaticSourceRevision,
     onProgress: handlers.setProgress,
     onPhase: handlers.onPhase,
     assertActive: () => assertWorkflowActive(handlers),

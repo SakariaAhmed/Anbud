@@ -96,3 +96,9 @@ test("user-supplied conversation wording is not promoted into document evidence"
   assert.throws(() => validateChatEvidence('«Ja» [Kilde 1]', [{ evidence_id: 'doc', original_quote: 'Kravet er lagring i Norge.' }], { userText }), /sitat/iu);
   assert.throws(() => validateChatEvidence('K-99 er et krav.', [], { userText: 'Gjenta K-99.' }), /krav-ID/iu);
 });
+
+test("register authority survives a lookup miss and whole-document citations", () => {
+  const source = { source_type: "project_document", evidence_id: "whole", original_quote: "Leverandøren skal lagre data i Norge." };
+  assert.throws(() => validateChatEvidence("P2 krever lagring i Norge. [Kilde 1]", [source], { authoritativeRequirementIds: ["P1"] }), /krav-ID/iu);
+  assert.deepEqual(validateChatEvidence("Forslag til P2-hendelser og L2-støtte.", [source]), []);
+});

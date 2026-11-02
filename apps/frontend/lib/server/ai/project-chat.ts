@@ -9,7 +9,7 @@ import { createJsonCompletion, createTextCompletionStream } from "@/lib/server/a
 import { compactText, questionRetrievalTerms, retrievedSnippetContext } from "@/lib/server/ai/context";
 import { FAST_MODEL, FAST_REASONING_EFFORT } from "@/lib/server/ai/model-config";
 import { matchCenteredExcerpt } from "@/lib/server/ai/requirement-coverage";
-import { extractExactRetrievalTerms, extractRequirementIdentifiers } from "@/lib/server/ai/retrieval-query";
+import { extractExactRetrievalTerms, extractRequirementIdentifiers, isAmbiguousRequirementIdentifier } from "@/lib/server/ai/retrieval-query";
 import {
   modelRetrievalRerankEnabled,
   rerankRetrievalCandidates,
@@ -683,7 +683,7 @@ function sanitizeChatAnswerText(value: string) {
 /** Validate complete paragraphs before they become visible. An invalid
  * paragraph never reaches the client or persistence; keep an actionable,
  * uncited recovery message instead of discarding an answer already shown. */
-async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void, repair: (paragraph: string, published: string) => Promise<string | null>, userText?: string) {
+async function* validatedChatParagraphs(stream: AsyncIterable<string>, references: ChatSourceReference[], onInvalid: () => void, repair: (paragraph: string, published: string) => Promise<string | null>, evidenceContext: { userText?: string; authoritativeRequirementIds?: string[] } = {}) {
   let repairAttempted = false;
   let published = "";
   const checkOrRepair = async (paragraph: string) => {
@@ -699,7 +699,7 @@ async function* validatedChatParagraphs(stream: AsyncIterable<string>, reference
   let pending = "";
   const checked = (text: string) => {
     const cleaned = sanitizeChatAnswerText(text);
-    validateChatEvidence(cleaned, references, { userText });
+    validateChatEvidence(cleaned, references, evidenceContext);
     return cleaned;
   };
   for await (const chunk of stream) {
@@ -938,7 +938,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     return { source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference: heading, heading_path: [heading], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: text, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference: heading, text }) };
   });
   const sourceReferences = [...wholeReferences, ...attachmentReferences, ...sourceReferencesFromSnippets(retrievedSnippets), ...artifactReferences].map((source, index) => ({ ...source, citation_number: index + 1 }));
-  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => ![...wholeReferences, ...attachmentReferences].some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id))) ?? false;
+  const unresolvedRequirementId = retrievalResult.telemetry.missingRequirementIds?.some(id => !attachmentReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)) && (isAmbiguousRequirementIdentifier(id) || !wholeReferences.some(source => extractRequirementIdentifiers(source.original_quote ?? "").includes(id)))) ?? false;
   // With the whole documents included, an excerpt whose text is already in
   // its own document only anchors its reference; any other excerpt keeps its
   // full text. Coverage is checked per source: a document available only
@@ -1124,6 +1124,7 @@ async function prepareProjectChatCompletion(input: ProjectChatInput) {
     reasoningEffort: FAST_REASONING_EFFORT,
     maxCompletionTokens: undefined,
     sourceReferences,
+    authoritativeRequirementIds: retrievalResult.telemetry.authoritativeRequirementIds ?? [],
     domainHints,
     retrievalPlan,
     retrievalTelemetry: retrievalResult.telemetry,
@@ -1153,10 +1154,10 @@ export async function streamProjectChat(input: ProjectChatInput) {
   });
 
   return {
-    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }, (paragraph, publishedAnswer) => repairChatCitationParagraph({ paragraph, question: input.question, publishedAnswer, sources: completionInput.sourceReferences, model: completionInput.model, signal: input.signal, traceId: input.traceId }), input.question),
+    stream: completionInput.abstentionMessage ? stream : validatedChatParagraphs(stream, completionInput.sourceReferences, () => { sourceValidationFailed = true; }, (paragraph, publishedAnswer) => repairChatCitationParagraph({ paragraph, question: input.question, publishedAnswer, sources: completionInput.sourceReferences, authoritativeRequirementIds: completionInput.authoritativeRequirementIds, model: completionInput.model, signal: input.signal, traceId: input.traceId }), { userText: input.question, authoritativeRequirementIds: completionInput.authoritativeRequirementIds }),
     get sourceValidationFailed() { return sourceValidationFailed; },
     sourceReferences: completionInput.abstentionMessage ? [] : completionInput.sourceReferences,
-    validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences, { userText: input.question }),
+    validateAnswer: (answer: string) => answer === completionInput.abstentionMessage ? [] : validateChatEvidence(answer, completionInput.sourceReferences, { userText: input.question, authoritativeRequirementIds: completionInput.authoritativeRequirementIds }),
     domainHints: completionInput.domainHints,
     retrievalPlan: completionInput.retrievalPlan,
     retrievalTelemetry: completionInput.retrievalTelemetry,

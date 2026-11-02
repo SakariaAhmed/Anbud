@@ -16,3 +16,12 @@ test("repeated quotes or absent page markers never manufacture a page or heading
   assert.equal(source.page_start, null); assert.deepEqual(source.heading_path, []);
   assert.equal(bindDocumentSourceEvidence({ ...document, raw_text: "K-1 Leverandøren skal lagre data i Norge." }, "K-1 Leverandøren skal lagre data i Norge.").page_start, null);
 });
+
+test("short numeric quotations retain original context while ordinary labels never become proof", () => {
+  const input = { ...document, raw_text: "[[SIDE:4]]\nLeverandøren skal levere eksport innen 30 dager.\nSvarfelt: Ja.", structure_map: [] };
+  const source = bindDocumentSourceEvidence(input, "30 dager");
+  assert.equal(source.original_quote, "Leverandøren skal levere eksport innen 30 dager.");
+  assert.equal(source.page_start, 4);
+  assert.equal(bindDocumentSourceEvidence(input, "Ja"), null);
+  assert.equal(bindDocumentSourceEvidence({ ...input, raw_text: "30 dager" }, "30 dager"), null);
+});

@@ -1,5 +1,6 @@
 import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
+import { dispatchReadyCustomerAnalyses, scheduleReadyCustomerAnalysis } from "@/lib/server/repositories/automatic-analysis";
 import { projectJobResultForRead } from "@/lib/server/project-job-result-projection";
 import { recoverCommittedProjectJobResult } from "@/lib/server/project-job-results";
 
@@ -279,6 +280,7 @@ export async function claimAndScheduleProjectJobAutorun(
 
 type QueuedProjectJobDrainRuntime = {
   findNext?: typeof findOldestQueuedProjectJob;
+  scheduleAnalysis?: typeof scheduleReadyCustomerAnalysis;
   autorun?: (
     jobId: string,
     input: ProjectWorkflowInput,
@@ -297,6 +299,7 @@ export async function drainNextQueuedProjectJob(
   // The scheduled worker stops its server after the HTTP response, so work
   // handed to its in-memory queue would be interrupted.
   if (envFlag("PROJECT_JOB_WORKER_PROCESS")) return null;
+  await (runtime.scheduleAnalysis ?? scheduleReadyCustomerAnalysis)(projectId, null);
   const includeDoclingEnhancement = envFlag("DOCLING_ASYNC_AUTO_RUN", false);
   const next = await (runtime.findNext ?? findOldestQueuedProjectJob)(
     projectId,
@@ -846,6 +849,17 @@ async function runProjectJob(
               workflowResult.docling_enhancement_job_id = queuedEnhancement.id;
             }
 
+            if (input.kind === "document_ingestion" || input.kind === "document_docling_enhancement") {
+              // Optional follow-up scheduling must not turn already published
+              // document readiness into an ingestion failure.
+              try { await scheduleReadyCustomerAnalysis(input.projectId); }
+              catch (error) {
+                if (isProjectJobLeaseLostError(error)) throw error;
+                console.error(JSON.stringify({ event: "automatic_analysis_scheduling_failed", project_id: input.projectId, ...safeErrorTelemetry(error) }));
+              }
+              assertWorkflowActive();
+            }
+
             return workflowResult;
           },
         ),
@@ -1010,12 +1024,14 @@ export async function queueArtifactGenerationJob(input: {
 export async function queueDocumentIngestionJob(input: {
   projectId: string;
   documentId: string;
+  requestAutoAnalysis?: boolean;
 }, options: QueueJobOptions = {}) {
   return enqueueProjectJob(
     {
       kind: "document_ingestion",
       projectId: input.projectId,
       documentId: input.documentId,
+      ...(input.requestAutoAnalysis !== undefined ? { requestAutoAnalysis: input.requestAutoAnalysis } : {}),
     },
     options,
   );
@@ -1145,7 +1161,10 @@ export async function runAvailableProjectJobs(options: {
     deadlineAt: options.deadlineAt,
     now: options.now ?? Date.now,
     maxJobs: options.limit ?? 1,
-    listQueuedJobIds: listQueuedProjectJobIds,
+    async listQueuedJobIds(limit) {
+      await dispatchReadyCustomerAnalyses();
+      return listQueuedProjectJobIds(limit);
+    },
     async readQueuedInput(jobId) {
       const queuedInput = await getQueuedProjectJobInput(jobId);
       return queuedInput ? parseProjectWorkflowInput(queuedInput) : null;

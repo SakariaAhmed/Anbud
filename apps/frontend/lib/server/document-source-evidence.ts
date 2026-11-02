@@ -8,8 +8,20 @@ import type { ChatSourceReference, ProjectDocumentDetail, ServiceDocumentDetail 
  * Requested page/heading values never become evidence. Repeated passages have
  * no precise locator unless the source structure identifies one unique place. */
 export function bindDocumentSourceEvidence(document: ProjectDocumentDetail | ServiceDocumentDetail, quote: string, options: { sourceType?: "project_document" | "service_document" } = {}): ChatSourceReference | null {
-  const original = new SourceQuoteIndex(document.raw_text).find(quote);
+  let original = new SourceQuoteIndex(document.raw_text).find(quote);
   if (!original) return null;
+  if (original.replace(/\s+/gu, " ").trim().length < 12) {
+    // Bare labels such as Ja/Nei are not source evidence. Meaningful short
+    // numeric/standard terms retain enough original context for verification.
+    if (original.trim().length < 4 || !/\d/u.test(original)) return null;
+    const at = document.raw_text.indexOf(original);
+    if (document.raw_text.indexOf(original, at + original.length) >= 0) return null;
+    const lineEnd = document.raw_text.indexOf("\n", at + original.length);
+    const start = Math.max(document.raw_text.lastIndexOf("\n", at) + 1, at - 120);
+    const end = Math.min(lineEnd < 0 ? document.raw_text.length : lineEnd, at + original.length + 120);
+    original = document.raw_text.slice(start, end).trim();
+    if (original.replace(/\s+/gu, " ").length < 12) return null;
+  }
   const at = document.raw_text.indexOf(original);
   const repeated = document.raw_text.indexOf(original, at + original.length) >= 0;
   const sections = repeated ? [] : document.structure_map.filter(section => section.text.includes(original));

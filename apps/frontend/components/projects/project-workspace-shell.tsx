@@ -227,6 +227,7 @@ export type ProjectWorkspaceTabContentProps = {
   busyMessage: string;
   busyProgress: number;
   projectJobs: ProjectJobRecord[];
+  automaticAnalysis?: import("@/lib/types").AutomaticAnalysisRequest | null;
   /** Set while the server would refuse a new generation (busy or indexing). */
   workflowBlockedReason: string | null;
   onProjectJobRecorded: (job: ProjectJobRecord) => void;
@@ -648,6 +649,7 @@ export function ProjectWorkspaceTabContent({
   busyMessage,
   busyProgress,
   projectJobs,
+  automaticAnalysis,
   workflowBlockedReason,
   onProjectJobRecorded,
   onRefreshProjectJobs,
@@ -693,6 +695,7 @@ export function ProjectWorkspaceTabContent({
         key={`jobs-${project.id}`}
         projectId={project.id}
         jobs={projectJobs}
+        automaticAnalysis={automaticAnalysis}
         blockedReason={workflowBlockedReason}
         onJobStarted={onProjectJobRecorded}
         onRefreshJobs={onRefreshProjectJobs}

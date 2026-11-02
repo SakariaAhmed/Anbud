@@ -40,11 +40,20 @@ test("unquoted coverage fields bind only literal source excerpts", () => {
 });
 
 test("evaluation provenance titles and locators never become generated claims", () => {
-  const result = { executive_summary: "K-1.3 krever eksport.", evaluation_context: { customer_document_title: 'K-99 «Oppdiktet tittel»' }, requirement_coverage: { items: [{ source_document_title: 'K-99 «Oppdiktet filnavn»', source_reference: "K-99 side 888", reference: "K-99", requirement: "K-1.3 Leverandøren skal levere eksport innen 30 dager." }] } };
+  const result = { executive_summary: "K-1.3 krever eksport.", evaluation_context: { customer_document_title: 'K-99 «Oppdiktet tittel»' }, requirement_coverage: { items: [{ source_document_title: 'K-99 «Oppdiktet filnavn»', source_reference: "K-99 side 888", reference: "K-1.3", requirement: "K-1.3 Leverandøren skal levere eksport innen 30 dager." }] } };
   const fields = outputEvidenceFields(result);
   assert.ok(fields.every(field => !field.text.includes("K-99")));
   assert.doesNotThrow(() => bindOutputSourceEvidence({ documents: [source], fields }));
   assert.throws(() => bindOutputSourceEvidence({ documents: [source], fields: outputEvidenceFields({ ...result, executive_summary: "K-99 krever eksport." }) }), /krav-ID/iu, "A generated claim still needs source membership.");
+});
+
+test("ordinary short labels carry no proof or issue while short numeric quotes retain verifiable context", () => {
+  const labels = reviewOutputSourceEvidence({ documents: [{ ...source, document: { ...source.document, raw_text: "Kravet er besvart med Ja i tabellen." } }], fields: [{ path: "answer", text: 'Leverandøren svarer "Ja".' }] });
+  assert.deepEqual(labels.evidence.references, []); assert.equal(labels.evidence.issues, undefined);
+  const numeric = bindOutputSourceEvidence({ documents: [source], fields: [{ path: "answer", text: 'Fristen er «30 dager».' }] });
+  assert.equal(numeric.references[0].source.original_quote, "K-1.3 Leverandøren skal levere eksport innen 30 dager.");
+  assert.throws(() => bindOutputSourceEvidence({ documents: [source], fields: outputEvidenceFields({ document_findings: [{ reference: 'K-99 i «Bilag 2»' }] }) }), /krav-ID/iu);
+  assert.doesNotThrow(() => bindOutputSourceEvidence({ documents: [source], fields: outputEvidenceFields({ document_findings: [{ reference: 'K-1.3 i «Bilag 2»' }] }) }));
 });
 
 test("selected regeneration retains untouched manual text and only unchanged prior proof", () => {

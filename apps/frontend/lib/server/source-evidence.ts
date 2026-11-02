@@ -56,9 +56,9 @@ export function evidenceIdentity(input: { sourceType: string; sourceId: string; 
 /** Validate the references the answer actually uses before persistence.
  * Membership proves a locator/quotation exists, not that an interpretation is
  * correct; groundedness remains a separate release evaluation. */
-export function validateChatEvidence(answer: string, available: ChatSourceReference[], options: { userText?: string } = {}) {
+export function validateChatEvidence(answer: string, available: ChatSourceReference[], options: { userText?: string; authoritativeRequirementIds?: string[] } = {}) {
   const passages = new Map<number, string[]>();
-  const registeredIds = new Set(available.flatMap(source => source?.source_type === "project_document" && source.requirement_id ? extractRequirementIdentifiers(source.requirement_id) : []));
+  const registeredIds = new Set([...(options.authoritativeRequirementIds ?? []), ...available.flatMap(source => source?.source_type === "project_document" && source.requirement_id ? extractRequirementIdentifiers(source.requirement_id) : [])]);
   const registeredShapes = new Set([...registeredIds].map(id => id.replace(/\d+/gu, "#")));
   if ((answer.match(/\[Kilde/giu) ?? []).length !== [...answer.matchAll(/\[Kilde\s+(\d+)\]/giu)].length) throw new SourceEvidenceValidationError("CHAT_SOURCE_REFERENCE_INVALID", "Svaret har en ugyldig kildehenvisning.");
   const indexes = [...answer.matchAll(/\[Kilde\s+(\d+)\]/giu)].map(match => Number(match[1]) - 1);

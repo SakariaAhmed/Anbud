@@ -36,14 +36,15 @@ export async function lookupRequirementSnippets(input: {
   documents: ProjectDocumentDetail[];
   fingerprints: ReadonlyMap<string, string>;
   onSourceFailure?: (documentId: string) => void;
+  onAuthoritativeIds?: (ids: string[]) => void;
 }): Promise<RetrievedDocumentSnippet[]> {
   const wanted = new Set(input.ids.map(normalizeRequirementId));
-  if (!wanted.size) return [];
   const rows = await Promise.all(input.documents
-    .filter(document => isRequirementDocument(document) && extractRequirementIdentifiers(document.raw_text).some(id => wanted.has(normalizeRequirementId(id))))
+    .filter(isRequirementDocument)
     .map(async document => {
       try {
         const entries = await ledger(document, input.fingerprints.get(`project_document:${document.id}`)!);
+        input.onAuthoritativeIds?.(entries.filter(entry => entry.idOrigin !== "inferred" && entry.idOrigin !== "generated").map(entry => normalizeRequirementId(entry.id)));
         return entries.filter(entry => wanted.has(normalizeRequirementId(entry.id)) && entry.idOrigin !== "inferred" && entry.idOrigin !== "generated")
           .flatMap(entry => {
             const source = entry.correctionSource

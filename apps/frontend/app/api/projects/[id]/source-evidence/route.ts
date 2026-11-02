@@ -13,7 +13,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params;
     await requireProjectPermission(id, "document.read");
     const body: unknown = await request.json();
-    if (!isRecord(body) || typeof body.documentId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(body.documentId) || typeof body.quote !== "string" || body.quote.trim().length < 12 || body.quote.length > 8000 || (body.sourceRevision !== undefined && (!Number.isSafeInteger(body.sourceRevision) || Number(body.sourceRevision) < 0))) return NextResponse.json({ error: "Kildehenvisningen mangler et gyldig originalutdrag." }, { status: 400 });
+    if (!isRecord(body) || typeof body.documentId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/iu.test(body.documentId) || typeof body.quote !== "string" || !body.quote.trim() || body.quote.length > 8000 || (body.sourceRevision !== undefined && (!Number.isSafeInteger(body.sourceRevision) || Number(body.sourceRevision) < 0))) return NextResponse.json({ error: "Kildehenvisningen mangler et gyldig originalutdrag." }, { status: 400 });
     const documentId = body.documentId, quote = body.quote;
     const snapshot = await readStableProjectSourceSnapshot({ readSourceRevision: () => getProjectSourceRevision(id), readValue: async () =>
       (await listProjectDocumentSummaries(id)).some(document => document.id === documentId)

@@ -2493,7 +2493,8 @@ export async function saveCustomerAnalysis(
   result: CustomerAnalysisResult,
   options: {
     expectedSourceRevision: number;
-    expectedAnalysisRevision?: string;
+    expectedAnalysisRevision?: string | null;
+    automaticRequestId?: string;
     previousAnalysis?: CustomerAnalysisResult | null;
     updatedSections?: CustomerAnalysisSection[];
     historySource?: CustomerAnalysisHistorySource;
@@ -2532,9 +2533,10 @@ export async function saveCustomerAnalysis(
   const payload = {
     source_document_ids: sourceDocumentIds,
     expected_source_revision: options.expectedSourceRevision,
-    ...(options.expectedAnalysisRevision || previousAnalysis?.revision
-      ? { expected_analysis_revision: options.expectedAnalysisRevision ?? previousAnalysis?.revision }
+    ...(options.expectedAnalysisRevision !== undefined || previousAnalysis?.revision
+      ? { expected_analysis_revision: options.expectedAnalysisRevision !== undefined ? options.expectedAnalysisRevision : previousAnalysis?.revision }
       : {}),
+    ...(options.automaticRequestId ? { automatic_request_id: options.automaticRequestId } : {}),
     unchanged: analysisContentEqual(previousAnalysis, result),
     result_json: encryptJson(resultWithHistory),
     last_activity_at: new Date().toISOString(),

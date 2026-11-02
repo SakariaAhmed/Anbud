@@ -14,7 +14,7 @@ const numbers = (value: string) => value.match(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)*
  * normal quotation/ID validator before any repaired text becomes visible.
  * Membership is not semantic entailment; the release tier measures that. */
 export async function repairChatCitationParagraph(input: {
-  paragraph: string; question?: string; publishedAnswer?: string; sources: ChatSourceReference[]; model?: string; signal?: AbortSignal; traceId?: string;
+  paragraph: string; question?: string; publishedAnswer?: string; sources: ChatSourceReference[]; authoritativeRequirementIds?: string[]; model?: string; signal?: AbortSignal; traceId?: string;
 }): Promise<string | null> {
   input.signal?.throwIfAborted();
   if (input.paragraph.length > 4000) return null;
@@ -38,7 +38,7 @@ export async function repairChatCitationParagraph(input: {
   input.signal?.throwIfAborted();
   const sourceNumbers = new Set([...candidates.flatMap(({ source }) => numbers(source.original_quote ?? "")), ...numbers(input.question ?? "")]);
   if (numbers(withoutCitations(repaired)).some(number => !sourceNumbers.has(number))) return null;
-  try { validateChatEvidence(repaired, input.sources, { userText: input.question }); }
+  try { validateChatEvidence(repaired, input.sources, { userText: input.question, authoritativeRequirementIds: input.authoritativeRequirementIds }); }
   catch (error) { if (error instanceof SourceEvidenceValidationError) return null; throw error; }
   return repaired.trim();
 }

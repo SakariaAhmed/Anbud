@@ -10,12 +10,14 @@ import { parseJobProgress } from "@/lib/project-job-progress";
 export function ProjectWorkflowJobs({
   projectId,
   jobs,
+  automaticAnalysis,
   blockedReason,
   onJobStarted,
   onRefreshJobs,
 }: {
   projectId: string;
   jobs: ProjectJobRecord[];
+  automaticAnalysis?: import("@/lib/types").AutomaticAnalysisRequest | null;
   /** Why the server would refuse a new job now (active jobs or unfinished documents). */
   blockedReason: string | null;
   onJobStarted: (job: ProjectJobRecord) => void;
@@ -44,9 +46,13 @@ export function ProjectWorkflowJobs({
     }
     finally { setStarting(false); }
   }
-  if (!activeJobs.length && !pending && !error && !notice) return null;
+  const automaticPending = automaticAnalysis?.status === "pending";
+  const automaticFailed = automaticAnalysis?.status === "failed";
+  if (!activeJobs.length && !pending && !error && !notice && !automaticPending && !automaticFailed) return null;
   return <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm" aria-live="polite">
     {activeJobs.map(job => <p key={job.id}>{job.status === "queued" ? "I kø" : "Pågår"}: {parseJobProgress(job.message).label}</p>)}
+    {automaticPending ? <p>Kundeanalysen starter automatisk når dokumentene er ferdig behandlet og kontrollert.</p> : null}
+    {automaticFailed ? <div role="alert"><p>{automaticAnalysis.reason_code === "document_processing_failed" ? "Automatisk analyse ble stoppet fordi et dokument ikke ble ferdig behandlet. Kontroller dokumentstatusen og last opp dokumentet på nytt ved behov." : "Den automatiske analysen ble ikke fullført. Kontroller dokumentgrunnlaget og start kundeanalysen manuelt."}</p><a className="inline-flex min-h-10 items-center text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" href={`/projects/${encodeURIComponent(projectId)}?tab=analysis`}>Gå til kundeanalyse</a></div> : null}
     {pending && <><p>Løsningsutkastet er lagret. Revurdering gjenstår.</p>
       <Button className="mt-2" size="sm" variant="outline" aria-describedby={blockedReason && !activeJobs.length ? "resume-workflow-blocked" : undefined} disabled={starting || Boolean(blockedReason)} onClick={() => void resume()}>Fortsett revurdering</Button>
       {!activeJobs.length ? <div className="mt-2"><WorkflowBlockedHint id="resume-workflow-blocked" reason={blockedReason} /></div> : null}</>}

@@ -1,5 +1,6 @@
 import { parseRequirementRegeneration } from "@/lib/requirement-regeneration";
 import { listRecentProjectJobs } from "@/lib/server/repositories/jobs";
+import { getAutomaticAnalysisRequest } from "@/lib/server/repositories/automatic-analysis";
 import { requireProjectPermission } from "@/lib/server/authorization";
 import { NextResponse } from "next/server";
 
@@ -201,7 +202,8 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "project.read");
-    return NextResponse.json({ jobs: await listRecentProjectJobs(id) }, { headers: { "Cache-Control": "private, no-store" } });
+    const [jobs, automatic_analysis] = await Promise.all([listRecentProjectJobs(id), getAutomaticAnalysisRequest(id)]);
+    return NextResponse.json({ jobs, automatic_analysis }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return routeErrorResponse(error, "Kunne ikke hente jobbstatus.");
   }

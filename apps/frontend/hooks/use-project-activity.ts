@@ -9,8 +9,8 @@ import {
   projectActivityPollDelayMs,
   projectWorkflowBlockingReason,
 } from "@/lib/client/project-activity";
-import { fetchProjectJobs, invalidateProjectJobsCache } from "@/lib/client/project-api";
-import type { ProjectDocument, ProjectJobRecord } from "@/lib/types";
+import { fetchProjectJobStatus, invalidateProjectJobsCache } from "@/lib/client/project-api";
+import type { ProjectDocument, ProjectJobRecord, AutomaticAnalysisRequest } from "@/lib/types";
 
 type ActivityControls = {
   source: ReturnType<typeof createProjectJobsSource>;
@@ -29,7 +29,7 @@ export function useProjectActivity(input: {
   refreshProject: () => Promise<void>;
 }) {
   const { projectId, documents } = input;
-  const [jobState, setJobState] = useState<{ projectId: string; jobs: ProjectJobRecord[] }>({ projectId, jobs: [] });
+  const [jobState, setJobState] = useState<{ projectId: string; jobs: ProjectJobRecord[]; automaticAnalysis?: AutomaticAnalysisRequest | null }>({ projectId, jobs: [] });
   const jobs = jobState.projectId === projectId ? jobState.jobs : [];
   const jobsRef = useRef(jobs);
   const documentsRef = useRef(documents);
@@ -44,14 +44,14 @@ export function useProjectActivity(input: {
     let disposed = false;
     jobsRef.current = [];
     const source = createProjectJobsSource({
-      read: () => fetchProjectJobs(projectId),
+      read: () => fetchProjectJobStatus(projectId),
       invalidate: () => invalidateProjectJobsCache(projectId),
-      onChange(next) {
+      onChange(next, automaticAnalysis) {
         if (disposed) return;
         jobsRef.current = next;
         // The first job read lands while server-rendered tabs may still be
         // hydrating; as a transition it cannot force them back to "Laster ...".
-        startTransition(() => setJobState({ projectId, jobs: next }));
+        startTransition(() => setJobState(current => ({ projectId, jobs: next, automaticAnalysis: automaticAnalysis === undefined ? current.projectId === projectId ? current.automaticAnalysis : null : automaticAnalysis })));
       },
     });
     const poller = createProjectActivityPoller({
@@ -111,6 +111,7 @@ export function useProjectActivity(input: {
 
   return {
     jobs,
+    automaticAnalysis: jobState.projectId === projectId ? jobState.automaticAnalysis ?? null : null,
     blockingReason: projectWorkflowBlockingReason({ jobs, documents }),
     recordJob,
     refreshJobs,

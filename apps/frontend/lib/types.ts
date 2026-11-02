@@ -659,6 +659,12 @@ export interface ExecutiveSummaryJobResult {
   project: ProjectSnapshotResult | null;
 }
 
+export type AutomaticAnalysisRequest = {
+  request_id: string; status: "pending" | "scheduled" | "completed" | "failed" | "cancelled";
+  job_id: string | null; source_revision: number | null; reason_code: string | null; updated_at: string;
+};
+export type ProjectActivitySnapshot = { jobs: ProjectJobRecord[]; automatic_analysis: AutomaticAnalysisRequest | null };
+
 export interface DocumentIngestionJobResult {
   // Null when a stored result's document can no longer be read.
   document: ProjectDocument | null;

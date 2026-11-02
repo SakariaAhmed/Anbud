@@ -82,6 +82,7 @@ if (command === "stop") {
   runtime.env.OPENAI_API_KEY = "local-budget-proxy-only";
   runtime.env.OPENAI_BASE_URL = "http://127.0.0.1:4340/v1";
   runtime.env.RAG_MODEL_RERANK = "on";
+  if (process.argv.includes("--web-mode")) runtime.env.PROJECT_JOB_WORKER_PROCESS = "0";
   for (const key of ["AZURE_COMMUNICATION_EMAIL_ENDPOINT", "AZURE_COMMUNICATION_EMAIL_SENDER", "AZURE_COMMUNICATION_EMAIL_CONNECTION_STRING", "MICROSOFT_ENTRA_CLIENT_ID", "MICROSOFT_ENTRA_CLIENT_SECRET", "MICROSOFT_ENTRA_TENANT_SUBDOMAIN"]) runtime.env[key] = "";
   writeFileSync(privatePath, JSON.stringify(runtime, null, 2), { mode: 0o600 });
   try { process.kill(-state.appPid, "SIGTERM"); } catch { /* Already stopped. */ }

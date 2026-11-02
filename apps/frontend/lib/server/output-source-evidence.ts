@@ -32,11 +32,12 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
       if (isAmbiguousRequirementIdentifier(id) && !registerIds.has(id) && !registerShapes.has(shape(id))) continue;
       if (!registerIds.has(id) && !documents.some(source => source.ids.has(id)) && !priorReferences.some(source => source.source.source_type !== "generated_artifact" && source.ids.has(id))) throw new OutputEvidenceValidationError("unknown_requirement", "En krav-ID i resultatet finnes ikke i det gjeldende kildegrunnlaget. Kontroller dokumentene før denne formuleringen brukes.");
     }
-    const quotes = quotedSourcePassages(field.text);
+    const quotes = /(?:^|\.)reference$/u.test(field.path) ? [] : quotedSourcePassages(field.text);
     // Coverage evidence/requirement fields can themselves be verbatim excerpts,
     // without quotation marks. Bind exact matches without labelling prose as a quote.
     const direct = /(?:^|\.)(?:evidence|requirement)$/u.test(field.path) ? [field.text.trim()] : [];
     for (const quote of Array.from(new Set([...quotes, ...direct])).filter(Boolean)) {
+      const short = quote.replace(/\s+/gu, " ").trim().length < 12;
       const candidates = documents.flatMap(source => {
         const original = source.index.find(quote);
         if (!original) return [];
@@ -44,6 +45,7 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
         return reference ? [reference] : [];
       });
       for (const artifact of artifacts) {
+        if (short) continue;
         const original = artifact.index.find(quote);
         if (!original) continue;
         const fingerprint = createHash("sha256").update(artifact.content_markdown).digest("hex");
@@ -52,11 +54,12 @@ export function bindOutputSourceEvidence(input: { fields: Array<{ path: string; 
         candidates.push({ source_type: "generated_artifact", source_id: artifact.id, document_title: artifact.title, reference, heading_path: [], page_start: null, page_end: null, source_revision: revision, source_fingerprint: fingerprint, original_quote: original, classification: "interpretation", evidence_id: evidenceIdentity({ sourceType: "generated_artifact", sourceId: artifact.id, revision, fingerprint, reference, text: original }) });
       }
       for (const previous of priorReferences) {
+        if (short) continue;
         const original = previous.index.find(quote);
         if (original) candidates.push({ ...previous.source, original_quote: original, quotation_excerpts: undefined,
           evidence_id: evidenceIdentity({ sourceType: previous.source.source_type, sourceId: previous.source.source_id, revision: previous.source.source_revision!, fingerprint: previous.source.source_fingerprint!, reference: previous.source.reference, text: original }) });
       }
-      if (!candidates.length && !quotes.includes(quote)) continue;
+      if (!candidates.length && (short || !quotes.includes(quote))) continue;
       if (!candidates.length && input.interpretationOnly) continue;
       if (!candidates.length) throw new OutputEvidenceValidationError("unverified_quote", "Et kildesitat i resultatet kunne ikke bekreftes ordrett i dokumentene. Kontroller originalkilden før denne formuleringen brukes.");
       for (const source of candidates) if (!references.some(item => item.path === field.path && item.source.evidence_id === source.evidence_id)) references.push({ path: field.path, source });
@@ -108,7 +111,7 @@ const outputProvenanceFields = new Set([
   "source_evidence", "source_references", "evaluation_context", "evaluation_provenance_mode",
   "customer_document_id", "solution_document_id", "evaluated_generated_artifact_id",
   "source_document_id", "source_document_title", "answer_document_id", "answer_document_title",
-  "heading_path", "page_range", "table_id", "source_reference", "full_reference", "reference",
+  "heading_path", "page_range", "table_id", "source_reference", "full_reference",
 ]);
 
 export function reviewRequirementRowOutputEvidence(input: Omit<Parameters<typeof bindOutputSourceEvidence>[0], "fields"> & {

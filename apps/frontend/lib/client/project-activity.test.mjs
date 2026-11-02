@@ -225,6 +225,19 @@ test("an older job-list read cannot overwrite a job the user just started or a n
   assert.deepEqual(applied.at(-1), ["started:running"]);
 });
 
+test("automatic-analysis status follows the same read ordering as its job list", async () => {
+  const reads = [], applied = [];
+  const source = createProjectJobsSource({ read() { const read = deferred(); reads.push(read); return read.promise; }, invalidate() {}, onChange(jobs, automatic) { applied.push({ jobs, automatic }); } });
+  const older = source.refresh(), newer = source.refresh();
+  reads[1].resolve({ jobs: [{ id: "auto", status: "running" }], automatic_analysis: { status: "scheduled", request_id: "new" } });
+  assert.equal(await newer, true);
+  reads[0].resolve({ jobs: [], automatic_analysis: { status: "pending", request_id: "old" } });
+  assert.equal(await older, false); assert.equal(applied.length, 1);
+  assert.equal(applied[0].automatic.request_id, "new");
+  source.record({ id: "manual", status: "queued" });
+  assert.equal(applied.at(-1).automatic, undefined, "Recording a job must not replace the persisted automatic intent with an invented status.");
+});
+
 test("job-list reads share one request through the client cache", async () => {
   const originalFetch = globalThis.fetch;
   const response = deferred();

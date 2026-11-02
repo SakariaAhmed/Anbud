@@ -73,11 +73,11 @@ function projectDocumentRoleLabel(document: ProjectDocument) {
 function documentProcessingLabel(document: ProjectDocument) {
   switch (document.processing_status) {
     case "queued":
-      return "Venter på RAG";
+      return "Venter på behandling";
     case "processing":
       return "Indekserer";
     case "basic_ready":
-      return "RAG klar";
+      return "Klar til bruk";
     case "enhanced_ready":
       return null;
     case "failed":
@@ -192,6 +192,10 @@ export function ProjectDocumentsTab({
             )}
             Last opp
           </Button>
+          {uploadRole !== "primary_solution_document" ? <label className="flex min-w-0 items-start gap-2 text-sm leading-6 lg:col-span-4">
+            <input type="checkbox" name="request_auto_analysis" defaultChecked disabled={uploadBusy} className="mt-1.5 size-4 shrink-0 accent-primary" />
+            <span>Start kundeanalyse når dokumentgrunnlaget er klart. En gjeldende analyse beholdes.</span>
+          </label> : null}
         </form>
       ) : null}
 

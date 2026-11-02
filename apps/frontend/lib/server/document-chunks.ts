@@ -111,6 +111,7 @@ export type RetrievalQuality = {
 };
 
 export type RetrievalTelemetry = {
+  authoritativeRequirementIds?: string[];
   requirementLookupFailed?: boolean;
   missingRequirementIds?: string[];
   query: string;
@@ -2152,15 +2153,14 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
   const exactTerms = (input.exactTerms ?? []).filter(Boolean);
   const requirementIds = Array.from(new Set(exactTerms.flatMap(extractRequirementIdentifiers)));
   let requirementLookupFailed = false;
-  const lookup = requirementIds.length
-    ? import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onSourceFailure: () => { requirementLookupFailed = requirementIds.some(id => !isAmbiguousRequirementIdentifier(id)); } })).catch(error => {
+  const authoritativeRequirementIds = new Set<string>();
+  const lookup = import("@/lib/server/requirements/retrieval-lookup").then(({ lookupRequirementSnippets }) => lookupRequirementSnippets({ ids: requirementIds, documents, fingerprints: sourceFingerprints, onAuthoritativeIds: ids => ids.forEach(id => authoritativeRequirementIds.add(id)), onSourceFailure: documentId => { const sourceIds = extractRequirementIdentifiers(documents.find(document => document.id === documentId)?.raw_text ?? ""); requirementLookupFailed ||= requirementIds.some(id => !isAmbiguousRequirementIdentifier(id) && sourceIds.includes(id)); } })).catch(error => {
         assertEmbeddingFallbackAllowed(error);
         if (error instanceof Error && error.name === "AbortError") throw error;
         requirementLookupFailed = requirementIds.some(id => !isAmbiguousRequirementIdentifier(id));
         console.warn(JSON.stringify({ event: "requirement_lookup_unavailable", ...embeddingErrorFields(error) }));
         return [];
-      })
-    : Promise.resolve([]);
+      });
   const limit = Math.min(Math.max(input.limit ?? 8, 1), MAX_RETRIEVAL_LIMIT);
   const comparable = (text: string) => normalizeChunkText(text).replace(/\s+/gu, " ");
   const coveredText = new Map([...input.promptDocumentText ?? []].map(([id, text]) =>
@@ -2351,7 +2351,8 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     ))].slice(0, limit);
     quality = assessRetrievalQuality({ snippets, exactTerms });
   }
-  const missingRequirementIds = requirementIds.filter(id => !isAmbiguousRequirementIdentifier(id) && !lookedUpRows.some(row => row.requirementId === id));
+  const authoritativeShapes = new Set([...authoritativeRequirementIds].map(id => id.replace(/\d+/gu, "#")));
+  const missingRequirementIds = requirementIds.filter(id => (!isAmbiguousRequirementIdentifier(id) || authoritativeRequirementIds.has(id) || authoritativeShapes.has(id.replace(/\d+/gu, "#"))) && !lookedUpRows.some(row => row.requirementId === id));
   if (missingRequirementIds.length || requirementLookupFailed) quality = { ...quality, sufficient: false, confidence: "low", reason: "En etterspurt kravreferanse kunne ikke knyttes sikkert til kravregisteret." };
   const quoteIndexes = new Map<string, SourceQuoteIndex>();
   snippets = snippets.map(snippet => {
@@ -2369,6 +2370,7 @@ export async function retrieveDocumentSnippetsWithMetadata(input: {
     };
   });
   const telemetry = {
+    authoritativeRequirementIds: [...authoritativeRequirementIds],
     requirementLookupFailed,
     missingRequirementIds,
     query,

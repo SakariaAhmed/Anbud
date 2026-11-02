@@ -43,7 +43,10 @@ function fakeClient() {
       return { order: () => ({ then: (resolve) => resolve({ data: [], error: null }) }) };
     },
   };
-  return { from: () => query, payload: () => payload };
+  return { from: table => table === "project_analysis_requests" ? {
+    select() { return this; }, eq() { return this; },
+    async maybeSingle() { return { data: { request_id: "request", status: "pending", job_id: null, source_revision: null, reason_code: null, updated_at: new Date().toISOString(), raw_text: secret }, error: null }; },
+  } : query, payload: () => payload };
 }
 function assertSafe(value) {
   const serialized = JSON.stringify(value);

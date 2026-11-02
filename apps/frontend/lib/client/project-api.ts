@@ -1,3 +1,4 @@
+import { parseAutomaticAnalysisRequest } from "@/lib/automatic-analysis";
 import type {
   CustomerAnalysisResult,
   ExecutiveSummaryResult,
@@ -612,22 +613,26 @@ export function invalidateProjectJobsCache(projectId: string) {
   clearClientCache(projectReadCacheKey(projectId, "jobs"));
 }
 
-export async function fetchProjectJobs(projectId: string) {
+export async function fetchProjectJobStatus(projectId: string): Promise<import("@/lib/types").ProjectActivitySnapshot> {
   return readClientCache(
     projectReadCacheKey(projectId, "jobs"),
     async () => {
       const response = await fetch(`/api/projects/${projectId}/jobs`, { cache: "no-store" });
-      const payload = await readJsonPayload<{ jobs?: ProjectJobRecord[] }>(
+      const payload = await readJsonPayload<{ jobs?: ProjectJobRecord[]; automatic_analysis?: unknown }>(
         response,
         "Kunne ikke hente jobbstatus.",
       );
       if (!response.ok || !Array.isArray(payload.jobs)) {
         throw new Error(payload.error || "Kunne ikke hente jobbstatus.");
       }
-      return payload.jobs;
+      return { jobs: payload.jobs, automatic_analysis: parseAutomaticAnalysisRequest(payload.automatic_analysis) };
     },
     PROJECT_JOBS_CACHE_TTL_MS,
   );
+}
+
+export async function fetchProjectJobs(projectId: string) {
+  return (await fetchProjectJobStatus(projectId)).jobs;
 }
 
 /** A refused API request; `code` is the server's workflow error code, if any. */

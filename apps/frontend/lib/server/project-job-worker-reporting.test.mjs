@@ -33,6 +33,7 @@ const code = ts.transpileModule(source.statements
 function worker(overrides = {}, limit = 1) {
   const io = {
     resetStaleRunningProjectJobs: async () => {},
+    dispatchReadyCustomerAnalyses: async () => {},
     listQueuedProjectJobIds: async () => ["job-1"],
     runProjectJobsWithinBudget,
     projectWorkflowTimeoutMs: () => 10 * 60_000,

@@ -84,22 +84,22 @@ Exact-ID rank 1 measures the complete chat retrieval path including the authorit
 
 | # | Remaining work |
 | --- | --- |
-| 1 | Mixed stress/PDF/DOCX case gate is implemented; budgeted groundedness/citation release tier and broader conceptual/unanswerable coverage remain. |
-| 2 | Evaluate subquery fusion and Norwegian indexing on the expanded versioned corpus, then measure reranker value. |
+| 1 | Both recorded SQL gates and a budgeted ten-case groundedness/citation smoke are implemented; broader conceptual/unanswerable release coverage remains. |
+| 2 | Expanded recorded evaluation and an explicit reranker comparison are complete; conceptual recall remains below the 95% release target. |
 | 3 | Persisted register reads, legacy fallback/source isolation and actual encrypted-register SQL replay are implemented; broaden ambiguous/repeated-ID fixtures. |
 | 4 | Measure abstention for unanswerable conceptual questions and missing exact IDs; preserve whole-document answering. |
-| 5 | Explicit artifact-reference guarantees and section-level discovery over the complete current collection. |
-| 6 | Extend the evidence contract/pre-save checks to requirement responses, evaluation, executive summary and Bilag 1; locator and quote integrity across all output types. |
+| 5 | Explicit artifact aliases and relevance-ranked section discovery cover the authorized current collection; broader release fixtures remain. |
+| 6 | Requirement responses, evaluation, summary and Bilag persist checked quotation/ID evidence and field issues; universal free-form page/heading validation remains. |
 | 7 | Held-out observed extraction failures and complete observed/inferred provenance. |
 | 8 | Complete browser render correlation and publish the actual local p50/p95 baseline by document class. |
-| 9 | Verify configuration/release checks; deployment remains separate. |
-| 10 | Register-first publication, readiness-safe automatic analysis and validated section delivery. |
+| 9 | Bicep, release checks, global worker capacity and SQL are locally verified; deployment remains separate. |
+| 10 | Register-first publication and one-shot readiness-safe automatic analysis are implemented and exercised through HTTP; validated partial section delivery remains. |
 | 11 | Measure first-token time and cache fraction on budgeted repeated real chat requests. |
-| 12 | Preserve the model configuration owner and requirement-response owner; use versioned A/B evaluation for future policy changes. |
+| 12 | Configuration/requirement-response owners are preserved; the sequential versioned chat comparison kept both defaults. Broader paired holistic evaluation remains. |
 | 13 | Already implemented on main; production migration application is not established by local tests. |
 | 14 | Browser/system verification of enhancement-only failure and recovery. |
 | 15 | Verify measured counts and indeterminate phases across all affected screens. |
-| 16 | Requirement/evaluation drawers are wired; finish Bilag sources and desktop/mobile claim-verification timing. |
+| 16 | Chat, analysis, requirement, evaluation, Bilag and summary source controls are wired, with revision-checked opening. Human claim-verification timing and broader mobile evidence remain. |
 | 17 | Review UI, row editing, selected regeneration, transactional parent/source protection and 390px DOM/keyboard checks are implemented; confidence handling, visual checks and review timing remain. |
 | 18 | Derived follow-up view implemented; browser verification and evaluated-criterion mapping remain. |
 
@@ -137,3 +137,18 @@ The frozen ten-case `rag-model-release.v2` smoke includes normal conversation fo
 The configured model's completed smoke passed 10/10 grounded answers and citations and 3/3 negative answers. GPT-5.4 passed the same ten cases before the final two deterministic boundary fixes. Earlier failed runs are preserved in `docs/rag-quality-model-smoke-2026-11-02.json`; no model default changed. These small sequential development-server runs do not establish population quality, production latency or a randomized A/B speed improvement. The evaluator now checkpoints every persisted answer before judging and supports judge-only resumption, so malformed judge output cannot force repeated paid answer calls. The original cumulative local AI budget remains $10, with interrupted streams charged conservatively.
 
 The recorded SQL suites last passed 116 original cases and 55 supplement cases with no provider calls or memory fallback. Conceptual recall remains 30/36 without model reranking and 34/36 in the explicit paid reranker comparison, below the 95% release target. The remaining-work table above records the wider plan; this milestone does not complete automatic analysis/validated section delivery, universal free-form locator validation, production measurements, or all 18 recommendations. CodeRabbit's completed first review and failed second connection remain explicit; Greptile remains the accepted authentication gap.
+
+
+## Round six fixes and automatic analysis
+
+Both members scored the sixth pass of `eb4134bb` 8/10 and withheld approval. Sol found that an unmatched ambiguous ID could lose register authority; both found the mismatch between short quotation binding and drawer verification. Retrieval now carries all authoritative register IDs independently of matching snippets and the requested ID, including on broad questions. Missing members of an established ID family are treated as missing requirements, and streaming, paragraph repair and pre-save validation use that same authority. Ordinary service/planning labels retain their exemption when no register family establishes requirement authority.
+
+Short numeric or standards excerpts such as `30 dager` now retain a unique surrounding original line of at least 12 normalized characters. Bare short labels such as `Ja` produce neither proof nor a strict-source issue. Old short numeric evidence can be rechecked and expanded through the same server binder; arbitrary tiny labels cannot produce a verified excerpt. Actual HTTP checks cover numeric context expansion and rejecting a bare label as proof. Model-written `reference` fields now have ID checks without treating locator typography as direct quotation. Free-form page/heading claims remain a separate unfinished gate.
+
+The upload form now offers an explicit one-shot automatic-analysis choice for customer/supporting documents, default checked. API omission preserves existing caller behavior; malformed choices are rejected and opting in requires analysis permission before document persistence. A service-role-only request row survives page/process exits. The SQL scheduler requires the real primary customer document, ready/indexed relevant documents, current persisted metadata and actual chunks, and waits for other ingestion/enhancement jobs. It enqueues at most one analysis per request under the project lock and honors a finishing parent's lease. A bounded worker dispatcher recovers idle pending requests after process exits, with fair rotation past unready projects. Failed attempts do not retry until explicitly rearmed; stale job completion cannot change a newer request.
+
+Generation rechecks the request and source snapshot before calling AI; publication checks the request again under the existing project lock and explicitly requires absence of a prior analysis. New manual/current work wins before generation or through the existing revision/CAS fence. Existing current analysis is preserved instead of regenerated. Pending and failed statuses use the same ordered/cached activity loop as jobs, with Norwegian recovery actions. The scheduled worker and web drain keep their existing claim, cancellation, budget and lease contracts.
+
+Real SQL tests cover readiness, required metadata/chunks, enhancement ordering, duplicate callbacks, lease rejection, opt-out, source/manual races, explicit-null CAS, new-request isolation, failed-attempt bounds, recovery dispatch/fairness, role grants and repeat migration application. The owned HTTP scenario generated exactly one analysis and preserved its revision after a subsequent solution upload. In web autorun mode, no worker call was made: the register was available after 3,130 ms and analysis completed after 99,204 ms. This is one synthetic TXT case, not p50/p95 or production evidence. The first worker-mode test initially omitted its dispatch call; its 218-second queue wait and 311-second total are retained as harness evidence, not a speed improvement. The corrected harness dispatches through the authenticated worker endpoint in worker mode.
+
+The updated full suite passed 1,377 frontend tests and 154 root tests with zero failures/skips, plus parser goldens. Eight initial test failures came from existing controlled-I/O tests lacking the new dispatcher/status dependency; their queue-abandonment, competing-worker and restricted-result assertions now run with explicit controlled inputs, including a future private field that must not escape the status DTO. The recorded SQL gates passed again without paid calls/memory fallback; conceptual recall is unchanged. Lint/type/root release checks and the new upload/status static UI scan passed. Browser checks at 390px and desktop showed the upload option within its container with no horizontal overflow. The production build passed with the owned development app stopped. The scheduling-owner failure-path test also passed separately; the next fresh council review remains pending. No production migration/deployment has occurred.
