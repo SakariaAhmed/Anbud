@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { logOutAndRedirect } from "@/lib/client/logout";
 import { AppHeaderLogo } from "@/components/layout/app-header-logo";
 import "./app-typography.css";
 import "./app-theme.css";
@@ -61,6 +62,7 @@ export function AppShell({
   const showHeader = pathname !== "/login" && !isolatedChat;
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const userLabel = displayName?.trim() || "Bruker";
 
   useEffect(() => {
@@ -81,10 +83,12 @@ export function AppShell({
   async function logOut() {
     if (loggingOut) return;
     setLoggingOut(true);
+    setLogoutError(null);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      window.location.assign("/login");
+      await logOutAndRedirect();
+    } catch {
+      setLogoutError("Kunne ikke logge ut. Prøv igjen.");
+      setLoggingOut(false);
     }
   }
 
@@ -190,6 +194,11 @@ export function AppShell({
                           <LogOut className="size-4 text-slate-500" />
                           {loggingOut ? "Logger ut …" : "Logg ut"}
                         </button>
+                        {logoutError ? (
+                          <p role="alert" className="px-2.5 py-1.5 text-xs text-red-700">
+                            {logoutError}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

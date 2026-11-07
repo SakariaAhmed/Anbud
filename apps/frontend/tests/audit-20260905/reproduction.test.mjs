@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import { actual, documentIngestionTracker, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
+import { actual, documentIngestionTracker, frontend, jiti, dbUrl, sql, quote, json, P, D, S, reset, revision, document, save, saveCustomerAnalysis, freshAnalysis, analysisResult, downstream, counts, workflow, handlers, noop, storeFile, analysisFile, workflowErrors, requestBody, routeErrorResponse } from './harness.mjs';
 
 // Regression assertions exercise the repaired behavior using real PostgreSQL and actual TS bodies.
 
@@ -123,7 +123,7 @@ test('REGRESSION UI1: failed save keeps editor open with unsaved draft', async (
   });
   const { onSaveSectionEdit } = actual('components/projects/project-analysis-tab.tsx', ['onSaveSectionEdit'], {
     readOnly: false,
-    sectionEditor: editor, sanitizeSectionDraft: value => value,
+    sectionEditor: editor, saveBusy: false, sanitizeSectionDraft: value => value,
     onSaveAnalysis: () => runAction('save-analysis', async () => { throw new Error('Injected offline save'); }),
     setSectionEditor: value => editor = value, setSectionDraftError: noop,
   });
@@ -463,7 +463,7 @@ test('REGRESSION W1F: lease-fenced worker rejects a concurrent manual edit', asy
   sql(`insert into project_jobs(id,project_id,kind,status,message,input_json,lease_token) values (${quote(J)},${quote(P)},'customer_analysis','running','Audit','{}',${quote(lease)})`);
   const history = jiti(path.join(frontend, 'lib/customer-analysis-history.ts'));
   const cryptoModule = jiti(path.join(frontend, 'lib/server/crypto.ts'));
-  const saver = actual(storeFile, ['saveCustomerAnalysis'], {
+  const saver = actual(analysisFile, ['saveCustomerAnalysis'], {
     ...history, ...cryptoModule, ...jiti(path.join(frontend, "lib/customer-analysis-version.ts")), mapCustomerAnalysis: row => ({...cryptoModule.decryptJson(row.result_json,{}),revision:row.revision}), CUSTOMER_ANALYSIS_EMPTY: {}, createServiceClient: () => ({}),
     keywordsFromText: () => [], mergeKeywords: () => [], revalidateProjectCaches: noop,
     runLeaseFencedCustomerAnalysisMutation: async (projectId, payload) => ({ fenced: true, data: JSON.parse(sql(`select public.lease_fenced_save_customer_analysis(${quote(J)},${quote(lease)},${quote(projectId)},${json(payload)})`)) }),

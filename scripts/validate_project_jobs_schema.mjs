@@ -52,8 +52,13 @@ const REQUIRED_FUNCTIONS = [
   "fail_document_enhancement_job",
   "enqueue_document_enhancement_retry",
   "set_document_enhancement_state",
+  "chat_session_consistency_preflight",
+  "compare_and_swap_chat_session_memory",
+  "track_chat_session_message",
+  "protect_chat_session_message_metadata",
 ];
 
+const CHAT_SESSION_CONSISTENCY_VERSION = "chat-session-consistency-v1";
 const FENCING_VERSION = "authoritative-lease-fencing-v1";
 const TERMINAL_AUDIT_VERSION =
   "transactional-project-job-terminal-audit-v2";
@@ -321,6 +326,15 @@ export async function preflightRemoteProjectJobSchema({
   const scheduledCapacityVersion = await scheduledCapacityResponse.json();
   if (scheduledCapacityVersion !== "scheduled-worker-capacity-v1") throw new Error("Scheduled worker-capacity version is missing or unexpected.");
 
+  const chatSessionResponse = await fetchImpl(new URL(`${rootUrl}/rpc/chat_session_consistency_preflight`), {
+    method: "POST",
+    headers: { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}`, accept: "application/json", "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!chatSessionResponse.ok) throw new Error(`Chat-session consistency preflight failed with HTTP ${chatSessionResponse.status}.`);
+  const chatSessionVersion = await chatSessionResponse.json();
+  if (chatSessionVersion !== CHAT_SESSION_CONSISTENCY_VERSION) throw new Error("Chat-session consistency version is missing or unexpected.");
+
   return {
     host: url.host,
     columns: [...REQUIRED_PROJECT_JOB_COLUMNS],
@@ -332,6 +346,7 @@ export async function preflightRemoteProjectJobSchema({
     vacantPrimaryInsertVersion,
     automaticAnalysisVersion,
     scheduledCapacityVersion,
+    chatSessionVersion,
   };
 }
 
@@ -368,6 +383,7 @@ async function main() {
         atomic_service_document_write_version:
           result.serviceDocumentWriteVersion,
         scheduled_worker_capacity_version: result.scheduledCapacityVersion,
+        chat_session_consistency_version: result.chatSessionVersion,
         automatic_customer_analysis_version: result.automaticAnalysisVersion,
         vacant_primary_document_insert_version:
           result.vacantPrimaryInsertVersion,

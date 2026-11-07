@@ -21,3 +21,15 @@ export function reportAuthFailure(event: string, stage: string, error: unknown) 
   }));
   return reference;
 }
+
+/** A dependency failure is retryable; it does not prove an invalid identity. */
+export class AuthBackendError extends Error {
+  readonly status = 503;
+  readonly reference: string;
+
+  constructor(stage: string, error: unknown) {
+    super("Tjenesten er midlertidig utilgjengelig. Prøv igjen om litt.");
+    this.name = "AuthBackendError";
+    this.reference = reportAuthFailure("auth_backend_failure", stage, error);
+  }
+}

@@ -41,7 +41,7 @@ test("all chat source locators survive encrypted persistence and subsequent relo
     assert.equal(state.rows[0].context_snapshot.encrypted, true);
     assert.match(state.rows[0].context_snapshot.payload, /^enc:v1:/);
     assert.ok(!JSON.stringify(state.rows[0].context_snapshot).includes("Dokument 16"));
-    const reloaded = await listChatMessages("fictional-project");
+    const reloaded = await listChatMessages("fictional-project", "fictional-session");
     assert.deepEqual(reloaded[0].source_references, sources);
     assert.equal(reloaded[0].session_id, "fictional-session");
     assert.deepEqual(state.invalidations, ["fictional-project"]);

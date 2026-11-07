@@ -19,6 +19,8 @@ import {
   AUTH_SESSION_HEADER,
 } from "@/lib/password-auth";
 import { canonicalProjectId } from "@/lib/middleware-project-authorization";
+import { isRecord } from "@/lib/unknown-values";
+import { AuthBackendError } from "@/lib/server/auth-failure";
 import { createServiceClient } from "@/lib/server/data-api";
 
 export type RequestPrincipal = {
@@ -62,9 +64,21 @@ async function validatePrincipalFromDatabase(input: {
         expires_at: string;
         revoked_at: string | null;
       }>();
+    if (error) throw new AuthBackendError("session", error);
+    if (session === null) {
+      throw new AuthorizationError("Økten er utløpt eller tilbakekalt.", 401);
+    }
     if (
-      error ||
-      !session ||
+      !isRecord(session) ||
+      session.id !== input.sessionId ||
+      session.principal_id !== input.principalId ||
+      typeof session.expires_at !== "string" ||
+      !Number.isFinite(Date.parse(session.expires_at)) ||
+      (session.revoked_at !== null && typeof session.revoked_at !== "string")
+    ) {
+      throw new AuthBackendError("session", { code: "invalid_shape" });
+    }
+    if (
       session.revoked_at ||
       new Date(session.expires_at).getTime() <= Date.now()
     ) {
@@ -72,7 +86,7 @@ async function validatePrincipalFromDatabase(input: {
     }
   }
 
-  const [{ data: principal, error: principalError }, { data: roleRows }] =
+  const [{ data: principal, error: principalError }, { data: roleRows, error: roleError }] =
     await Promise.all([
       dataApi
         .from("app_principals")
@@ -88,28 +102,39 @@ async function validatePrincipalFromDatabase(input: {
         .select("role")
         .eq("principal_id", input.principalId),
     ]);
+  if (principalError) throw new AuthBackendError("principal", principalError);
+  if (roleError) throw new AuthBackendError("global_roles", roleError);
+  if (principal === null) {
+    throw new AuthorizationError("Brukeren er ikke aktiv.", 401);
+  }
   if (
-    principalError ||
-    !principal ||
-    principal.disabled_at ||
-    !isIdentityType(principal.identity_type)
+    !isRecord(principal) ||
+    principal.id !== input.principalId ||
+    !isIdentityType(principal.identity_type) ||
+    (principal.disabled_at !== null && typeof principal.disabled_at !== "string")
   ) {
+    throw new AuthBackendError("principal", { code: "invalid_shape" });
+  }
+  if (!Array.isArray(roleRows) || !roleRows.every((row) => isRecord(row) && typeof row.role === "string")) {
+    throw new AuthBackendError("global_roles", { code: "invalid_shape" });
+  }
+  if (principal.disabled_at) {
     throw new AuthorizationError("Brukeren er ikke aktiv.", 401);
   }
 
   return {
     identityType: principal.identity_type,
-    isAdmin: (roleRows ?? []).some((row) => row.role === "admin"),
+    isAdmin: roleRows.some((row) => row.role === "admin"),
   };
 }
 
 export async function requireRequestPrincipal(): Promise<RequestPrincipal> {
   const requestHeaders = await headers();
   const principalId = requestHeaders.get(AUTH_PRINCIPAL_HEADER);
-  if (!principalId) {
+  const sessionId = requestHeaders.get(AUTH_SESSION_HEADER);
+  if (!principalId || !sessionId) {
     throw new AuthorizationError("Innlogging kreves.", 401);
   }
-  const sessionId = requestHeaders.get(AUTH_SESSION_HEADER);
   const databaseIdentity = await validatePrincipalFromDatabase({
     principalId,
     sessionId,
@@ -120,18 +145,6 @@ export async function requireRequestPrincipal(): Promise<RequestPrincipal> {
     isAdmin: databaseIdentity.isAdmin,
     sessionId,
   };
-}
-
-function activeGrantFilter<T extends {
-  revoked_at: string | null;
-  expires_at: string | null;
-}>(rows: readonly T[]) {
-  const now = Date.now();
-  return rows.filter(
-    (row) =>
-      !row.revoked_at &&
-      (!row.expires_at || new Date(row.expires_at).getTime() > now),
-  );
 }
 
 export async function getEffectiveProjectRole(
@@ -145,11 +158,11 @@ export async function getEffectiveProjectRole(
     p_project_id: projectId,
   });
   if (error) {
-    throw new Error(error.message || "Kunne ikke kontrollere prosjekttilgang.");
+    throw new AuthBackendError("project_role", error);
   }
   if (data === null) return null;
   if (!isProjectRole(data)) {
-    throw new Error("Databasen returnerte en ugyldig prosjektrolle.");
+    throw new AuthBackendError("project_role", { code: "invalid_shape" });
   }
   return data;
 }
@@ -190,6 +203,12 @@ export async function requireAdmin() {
 }
 
 export function authorizationErrorResponse(error: unknown) {
+  if (error instanceof AuthBackendError) {
+    return NextResponse.json(
+      { error: error.message, reference: error.reference },
+      { status: error.status, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   if (error instanceof AuthorizationError) {
     return NextResponse.json(
       { error: error.message },
@@ -199,62 +218,76 @@ export function authorizationErrorResponse(error: unknown) {
   return null;
 }
 
+const ACCESS_PAGE_SIZE = 500;
+
+async function readAccessIds(
+  field: "id" | "project_id" | "group_id",
+  fetchPage: (from: number, to: number) => PromiseLike<{
+    data: unknown;
+    error: unknown;
+  }>,
+) {
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += ACCESS_PAGE_SIZE) {
+    const { data, error } = await fetchPage(offset, offset + ACCESS_PAGE_SIZE - 1);
+    if (error) throw new AuthBackendError("project_access_list", error);
+    if (!Array.isArray(data)) {
+      throw new AuthBackendError("project_access_list", { code: "invalid_shape" });
+    }
+    for (const row of data) {
+      if (!isRecord(row) || typeof row[field] !== "string") {
+        throw new AuthBackendError("project_access_list", { code: "invalid_shape" });
+      }
+      ids.push(row[field]);
+    }
+    if (data.length < ACCESS_PAGE_SIZE) return ids;
+  }
+}
+
 export async function listAccessibleProjectIds(
   principalId: string,
   options?: { admin?: boolean },
 ) {
   if (options?.admin) return null;
   const dataApi = createServiceClient();
-  const [
-    { data: directRows, error: directError },
-    { data: groupRows, error: groupError },
-    { data: ownedRows, error: ownedError },
-  ] = await Promise.all([
-    dataApi
+  // Apply active-grant filters before pagination: revoked/expired history must
+  // not consume the API's row cap and hide a current grant.
+  const activeExpiryFilter = `expires_at.is.null,expires_at.gt.${new Date().toISOString()}`;
+  const [directIds, groupIds, ownedIds] = await Promise.all([
+    readAccessIds("project_id", (from, to) => dataApi
       .from("project_memberships")
-      .select("project_id, revoked_at, expires_at")
-      .eq("principal_id", principalId),
-    dataApi
+      .select("project_id")
+      .eq("principal_id", principalId)
+      .is("revoked_at", null)
+      .or(activeExpiryFilter)
+      .order("project_id", { ascending: true })
+      .range(from, to)),
+    readAccessIds("group_id", (from, to) => dataApi
       .from("app_group_members")
       .select("group_id")
-      .eq("principal_id", principalId),
-    dataApi.from("projects").select("id").eq("owner_id", principalId),
+      .eq("principal_id", principalId)
+      .order("group_id", { ascending: true })
+      .range(from, to)),
+    readAccessIds("id", (from, to) => dataApi
+      .from("projects")
+      .select("id")
+      .eq("owner_id", principalId)
+      .order("id", { ascending: true })
+      .range(from, to)),
   ]);
-  if (directError || groupError || ownedError) {
-    throw new Error(
-      directError?.message ||
-        groupError?.message ||
-        ownedError?.message ||
-        "Kunne ikke hente prosjekttilganger.",
-    );
-  }
-  const projectIds = new Set<string>(
-    activeGrantFilter(
-      (directRows ?? []) as Array<{
-        project_id: string;
-        revoked_at: string | null;
-        expires_at: string | null;
-      }>,
-    ).map((row) => row.project_id),
-  );
-  for (const row of ownedRows ?? []) projectIds.add(row.id);
-
-  const groupIds = (groupRows ?? []).map((row) => row.group_id);
-  if (groupIds.length) {
-    const { data: grantRows, error } = await dataApi
+  const projectIds = new Set([...directIds, ...ownedIds]);
+  // Bound IN filters as well as response pages for users in many groups.
+  for (let offset = 0; offset < groupIds.length; offset += 100) {
+    const grantIds = await readAccessIds("project_id", (from, to) => dataApi
       .from("project_group_grants")
-      .select("project_id, revoked_at, expires_at")
-      .in("group_id", groupIds);
-    if (error) throw new Error(error.message);
-    for (const row of activeGrantFilter(
-      (grantRows ?? []) as Array<{
-        project_id: string;
-        revoked_at: string | null;
-        expires_at: string | null;
-      }>,
-    )) {
-      projectIds.add(row.project_id);
-    }
+      .select("project_id")
+      .in("group_id", groupIds.slice(offset, offset + 100))
+      .is("revoked_at", null)
+      .or(activeExpiryFilter)
+      .order("project_id", { ascending: true })
+      .order("group_id", { ascending: true })
+      .range(from, to));
+    for (const id of grantIds) projectIds.add(id);
   }
   return [...projectIds];
 }

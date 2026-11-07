@@ -1,4 +1,5 @@
 import "server-only";
+import { isRecord } from "@/lib/unknown-values";
 import { parseChatSourceReferences as normalizeChatSourceReferences } from "@/lib/chat-source-references";
 
 import {
@@ -17,7 +18,8 @@ import type {
   ChatSessionSummary,
 } from "@/lib/types";
 
-const CHAT_MESSAGE_LIST_LIMIT = 1200;
+const CHAT_MESSAGE_PAGE_SIZE = 100;
+const CHAT_LEGACY_PAGE_SIZE = 100;
 const CHAT_DOMAIN_HINTS = new Set<ChatDomainHint>([
   "Kunde og behov",
   "Krav og etterlevelse",
@@ -76,7 +78,7 @@ function sessionIdFromSnapshot(snapshot: unknown) {
 
 function mapChatMessage(row: ChatRow): ChatMessage {
   const contextSnapshot = decryptJson(row.context_snapshot, {});
-  const snapshotRecord = contextSnapshot as Record<string, unknown>;
+  const snapshotRecord = isRecord(contextSnapshot) ? contextSnapshot : {};
   return {
     id: row.id,
     project_id: row.project_id,
@@ -158,31 +160,106 @@ export async function appendChatMessage(
   return mapChatMessage(result.data);
 }
 
-export async function listChatMessages(projectId: string) {
-  const dataApi = createServiceClient();
-  const { data, error } = await dataApi
-    .from("chat_messages")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(CHAT_MESSAGE_LIST_LIMIT);
+export type ChatMessageCursor = { createdAt: string; id: string };
+
+export class InvalidChatMessageCursorError extends Error {}
+
+export function decodeChatMessageCursor(value: string | null): ChatMessageCursor | null {
+  if (!value) return null;
+  try {
+    if (value.length > 256) throw new Error();
+    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object") throw new Error();
+    const cursor = parsed as Record<string, unknown>;
+    if (typeof cursor.createdAt !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})$/u.test(cursor.createdAt) ||
+        !Number.isFinite(Date.parse(cursor.createdAt)) ||
+        typeof cursor.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(cursor.id)) throw new Error();
+    return { createdAt: cursor.createdAt, id: cursor.id };
+  } catch {
+    throw new InvalidChatMessageCursorError("Ugyldig side i chathistorikken.");
+  }
+}
+
+function encodeChatMessageCursor(row: ChatRow) {
+  return Buffer.from(JSON.stringify({ createdAt: row.created_at, id: row.id })).toString("base64url");
+}
+
+/** Session filtering precedes the bound; (timestamp, id) gives stable tied-date pages. */
+export async function listChatMessagePage(projectId: string, sessionId: string, before: ChatMessageCursor | null = null) {
+  let query = createServiceClient().from("chat_messages").select("*")
+    .eq("project_id", projectId).eq("session_id", sessionId)
+    .order("created_at", { ascending: false }).order("id", { ascending: false });
+  if (before) {
+    query = query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);
+  }
+  const { data, error } = await query.limit(CHAT_MESSAGE_PAGE_SIZE + 1);
   if (error) throw new Error(error.message || "Kunne ikke hente chatmeldinger.");
-  return ((data ?? []) as ChatRow[]).reverse().map(mapChatMessage);
+  const rows = (data ?? []) as ChatRow[];
+  const page = rows.slice(0, CHAT_MESSAGE_PAGE_SIZE);
+  return {
+    messages: page.slice().reverse().map(mapChatMessage),
+    nextCursor: rows.length > CHAT_MESSAGE_PAGE_SIZE ? encodeChatMessageCursor(page[page.length - 1]) : null,
+  };
+}
+
+/** Recent model context uses the same session scope, never another session's global slice. */
+export async function listChatMessages(projectId: string, sessionId: string) {
+  return (await listChatMessagePage(projectId, sessionId)).messages;
+}
+
+/**
+ * Older clients stored only an encrypted snapshot session id. Materialize those
+ * finite legacy rows in small pages without changing the encrypted evidence.
+ * A failed/interrupted conversion resumes at the remaining NULL rows. Current
+ * inserts always set session_id, so normal views do no history scan.
+ */
+async function materializeLegacyChatSessions(projectId: string) {
+  const dataApi = createServiceClient();
+  while (true) {
+    const { data, error } = await dataApi.from("chat_messages").select("*")
+      .eq("project_id", projectId).is("session_id", null)
+      .order("created_at", { ascending: true }).order("id", { ascending: true })
+      .limit(CHAT_LEGACY_PAGE_SIZE);
+    if (error) throw new Error(error.message || "Kunne ikke hente eldre chatmeldinger.");
+    const rows = (data ?? []) as ChatRow[];
+    if (!rows.length) return;
+    for (const row of rows) {
+      const snapshotValue = decryptJson<unknown>(row.context_snapshot, {});
+      const snapshot = isRecord(snapshotValue) ? snapshotValue : {};
+      const sessionId = sessionIdFromSnapshot(snapshot) ?? "legacy";
+      const title = typeof snapshot.chat_session_title === "string" && snapshot.chat_session_title.trim()
+        ? snapshot.chat_session_title.trim().slice(0, 72) : "Tidligere samtale";
+      const inserted = await dataApi.from("chat_sessions").upsert({
+        project_id: projectId, id: sessionId, title, created_at: row.created_at, updated_at: row.created_at,
+      }, { onConflict: "project_id,id", ignoreDuplicates: true });
+      if (inserted.error) throw new Error(inserted.error.message);
+      const updated = await dataApi.from("chat_messages").update({ session_id: sessionId })
+        .eq("project_id", projectId).eq("id", row.id).is("session_id", null);
+      if (updated.error) throw new Error(updated.error.message);
+    }
+  }
 }
 
 export async function listChatSessions(projectId: string) {
-  const dataApi = createServiceClient();
-  const { data, error } = await dataApi
-    .from("chat_sessions")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("pinned", { ascending: false })
-    .order("updated_at", { ascending: false });
-  if (error) {
-    if (isMissingRelationColumn(error, "chat_sessions")) return [];
-    throw new Error(error.message || "Kunne ikke hente chat-sessions.");
+  await materializeLegacyChatSessions(projectId);
+  const sessions: ChatSessionSummary[] = [];
+  // Session metadata uses the immutable id as its cursor. A
+  // concurrently inserted session can appear on the next refresh; messages
+  // themselves use keysets and never duplicate/skip on new writes.
+  let afterId: string | null = null;
+  while (true) {
+    let query = createServiceClient().from("chat_sessions").select("*")
+      .eq("project_id", projectId).order("id", { ascending: true }).limit(100);
+    if (afterId) query = query.gt("id", afterId);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message || "Kunne ikke hente chat-samtaler.");
+    const page = (data ?? []) as ChatSessionRow[];
+    sessions.push(...page.map(mapChatSession));
+    if (page.length < 100) break;
+    afterId = page[page.length - 1].id;
   }
-  return ((data ?? []) as ChatSessionRow[]).map(mapChatSession);
+  return sessions.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updated_at.localeCompare(a.updated_at));
 }
 
 export async function upsertChatSession(input: {
@@ -190,8 +267,6 @@ export async function upsertChatSession(input: {
   sessionId: string;
   title: string;
   domainHints?: ChatDomainHint[];
-  lastMessagePreview?: string;
-  messageCount?: number;
 }) {
   const dataApi = createServiceClient();
   const { error } = await dataApi.from("chat_sessions").upsert(
@@ -200,11 +275,9 @@ export async function upsertChatSession(input: {
       project_id: input.projectId,
       title: input.title,
       domain_hints: input.domainHints ?? [],
-      last_message_preview: input.lastMessagePreview ?? "",
-      message_count: input.messageCount ?? 0,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "project_id,id" },
+    { onConflict: "project_id,id", ignoreDuplicates: true },
   );
   if (error) {
     if (isMissingRelationColumn(error, "chat_sessions")) return;
@@ -212,27 +285,28 @@ export async function upsertChatSession(input: {
   }
 }
 
+/** Append with ciphertext CAS: concurrent completions re-read and retain the winning turn. */
 export async function updateChatSessionMemory(input: {
   projectId: string;
   sessionId: string;
-  summary: string;
+  appendSummary: (currentSummary: string) => string;
   domainHints: ChatDomainHint[];
-  lastMessagePreview: string;
-  messageCount: number;
 }) {
   const dataApi = createServiceClient();
-  const { error } = await dataApi
-    .from("chat_sessions")
-    .update({
-      summary_encrypted: encryptString(input.summary),
-      domain_hints: input.domainHints,
-      last_message_preview: input.lastMessagePreview,
-      message_count: input.messageCount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("project_id", input.projectId)
-    .eq("id", input.sessionId);
-  if (error && !isMissingRelationColumn(error, "chat_sessions")) {
-    throw new Error(error.message || "Kunne ikke oppdatere chat-minne.");
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const current = await dataApi.from("chat_sessions").select("summary_encrypted,domain_hints")
+      .eq("project_id", input.projectId).eq("id", input.sessionId)
+      .single<{ summary_encrypted: string; domain_hints: unknown }>();
+    if (current.error || !current.data) throw new Error(current.error?.message || "Fant ikke chat-samtalen.");
+    const previous = current.data.summary_encrypted;
+    const summary = input.appendSummary(decryptString(previous));
+    const domainHints = [...new Set([...normalizeChatDomainHints(current.data.domain_hints), ...input.domainHints])].slice(-4);
+    const updated = await dataApi.rpc("compare_and_swap_chat_session_memory", {
+      p_project_id: input.projectId, p_session_id: input.sessionId,
+      p_expected_summary: previous, p_summary: encryptString(summary), p_domain_hints: domainHints,
+    });
+    if (updated.error) throw new Error(updated.error.message || "Kunne ikke oppdatere chat-minne.");
+    if (updated.data === true) return;
   }
+  throw new Error("Chat-minnet ble endret samtidig. Meldingen er lagret, men minnet kunne ikke oppdateres.");
 }

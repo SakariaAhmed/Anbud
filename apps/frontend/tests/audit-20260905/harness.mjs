@@ -11,6 +11,7 @@ export const root = path.resolve(frontend, '../..');
 export const jiti = createJiti(import.meta.url, { alias: { '@': frontend, 'server-only': '/dev/null' }, interopDefault: true });
 export const workflowFile = 'lib/server/use-cases/project-workflows.ts';
 export const storeFile = 'lib/server/repositories/data-store.ts';
+export const analysisFile = 'lib/server/repositories/analyses.ts';
 // Load the current function bodies using the TS AST; no copied business logic.
 // Imports/IO are explicitly injected. This does not render React or emulate HTTP middleware.
 export function actual(file, names, dependencies = {}) {
@@ -81,7 +82,7 @@ export const freshAnalysis = async () => {
   const row = JSON.parse(value);
   return { ...crypto.decryptJson(row.result_json, {}), revision: row.revision };
 };
-export const { saveCustomerAnalysis } = actual(storeFile, ['saveCustomerAnalysis'], {
+export const { saveCustomerAnalysis } = actual(analysisFile, ['saveCustomerAnalysis'], {
   ...history, ...crypto, ...jiti(path.join(frontend, "lib/customer-analysis-version.ts")),
   mapCustomerAnalysis: row => ({ ...crypto.decryptJson(row.result_json, {}), revision: row.revision }), CUSTOMER_ANALYSIS_EMPTY: {}, keywordsFromText: () => [], mergeKeywords: () => [],
   getFreshCustomerAnalysis: freshAnalysis, revalidateProjectCaches: noop,

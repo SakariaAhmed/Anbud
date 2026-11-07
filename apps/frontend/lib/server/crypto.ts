@@ -28,10 +28,6 @@ export function encryptString(value: string) {
     return "";
   }
 
-  if (value.startsWith(`${PREFIX}:`)) {
-    return value;
-  }
-
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", getEncryptionKey(), iv, { authTagLength: AUTH_TAG_LENGTH });
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);

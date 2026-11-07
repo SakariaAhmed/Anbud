@@ -7,6 +7,7 @@ import {
   databaseSessionTokenHmac,
   encodeDatabaseSessionToken,
 } from "@/lib/password-auth";
+import { AuthBackendError } from "@/lib/server/auth-failure";
 import { createServiceClient } from "@/lib/server/data-api";
 
 export type AppSessionAuthMethod =
@@ -49,11 +50,14 @@ export async function createAppSession(input: {
 export async function revokeAppSession(sessionId: string | null | undefined) {
   if (!sessionId) return;
   const dataApi = createServiceClient();
-  await dataApi
+  const { error } = await dataApi
     .from("app_sessions")
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", sessionId)
     .is("revoked_at", null);
+  if (error) {
+    throw new AuthBackendError("session_revocation", error);
+  }
 }
 
 export async function revokePrincipalSessions(principalId: string) {
