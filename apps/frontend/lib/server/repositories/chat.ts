@@ -300,7 +300,7 @@ export async function updateChatSessionMemory(input: {
     if (current.error || !current.data) throw new Error(current.error?.message || "Fant ikke chat-samtalen.");
     const previous = current.data.summary_encrypted;
     const summary = input.appendSummary(decryptString(previous));
-    const domainHints = [...new Set([...normalizeChatDomainHints(current.data.domain_hints), ...input.domainHints])].slice(-4);
+    const domainHints = [...new Set([...normalizeChatDomainHints(current.data.domain_hints), ...input.domainHints])].slice(0, 4);
     const updated = await dataApi.rpc("compare_and_swap_chat_session_memory", {
       p_project_id: input.projectId, p_session_id: input.sessionId,
       p_expected_summary: previous, p_summary: encryptString(summary), p_domain_hints: domainHints,

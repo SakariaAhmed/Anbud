@@ -127,5 +127,7 @@ test('ciphertext CAS appends both concurrent memory turns without replacing coun
     assert.equal(row.message_count,4); assert.equal(row.last_message_preview,'Nyeste');
     assert.deepEqual(row.domain_hints,['Risiko','Kunde og behov']);
     assert.ok(!row.summary_encrypted.includes('Turn A'));
+    await h.repository.updateChatSessionMemory({projectId:'project',sessionId:'session',appendSummary:summary=>summary+' Turn C',domainHints:['Verdi og gevinst','Arkitektur og løsning','Leveranse og drift']});
+    assert.deepEqual(row.domain_hints,['Risiko','Kunde og behov','Verdi og gevinst','Arkitektur og løsning']);
   } finally {h.cleanup();}
 });

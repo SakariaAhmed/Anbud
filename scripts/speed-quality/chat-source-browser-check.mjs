@@ -17,7 +17,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "anbud-chat-browser-"));
 const cache = path.join(temporary, "cache.cjs");
 writeFileSync(cache, "exports.revalidateProjectCaches = () => {};");
 const load = require("jiti").createJiti(import.meta.url, { alias: { "@/lib/server/repositories/repository-cache": cache, "@": frontend, "server-only": "/dev/null" } });
-const { appendChatMessage, listChatMessages } = load(path.join(frontend, "lib/server/repositories/chat.ts"));
+const { appendChatMessage, listChatMessages, upsertChatSession } = load(path.join(frontend, "lib/server/repositories/chat.ts"));
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext();
 const origin = "http://localhost:4318";
@@ -32,9 +32,11 @@ try {
     heading_path: ["Kundekrav", "Kvalitet og sporbarhet"], source_id: `fictional-source-${index + 1}`,
     source_type: "project_document", page_start: index + 1, page_end: index + 1,
   }));
-  const stored = await appendChatMessage(report.projectId, "assistant", "Fiktivt testsvar for kontroll av kildelisten.", { source_references: sources });
+  const sessionId = "fictional-source-browser-check";
+  await upsertChatSession({ projectId: report.projectId, sessionId, title: "Fiktiv kildekontroll" });
+  const stored = await appendChatMessage(report.projectId, "assistant", "Fiktivt testsvar for kontroll av kildelisten.", { source_references: sources }, { sessionId });
   assert.deepEqual(stored.source_references, sources);
-  assert.deepEqual((await listChatMessages(report.projectId))[0].source_references, sources);
+  assert.deepEqual((await listChatMessages(report.projectId, sessionId))[0].source_references, sources);
   const api = await context.request.get(`${origin}/api/projects/${report.projectId}/chat`);
   assert.equal(api.status(), 200);
   assert.deepEqual((await api.json()).messages[0].source_references, sources);
