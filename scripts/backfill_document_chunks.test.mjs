@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { backfillDocumentChunks, parseBackfillOptions } from "./backfill_document_chunks.mjs";
+import { BackfillError, backfillDocumentChunks, parseBackfillOptions, reportBackfillFailure } from "./backfill_document_chunks.mjs";
 
 const environment = { DATA_API_URL: "http://127.0.0.1:59999", DATA_API_SERVICE_ROLE_KEY: "fictional", APP_ENCRYPTION_KEY: "fictional" };
 const document = (id, extra = {}) => ({ id: String(id).padStart(6, "0"), project_id: "project", service_id: "service", role: "supporting_document", supporting_subtype: null, title: "Fiktivt dokument", file_name: "eksempel.txt", file_format: "txt", raw_text: "Leverandøren skal dokumentere driftsansvar.", structure_map: [], chunk_source_revision: 3, processing_status: "basic_ready", ...extra });
-function sourceClient(tables, { preflightError = null } = {}) {
+function sourceClient(tables, { preflightError = null, maxRows = Infinity } = {}) {
   const reads = [];
   const client = { from(table) {
     let cursor = "", size = 100;
@@ -16,7 +17,7 @@ function sourceClient(tables, { preflightError = null } = {}) {
       gt(column, value) { assert.equal(column, "id"); cursor = value; return query; },
       then(resolve, reject) {
         reads.push({ table, cursor, size });
-        return Promise.resolve(table === "document_chunks" ? { data: [], error: preflightError } : { data: (tables[table] ?? []).filter(row => row.id > cursor).slice(0, size), error: null }).then(resolve, reject);
+        return Promise.resolve(table === "document_chunks" ? { data: [], error: preflightError } : { data: (tables[table] ?? []).filter(row => row.id > cursor).slice(0, Math.min(size, maxRows)), error: null }).then(resolve, reject);
       },
     };
     return query;
@@ -44,13 +45,16 @@ test("backfill defaults to read-only explicit configuration and gates target/pai
 });
 
 test("backfill keyset-pages all sources beyond a server row cap without writes on dry run", async () => {
-  const runtime = runtimeFor({ documents: Array.from({ length: 1201 }, (_, i) => document(i + 1)), service_documents: [document(1)] });
-  const totals = await backfillDocumentChunks(runtime);
-  assert.equal(totals.scanned_documents, 1202);
-  assert.equal(totals.indexed_documents, 0);
-  assert.equal(runtime.writes.length, 0);
-  assert.equal(runtime.reads.filter(row => row.table === "documents").length, 13);
-  assert.ok(runtime.reads.every(row => row.size <= 100));
+  for (const maxRows of [Infinity, 50]) {
+    const runtime = runtimeFor({ documents: Array.from({ length: 1201 }, (_, i) => document(i + 1)), service_documents: [document(1)] }, { maxRows });
+    const totals = await backfillDocumentChunks(runtime);
+    assert.equal(totals.scanned_documents, 1202);
+    assert.equal(totals.indexed_documents, 0);
+    assert.equal(runtime.writes.length, 0);
+    assert.equal(runtime.reads.filter(row => row.table === "documents").length, maxRows === 50 ? 26 : 14);
+    assert.equal(runtime.reads.filter(row => row.table === "service_documents").length, 2);
+    assert.ok(runtime.reads.every(row => row.size <= 100));
+  }
 });
 
 test("backfill respects per-source limits, readiness and exact source revisions", async () => {
@@ -64,8 +68,33 @@ test("failed preflight or atomic replacement never reports successful repair", a
   await assert.rejects(backfillDocumentChunks(runtimeFor({}, { preflightError: { message: "missing" } }), { apply: true }), /unavailable/);
   const runtime = runtimeFor({ documents: [document(1), document(2)] });
   runtime.replaceProjectDocumentChunks = async () => { throw new Error("PROJECT_SOURCE_REVISION_CHANGED"); };
-  await assert.rejects(backfillDocumentChunks(runtime, { apply: true }), /SOURCE_REVISION_CHANGED/);
+  await assert.rejects(backfillDocumentChunks(runtime, { apply: true }), { code: "SOURCE_REVISION_CHANGED" });
   assert.equal(runtime.writes.length, 0);
+});
+
+test("both CLI entrypoints report safe validation/stage details without backend messages", async (t) => {
+  const output = [];
+  const previousExitCode = process.exitCode;
+  t.after(() => { process.exitCode = previousExitCode; });
+  t.mock.method(console, "error", message => output.push(message));
+  for (const args of [["--limit=abc"], ["--apply", "--target=https://wrong.test"]]) {
+    try { parseBackfillOptions(args, environment); assert.fail("Expected invalid configuration"); }
+    catch (error) { assert.ok(error instanceof BackfillError); reportBackfillFailure(error); }
+  }
+  await backfillDocumentChunks(runtimeFor({}, { preflightError: { message: "private backend payload" } })).catch(reportBackfillFailure);
+  reportBackfillFailure(Object.assign(new Error("secret raw backend message"), { code: "secret raw code" }));
+  assert.match(output[0], /CONFIGURATION.*positive/);
+  assert.match(output[1], /CONFIGURATION.*exact/);
+  assert.match(output[2], /STORAGE_PREFLIGHT.*unavailable/);
+  assert.match(output[3], /UNEXPECTED_FAILURE/);
+  assert.doesNotMatch(output.join("\n"), /private|secret/);
+  assert.equal(process.exitCode, 1);
+  for (const relative of ["./backfill_document_chunks.mjs", "../apps/frontend/scripts/backfill_document_chunks.mjs"]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL(relative, import.meta.url)), "--limit=abc"], { encoding: "utf8", env: environment });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /CONFIGURATION.*positive/);
+    assert.equal(result.stdout, "");
+  }
 });
 
 test("backfill publishes through the current shared atomic writer and fingerprint contract", async () => {
