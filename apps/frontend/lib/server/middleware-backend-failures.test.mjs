@@ -65,11 +65,11 @@ function backend(t, { session = "ok", role = "ok" } = {}) {
   return logs;
 }
 
-async function request(pathname) {
+async function request(pathname, method = "GET") {
   const token = encodeDatabaseSessionToken(sessionId, "s".repeat(48));
   const pending = [];
   const response = await middleware(new NextRequest(`http://localhost${pathname}`, {
-    headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    method, headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
   }), { waitUntil: (promise) => pending.push(promise) });
   await Promise.all(pending);
   return response;
@@ -113,4 +113,13 @@ test("a missing session or project role keeps the existing denial responses", as
   t.mock.restoreAll();
   backend(t, { role: "none" });
   assert.equal((await request(`/api/projects/${projectId}`)).status, 404);
+});
+
+test("logout may clear a stale cookie only after session resolution succeeds", async (t) => {
+  backend(t, { session: "missing" });
+  assert.equal((await request("/api/auth/logout", "POST")).headers.get("x-middleware-next"), "1");
+  assert.equal((await request("/api/auth/logout", "GET")).status, 401);
+  t.mock.restoreAll();
+  backend(t, { session: "status" });
+  assert.equal((await request("/api/auth/logout", "POST")).status, 503);
 });

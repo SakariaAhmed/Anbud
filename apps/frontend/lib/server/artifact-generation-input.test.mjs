@@ -13,9 +13,17 @@ const jiti = createJiti(path.join(frontendRoot, "artifact-input-tests.cjs"), {
   alias: { "@": frontendRoot, "server-only": "/dev/null" },
   interopDefault: true,
 });
-const { normalizeSourceDocumentIds } = await jiti.import(
+const { normalizeSourceDocumentIds, artifactGeneratorRevision } = await jiti.import(
   path.join(frontendRoot, "lib/server/artifact-generation-input.ts"),
 );
+
+test("artifact provenance identifies the immutable Azure release with explicit override precedence", () => {
+  const image = "registry.example/anbud@sha256:" + "a".repeat(64);
+  assert.equal(artifactGeneratorRevision({ APP_VERSION: image }), image);
+  assert.equal(artifactGeneratorRevision({ APP_VERSION: image, GIT_COMMIT_SHA: " commit " }), "commit");
+  assert.equal(artifactGeneratorRevision({ APP_VERSION: image, ARTIFACT_GENERATOR_REVISION: " explicit " }), "explicit");
+  assert.equal(artifactGeneratorRevision({ APP_VERSION: " " }), "artifact-source-fence-v1");
+});
 
 test("source document IDs preserve all 13 authorized inputs without a silent cap", () => {
   const ids = Array.from({ length: 13 }, (_, index) => `document-${index + 1}`);

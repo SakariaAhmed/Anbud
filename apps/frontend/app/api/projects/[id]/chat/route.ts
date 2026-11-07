@@ -13,6 +13,9 @@ import {
 import {
   appendChatMessage,
   listChatSessions,
+  listChatMessagePage,
+  decodeChatMessageCursor,
+  InvalidChatMessageCursorError,
   listChatMessages,
   updateChatSessionMemory,
   upsertChatSession,
@@ -28,8 +31,6 @@ import {
 } from "@/lib/server/safe-errors";
 import type {
   ChatDomainHint,
-  ChatMessage,
-  ChatSessionSummary,
 } from "@/lib/types";
 import { routeErrorResponse } from "@/lib/server/api-responses";
 import { optionalTextField, readJsonObject } from "@/lib/server/request-body";
@@ -160,134 +161,6 @@ async function parseChatRequest(request: Request): Promise<{
   };
 }
 
-function sessionIdFromMessage(message: ChatMessage) {
-  if (message.session_id?.trim()) {
-    return message.session_id.trim();
-  }
-
-  const snapshot = message.context_snapshot;
-  if (!snapshot || typeof snapshot !== "object") {
-    return "legacy";
-  }
-
-  const value = (snapshot as { chat_session_id?: unknown }).chat_session_id;
-  return typeof value === "string" && value.trim() ? value.trim() : "legacy";
-}
-
-function sessionTitleFromMessage(message: ChatMessage) {
-  const snapshot = message.context_snapshot;
-  if (snapshot && typeof snapshot === "object") {
-    const value = (snapshot as { chat_session_title?: unknown })
-      .chat_session_title;
-    if (typeof value === "string" && value.trim()) {
-      return truncateTitle(value, 72);
-    }
-  }
-
-  if (message.role === "user" && message.content.trim()) {
-    return truncateTitle(message.content, 72);
-  }
-
-  return "Tidligere samtale";
-}
-
-function mergeDomainHints(...groups: Array<ChatDomainHint[] | undefined>) {
-  return Array.from(new Set(groups.flatMap((group) => group ?? []))).slice(0, 4);
-}
-
-function buildChatSessionsFromMessages(messages: ChatMessage[]): ChatSessionSummary[] {
-  const sessionMap = new Map<string, ChatSessionSummary>();
-
-  for (const message of messages) {
-    const id = sessionIdFromMessage(message);
-    const existing = sessionMap.get(id);
-    const preview = truncateTitle(message.content, 120);
-
-    if (!existing) {
-      sessionMap.set(id, {
-        id,
-        title: sessionTitleFromMessage(message),
-        summary: "",
-        domain_hints: message.domain_hints ?? [],
-        pinned: false,
-        status: "active",
-        message_count: 1,
-        created_at: message.created_at,
-        updated_at: message.created_at,
-        last_message_preview: preview,
-      });
-      continue;
-    }
-
-    existing.message_count += 1;
-    existing.domain_hints = mergeDomainHints(
-      existing.domain_hints,
-      message.domain_hints,
-    );
-    if (message.role === "user" && existing.title === "Tidligere samtale") {
-      existing.title = sessionTitleFromMessage(message);
-    }
-    if (message.created_at < existing.created_at) {
-      existing.created_at = message.created_at;
-    }
-    if (message.created_at >= existing.updated_at) {
-      existing.updated_at = message.created_at;
-      existing.last_message_preview = preview;
-    }
-  }
-
-  return [...sessionMap.values()].sort((left, right) =>
-    Number(right.pinned) - Number(left.pinned) ||
-    right.updated_at.localeCompare(left.updated_at),
-  );
-}
-
-function mergeChatSessions(
-  storedSessions: ChatSessionSummary[],
-  messages: ChatMessage[],
-) {
-  const messageSessions = buildChatSessionsFromMessages(messages);
-  const byId = new Map<string, ChatSessionSummary>();
-
-  for (const session of storedSessions) {
-    byId.set(session.id, session);
-  }
-
-  for (const session of messageSessions) {
-    const existing = byId.get(session.id);
-    if (!existing) {
-      byId.set(session.id, session);
-      continue;
-    }
-
-    byId.set(session.id, {
-      ...existing,
-      message_count: Math.max(existing.message_count, session.message_count),
-      created_at:
-        session.created_at < existing.created_at
-          ? session.created_at
-          : existing.created_at,
-      updated_at:
-        session.updated_at > existing.updated_at
-          ? session.updated_at
-          : existing.updated_at,
-      last_message_preview:
-        session.updated_at >= existing.updated_at
-          ? session.last_message_preview
-          : existing.last_message_preview,
-      domain_hints: mergeDomainHints(existing.domain_hints, session.domain_hints),
-    });
-  }
-
-  return [...byId.values()]
-    .filter((session) => session.status !== "archived")
-    .sort(
-      (left, right) =>
-        Number(right.pinned) - Number(left.pinned) ||
-        right.updated_at.localeCompare(left.updated_at),
-    );
-}
-
 function trimSessionMemory(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= CHAT_SESSION_MEMORY_STORAGE_LIMIT) {
@@ -352,24 +225,20 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const { id } = await context.params;
     await requireProjectPermission(id, "chat.read");
-    const requestedSessionId = new URL(request.url).searchParams.get("session_id");
-    const [allMessages, storedSessions] = await Promise.all([
-      listChatMessages(id),
-      listChatSessions(id),
-    ]);
-    const sessions = mergeChatSessions(storedSessions, allMessages);
-    const activeSessionId =
-      normalizeSessionId(requestedSessionId) ?? sessions[0]?.id ?? null;
-    const messages = activeSessionId
-      ? allMessages.filter((message) => sessionIdFromMessage(message) === activeSessionId)
-      : [];
-
+    const params = new URL(request.url).searchParams;
+    const requestedSessionId = params.get("session_id");
+    const before = decodeChatMessageCursor(params.get("before"));
+    const sessions = (await listChatSessions(id)).filter(session => session.status !== "archived");
+    const activeSessionId = normalizeSessionId(requestedSessionId) ?? sessions[0]?.id ?? null;
+    const page = activeSessionId ? await listChatMessagePage(id, activeSessionId, before) : { messages: [], nextCursor: null };
     return NextResponse.json({
-      messages,
+      messages: page.messages,
       sessions,
       active_session_id: activeSessionId,
+      next_cursor: page.nextCursor,
     });
   } catch (error) {
+    if (error instanceof InvalidChatMessageCursorError) return NextResponse.json({ error: error.message }, { status: 400 });
     return routeErrorResponse(error, "Kunne ikke hente chatten.");
   }
 }
@@ -419,21 +288,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       customerAnalysis,
       documents,
       generatedArtifacts,
-      chatHistory,
       storedSessions,
     ] = await Promise.all([
       getProjectGenerationContext(id),
       getFreshCustomerAnalysis(id),
       listProjectDocumentsForAnalysis(id),
       listCurrentGeneratedArtifactsFresh(id),
-      listChatMessages(id),
       listChatSessions(id),
     ]);
     const { customerDocument, solutionDocument, supportingDocuments } = selectProjectDocuments(documents);
 
-    const chatHistoryForSession = chatHistory.filter(
-      (chatMessage) => sessionIdFromMessage(chatMessage) === sessionId,
-    );
+    const chatHistoryForSession = await listChatMessages(id, sessionId);
     const activeSession =
       storedSessions.find((session) => session.id === sessionId) ?? null;
     const domainHints = inferProjectChatDomains({
@@ -455,8 +320,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       sessionId,
       title: sessionTitle,
       domainHints,
-      lastMessagePreview: truncateTitle(message, 120),
-      messageCount: chatHistoryForSession.length + 1,
     });
 
     await appendChatMessage(id, "user", message, contextSnapshot, {
@@ -560,20 +423,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             await updateChatSessionMemory({
               projectId: id,
               sessionId,
-              summary: buildNextSessionMemory({
-                previousSummary: activeSession?.summary ?? "",
+              appendSummary: (previousSummary) => buildNextSessionMemory({
+                previousSummary,
                 question: message,
                 answer: cleanedAssistantMessage,
                 domainHints: chatStream.domainHints,
               }),
-              domainHints: mergeDomainHints(
-                activeSession?.domain_hints,
-                chatStream.domainHints,
-              ),
-              lastMessagePreview: truncateTitle(cleanedAssistantMessage, 120),
-              messageCount: chatHistoryForSession.length + 2,
+              domainHints: chatStream.domainHints,
             }).catch((memoryError) => {
-              console.error("Kunne ikke oppdatere chat-minne.", memoryError);
+              console.warn(JSON.stringify({ event: "project_chat_memory_update_failed", session_id: sessionId, ...safeErrorTelemetry(memoryError) }));
             });
 
             controller.close();

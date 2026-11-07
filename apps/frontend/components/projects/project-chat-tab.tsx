@@ -221,6 +221,9 @@ export function ProjectChatTab({
   streamingMessage,
   busy,
   loading = false,
+  hasOlderMessages = false,
+  loadingOlderMessages = false,
+  onLoadOlderMessages,
   error = "",
   variant = "page",
   sessionDomainHints = [],
@@ -239,6 +242,9 @@ export function ProjectChatTab({
   streamingMessage: string;
   busy: boolean;
   loading?: boolean;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => void;
   error?: string;
   variant?: "page" | "drawer";
   sessionDomainHints?: ChatDomainHint[];
@@ -440,6 +446,18 @@ export function ProjectChatTab({
               {error}
             </div>
           ) : null}
+
+          {hasOlderMessages && onLoadOlderMessages ? (
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm"
+                disabled={loading || busy || loadingOlderMessages}
+                onClick={onLoadOlderMessages}>
+                {loadingOlderMessages ? <Spinner className="size-4" /> : null}
+                {loadingOlderMessages ? "Laster eldre meldinger ..." : "Vis eldre meldinger"}
+              </Button>
+            </div>
+          ) : null}
+          <span role="status" className="sr-only">{loadingOlderMessages ? "Laster eldre meldinger." : ""}</span>
 
           {chatMessages.map((message) => {
             const sources = messageSourceReferences(message);

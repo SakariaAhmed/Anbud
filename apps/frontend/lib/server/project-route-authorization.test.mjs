@@ -22,8 +22,8 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
     const filters = {};
     const result = () => {
       calls.push({ table, filters: { ...filters } });
-      const data = table === "app_sessions" ? { expires_at: expired ? "2020-01-01" : "2999-01-01", revoked_at: active ? null : "2020-01-01" }
-        : table === "app_principals" ? { identity_type: "internal", disabled_at: disabled ? "2020-01-01" : null }
+      const data = table === "app_sessions" ? { id: filters.id, principal_id: filters.principal_id, expires_at: expired ? "2020-01-01" : "2999-01-01", revoked_at: active ? null : "2020-01-01" }
+        : table === "app_principals" ? { id: filters.id, identity_type: "internal", disabled_at: disabled ? "2020-01-01" : null }
         : table === "app_principal_roles" ? (admin ? [{ role: "admin" }] : [])
         : table === "projects" ? { owner_id: null }
         : table === "project_memberships" && role ? [{ role, revoked_at: null, expires_at: null }] : [];
@@ -37,7 +37,7 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
     if (name === "productionSafeErrorMessage") return (_, fallback) => fallback;
     if (name === "workflowErrorStatus") return () => 500;
     if (name === "withTiming") return (_, __, fn) => fn();
-    if (name === "DirectSolutionEvaluationWaitTimeoutError") return class extends Error {};
+    if (name === "InvalidChatMessageCursorError" || name === "DirectSolutionEvaluationWaitTimeoutError") return class extends Error {};
     return (...args) => {
       dataCalls.push({ name, args });
       if (name === "getDocumentDetail") return { file_base64: Buffer.from("Synthetic source").toString("base64"), file_name: "kilde.txt", file_format: "txt" };
@@ -50,12 +50,13 @@ function harness({ role = null, admin = false, active = true, disabled = false, 
     const exports = {}; cache.set(relative, exports);
     const source = ts.transpileModule(readFileSync(path.join(root, relative), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     const resolve = (name) => {
+      if (name === "node:crypto") return require(name);
       if (name === "next/server") return { NextResponse };
       if (name === "server-only") return {};
       if (name === "next/headers") return { headers: async () => new Headers({ "x-principal": "principal", "x-session": "session" }) };
       if (name === "@/lib/password-auth") return { AUTH_PRINCIPAL_HEADER: "x-principal", AUTH_SESSION_HEADER: "x-session" };
       if (name === "@/lib/server/data-api") return { createServiceClient: () => db };
-      if (["@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types", "@/lib/requirement-regeneration"].includes(name)) return load(`${name.slice(2)}.ts`);
+      if (["@/lib/server/auth-failure", "@/lib/server/authorization", "@/lib/access-control", "@/lib/middleware-project-authorization", "@/lib/server/project-ai-route", "@/lib/server/api-responses", "@/lib/server/request-body", "@/lib/server/workflow-errors", "@/lib/server/database-update-required", "@/lib/unknown-values", "@/lib/types", "@/lib/requirement-regeneration"].includes(name)) return load(`${name.slice(2)}.ts`);
       if (name === "@/lib/server/multipart") return { MultipartRequestError: class MultipartRequestError extends Error {} };
       return service;
     };
@@ -162,11 +163,13 @@ test("non-admin invitations are denied before any invitation data access", async
   assert.equal(response.status, 403);
   assert.deepEqual(h.dataCalls, []);
 });
-test("role lookup failures and malformed roles fail closed before project data access", async () => {
+test("role lookup failures and malformed roles fail closed as safe dependency503 before project data access", async (t) => {
+  t.mock.method(console, "error", () => {});
   for (const options of [{ role: "editor", roleError: true }, { role: "unknown-role" }, { role: { role: "owner" } }]) {
     const h = harness(options);
     const response = await invoke(h, "chat", "GET", projectId);
-    assert.equal(response.status, 500);
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).reference, /^[a-f0-9-]{36}$/u);
     assert.deepEqual(h.dataCalls, []);
   }
 });

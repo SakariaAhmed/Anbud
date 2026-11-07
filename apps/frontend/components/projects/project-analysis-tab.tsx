@@ -624,7 +624,7 @@ export function ProjectAnalysisTab({
   }
 
   async function onSaveSectionEdit() {
-    if (readOnly || !onSaveAnalysis) return;
+    if (readOnly || !onSaveAnalysis || saveBusy) return;
     if (!sectionEditor) {
       setSectionDraftError("Ingen endringer å lagre.");
       return;
@@ -1582,7 +1582,7 @@ export function ProjectAnalysisTab({
             Rediger teksten og lagre endringene.
           </p>
         </div>
-        <div className="space-y-4">
+        <fieldset disabled={saveBusy} className="min-w-0 space-y-4">
           {customerAnalysis?.revision && sectionEditor.revision !== customerAnalysis.revision && (
             <div className="w-full text-sm text-amber-800">
               <p>Analysen er endret. Utkastet ditt er beholdt. Hvis du fortsetter, erstatter utkastet denne seksjonen i siste analyse.</p>
@@ -1590,7 +1590,7 @@ export function ProjectAnalysisTab({
             </div>
           )}
           {renderSectionDraftFields(sectionEditor)}
-        </div>
+        </fieldset>
         {sectionDraftError ? (
           <p className="mt-2 text-sm text-destructive">{sectionDraftError}</p>
         ) : null}

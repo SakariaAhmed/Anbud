@@ -52,7 +52,8 @@ This integration intentionally accepts only the standard `<tenant-subdomain>.cia
 - Set `APP_PUBLIC_ORIGIN` to the canonical HTTPS origin without a path or trailing callback segment.
 - Keep the production redirect URI list short and remove retired domains.
 - Verify one successful login, one cancelled login, an expired callback, and
-  (in development only) the explicitly enabled local password login.
+  the configured administrator password fallback. The fallback must resolve
+  the same singleton administrator principal as Microsoft login.
 - Confirm the login only creates the expected application identity and session records.
 
 ## Login failure handling and administrator access

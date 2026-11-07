@@ -4,6 +4,7 @@ import { ProjectFollowUpPanel } from "@/components/projects/project-follow-up";
 import { ProjectRequirementRegisterPreview } from "@/components/projects/project-requirement-register";
 
 import "./project-workspace.css";
+import { MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH } from "@/components/projects/project-sidebar-width";
 
 import { ProjectAnalysisResult } from "@/components/projects/project-analysis-result";
 import { ProjectWorkflowJobs } from "@/components/projects/project-workflow-jobs";
@@ -14,6 +15,7 @@ import type {
   CSSProperties,
   FormEvent,
   PointerEvent as ReactPointerEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
 import {
@@ -168,6 +170,7 @@ type ProjectWorkspaceShellProps = {
   onSidebarResizeStart: (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => void;
+  onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   onPreloadWorkspaceTab: (tab: ProjectWorkspaceTab) => void;
   onSetWorkspaceTab: (tab: ProjectWorkspaceTab) => void;
   onOpenChatPopout: () => Window | null;
@@ -181,9 +184,11 @@ type ProjectWorkspaceSidebarProps = Pick<
   | "project"
   | "activeTab"
   | "sidebarOpen"
+  | "sidebarWidth"
   | "primaryWorkflowSteps"
   | "secondaryNavGroups"
   | "onSidebarResizeStart"
+  | "onSidebarResizeKeyDown"
   | "onPreloadWorkspaceTab"
   | "onSetWorkspaceTab"
   | "onOpenChatPopout"
@@ -304,6 +309,7 @@ export function ProjectWorkspaceShell({
   busyProgress,
   onSidebarOpenChange,
   onSidebarResizeStart,
+  onSidebarResizeKeyDown,
   onPreloadWorkspaceTab,
   onSetWorkspaceTab,
   onOpenChatPopout,
@@ -330,9 +336,11 @@ export function ProjectWorkspaceShell({
           project={project}
           activeTab={activeTab}
           sidebarOpen={sidebarOpen}
+          sidebarWidth={sidebarWidth}
           primaryWorkflowSteps={primaryWorkflowSteps}
           secondaryNavGroups={secondaryNavGroups}
           onSidebarResizeStart={onSidebarResizeStart}
+          onSidebarResizeKeyDown={onSidebarResizeKeyDown}
           onPreloadWorkspaceTab={onPreloadWorkspaceTab}
           onSetWorkspaceTab={onSetWorkspaceTab}
           onOpenChatPopout={onOpenChatPopout}
@@ -381,9 +389,11 @@ function ProjectWorkspaceSidebar({
   project,
   activeTab,
   sidebarOpen,
+  sidebarWidth,
   primaryWorkflowSteps,
   secondaryNavGroups,
   onSidebarResizeStart,
+  onSidebarResizeKeyDown,
   onPreloadWorkspaceTab,
   onSetWorkspaceTab,
   onOpenChatPopout,
@@ -543,9 +553,16 @@ function ProjectWorkspaceSidebar({
       {showLabels ? (
         <button
           type="button"
+          role="separator"
           aria-label="Endre bredden på sidemenyen"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={MAX_SIDEBAR_WIDTH}
+          aria-valuenow={sidebarWidth}
+          aria-valuetext={`${sidebarWidth} piksler`}
           onPointerDown={onSidebarResizeStart}
-          className="absolute top-0 right-[-6px] bottom-0 hidden w-3 cursor-col-resize touch-none bg-transparent md:block"
+          onKeyDown={onSidebarResizeKeyDown}
+          className="absolute top-0 right-[-6px] bottom-0 hidden w-3 cursor-col-resize touch-none bg-transparent focus-visible:outline-2 focus-visible:outline-primary md:block"
         >
           <span className="absolute top-0 right-[5px] bottom-0 w-px bg-border/70 transition-colors hover:bg-primary/50" />
         </button>
@@ -600,12 +617,12 @@ function WorkspaceStatusMessages({
   return (
     <>
       {error ? (
-        <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div role="alert" className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {error}
         </div>
       ) : null}
       {!error && notice ? (
-        <div className="mb-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
+        <div role="status" className="mb-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
           {notice}
         </div>
       ) : null}

@@ -649,6 +649,7 @@ export function ProjectRequirementResponseTab({
   }
 
   function startEdit(artifact: GeneratedArtifact) {
+    if (savingArtifactId) return;
     setEditingArtifactId(artifact.id);
     setEditTitle(artifact.title || "Kravbesvarelse");
     setEditContent(artifact.content_markdown || "");
@@ -656,6 +657,7 @@ export function ProjectRequirementResponseTab({
   }
 
   async function saveEdit(artifact: GeneratedArtifact) {
+    if (savingArtifactId) return;
     setSavingArtifactId(artifact.id);
     try {
       await onUpdateArtifact(artifact, {
@@ -869,7 +871,7 @@ export function ProjectRequirementResponseTab({
                           type="button"
                           variant="outline"
                           className="h-9 rounded-lg"
-                          disabled={!artifactIsEditable}
+                          disabled={!artifactIsEditable || Boolean(savingArtifactId)}
                           aria-label={
                             artifactIsEditable ? "Rediger" : editDisabledReason
                           }
@@ -889,7 +891,7 @@ export function ProjectRequirementResponseTab({
                           type="button"
                           variant="destructive"
                           className="h-9 rounded-lg"
-                          disabled={deletingArtifactId === artifact.id}
+                          disabled={Boolean(savingArtifactId) || deletingArtifactId === artifact.id}
                         >
                           {deletingArtifactId === artifact.id ? (
                             <Spinner className="size-4" />
@@ -918,79 +920,81 @@ export function ProjectRequirementResponseTab({
                       void saveEdit(artifact);
                     }}
                   >
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor={`requirement-title-${artifact.id}`}
-                        className="text-xs font-semibold tracking-normal text-slate-500"
-                      >
-                        Tittel
-                      </Label>
-                      <Input
-                        id={`requirement-title-${artifact.id}`}
-                        value={editTitle}
-                        onChange={(event) => setEditTitle(event.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor={`requirement-content-${artifact.id}`}
-                        className="text-xs font-semibold tracking-normal text-slate-500"
-                      >
-                        Kravbesvarelse
-                      </Label>
-                      <Textarea
-                        id={`requirement-content-${artifact.id}`}
-                        value={editContent}
-                        onChange={(event) => setEditContent(event.target.value)}
-                        className="min-h-[28rem] resize-y rounded-xl bg-white text-sm leading-6 text-slate-900 shadow-none"
-                      />
-                    </div>
-                    {shouldShowDeterministicRepairAcknowledgement(
-                      metadata,
-                      editingArtifactId === artifact.id,
-                    ) ? (
-                      <label className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={acknowledgeDeterministicRepairs}
-                          onChange={(event) =>
-                            setAcknowledgeDeterministicRepairs(
-                              event.target.checked,
-                            )
-                          }
+                    <fieldset disabled={savingArtifactId === artifact.id} className="min-w-0 space-y-4">
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor={`requirement-title-${artifact.id}`}
+                          className="text-xs font-semibold tracking-normal text-slate-500"
+                        >
+                          Tittel
+                        </Label>
+                        <Input
+                          id={`requirement-title-${artifact.id}`}
+                          value={editTitle}
+                          onChange={(event) => setEditTitle(event.target.value)}
                         />
-                        <span>
-                          Jeg bekrefter at de deterministisk reparerte svarradene
-                          jeg har endret, er manuelt kvalitetssikret. Ved lagring
-                          fjernes kontrollmarkeringen bare fra endrede rader.
-                        </span>
-                      </label>
-                    ) : null}
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg"
-                        onClick={() => setEditingArtifactId(null)}
-                        disabled={savingArtifactId === artifact.id}
-                      >
-                        <X data-icon="inline-start" />
-                        Avbryt
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="h-9 rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover"
-                        disabled={savingArtifactId === artifact.id}
-                      >
-                        {savingArtifactId === artifact.id ? (
-                          <Spinner className="size-4" />
-                        ) : (
-                          <Save data-icon="inline-start" />
-                        )}
-                        Lagre endringer
-                      </Button>
-                    </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor={`requirement-content-${artifact.id}`}
+                          className="text-xs font-semibold tracking-normal text-slate-500"
+                        >
+                          Kravbesvarelse
+                        </Label>
+                        <Textarea
+                          id={`requirement-content-${artifact.id}`}
+                          value={editContent}
+                          onChange={(event) => setEditContent(event.target.value)}
+                          className="min-h-[28rem] resize-y rounded-xl bg-white text-sm leading-6 text-slate-900 shadow-none"
+                        />
+                      </div>
+                      {shouldShowDeterministicRepairAcknowledgement(
+                        metadata,
+                        editingArtifactId === artifact.id,
+                      ) ? (
+                        <label className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={acknowledgeDeterministicRepairs}
+                            onChange={(event) =>
+                              setAcknowledgeDeterministicRepairs(
+                                event.target.checked,
+                              )
+                            }
+                          />
+                          <span>
+                            Jeg bekrefter at de deterministisk reparerte svarradene
+                            jeg har endret, er manuelt kvalitetssikret. Ved lagring
+                            fjernes kontrollmarkeringen bare fra endrede rader.
+                          </span>
+                        </label>
+                      ) : null}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9 rounded-lg"
+                          onClick={() => setEditingArtifactId(null)}
+                          disabled={savingArtifactId === artifact.id}
+                        >
+                          <X data-icon="inline-start" />
+                          Avbryt
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="h-9 rounded-lg bg-primary text-primary-foreground hover:bg-primary-hover"
+                          disabled={savingArtifactId === artifact.id}
+                        >
+                          {savingArtifactId === artifact.id ? (
+                            <Spinner className="size-4" />
+                          ) : (
+                            <Save data-icon="inline-start" />
+                          )}
+                          Lagre endringer
+                        </Button>
+                      </div>
+                    </fieldset>
                   </form>
                 ) : (
                   <>

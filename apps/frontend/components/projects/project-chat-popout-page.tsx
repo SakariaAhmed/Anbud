@@ -39,6 +39,7 @@ type ChatPayload = {
   messages?: ChatMessage[];
   sessions?: ChatSessionSummary[];
   active_session_id?: string | null;
+  next_cursor?: string | null;
   error?: string;
 };
 
@@ -168,6 +169,9 @@ export function ProjectChatPopoutPage({
   const [streamingMessage, setStreamingMessage] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatLoading, setChatLoading] = useState(true);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const olderScrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
   const [chatError, setChatError] = useState("");
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
@@ -217,12 +221,15 @@ export function ProjectChatPopoutPage({
   const loadChat = useCallback(
     async (
       sessionId?: string | null,
-      options?: { showLoading?: boolean; followLatest?: boolean },
+      options?: { showLoading?: boolean; followLatest?: boolean; before?: string },
     ) => {
-      if (options?.followLatest !== false) {
+      const prepend = Boolean(options?.before);
+      if (prepend) setOlderLoading(true);
+      else setNextCursor(null);
+      if (!prepend && options?.followLatest !== false) {
         followLatestChatOutput();
       }
-      if (options?.showLoading !== false) {
+      if (!prepend && options?.showLoading !== false) {
         setChatLoading(true);
       }
       setChatError("");
@@ -237,6 +244,7 @@ export function ProjectChatPopoutPage({
         if (sessionId) {
           params.set("session_id", sessionId);
         }
+        if (options?.before) params.set("before", options.before);
         const response = await fetch(
           `/api/projects/${projectId}/chat${params.toString() ? `?${params}` : ""}`,
           { cache: "no-store", signal: controller.signal },
@@ -253,7 +261,20 @@ export function ProjectChatPopoutPage({
           return;
         }
 
-        setChatMessages(payload.messages);
+        const fetchedMessages = payload.messages;
+        if (prepend) {
+          const container = chatContainerRef.current;
+          olderScrollAnchorRef.current = container ? { height: container.scrollHeight, top: container.scrollTop } : null;
+          chatShouldFollowOutputRef.current = false;
+          setChatMessages(current => {
+            const seen = new Set(current.map(message => message.id));
+            return [...fetchedMessages.filter(message => !seen.has(message.id)), ...current];
+          });
+        } else {
+          olderScrollAnchorRef.current = null;
+          setChatMessages(payload.messages);
+        }
+        setNextCursor(payload.next_cursor ?? null);
         setSessions(payload.sessions);
         setActiveSessionId(payload.active_session_id ?? sessionId ?? null);
       } catch (err) {
@@ -267,6 +288,7 @@ export function ProjectChatPopoutPage({
         if (loadRequestIdRef.current === requestId) {
           loadAbortRef.current = null;
           setChatLoading(false);
+          setOlderLoading(false);
         }
       }
     },
@@ -317,6 +339,13 @@ export function ProjectChatPopoutPage({
     if (!container) {
       return;
     }
+    const anchor = olderScrollAnchorRef.current;
+    if (anchor) {
+      olderScrollAnchorRef.current = null;
+      container.scrollTop = anchor.top + container.scrollHeight - anchor.height;
+      lastChatScrollTopRef.current = container.scrollTop;
+      return;
+    }
     if (!chatShouldFollowOutputRef.current) {
       return;
     }
@@ -350,6 +379,9 @@ export function ProjectChatPopoutPage({
     followLatestChatOutput();
     setActiveSessionId(nextSessionId);
     setChatMessages([]);
+    setNextCursor(null);
+    setOlderLoading(false);
+    olderScrollAnchorRef.current = null;
     setStreamingMessage("");
     setChatError("");
     setPendingAttachment(null);
@@ -372,6 +404,9 @@ export function ProjectChatPopoutPage({
       return;
     }
 
+    abortActiveLoad();
+    setChatLoading(false);
+    setOlderLoading(false);
     const attachment = pendingAttachment;
     const attachmentFileName = attachment?.name || "";
     const promptAttachments = attachment
@@ -831,6 +866,11 @@ export function ProjectChatPopoutPage({
               streamingMessage={streamingMessage}
               busy={chatBusy}
               loading={chatLoading}
+              hasOlderMessages={Boolean(nextCursor)}
+              loadingOlderMessages={olderLoading}
+              onLoadOlderMessages={() => {
+                if (nextCursor && activeSessionId) void loadChat(activeSessionId, { before: nextCursor, followLatest: false });
+              }}
               error={chatError}
               sessionDomainHints={activeSession?.domain_hints ?? []}
               chatContainerRef={chatContainerRef}

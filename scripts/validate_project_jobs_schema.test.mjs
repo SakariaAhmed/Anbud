@@ -48,9 +48,14 @@ create or replace function public.scheduled_worker_capacity_preflight() returns 
 create or replace function public.fail_document_enhancement_job() returns boolean language sql as 'select';
 create or replace function public.enqueue_document_enhancement_retry() returns boolean language sql as 'select';
 create or replace function public.set_document_enhancement_state() returns boolean language sql as 'select';
+create or replace function public.chat_session_consistency_preflight() returns text language sql as 'select';
+create or replace function public.compare_and_swap_chat_session_memory() returns boolean language sql as 'select';
+create or replace function public.track_chat_session_message() returns trigger language plpgsql as 'begin return new; end';
+create or replace function public.protect_chat_session_message_metadata() returns trigger language plpgsql as 'begin return new; end';
 `;
 
 const versions = new Map([
+  ["chat_session_consistency_preflight", "chat-session-consistency-v1"],
   ["scheduled_worker_capacity_preflight", "scheduled-worker-capacity-v1"],
   ["automatic_customer_analysis_preflight", "automatic-customer-analysis-v1"],
   ["project_job_fencing_preflight", "authoritative-lease-fencing-v1"],
@@ -219,4 +224,21 @@ test("missing scheduled capacity migration or schema reload stops promotion", as
   const calls = []; const result = await preflightRemoteProjectJobSchema({ ...configuration, fetchImpl: successfulFetch(calls) });
   assert.equal(result.scheduledCapacityVersion, "scheduled-worker-capacity-v1");
   assert.ok(calls[0].url.searchParams.get("select").split(",").includes("run_class"));
+});
+
+
+test("chat consistency migration and stale schema cache stop the release path", async () => {
+  assert.throws(() => validateCanonicalProjectJobMigration(
+    completeMigration.replace(/^.*function public\.chat_session_consistency_preflight.*$/mu, ""),
+  ), /function:chat_session_consistency_preflight/u);
+  await assert.rejects(preflightRemoteProjectJobSchema({ ...configuration,
+    fetchImpl: successfulFetch([], "chat_session_consistency_preflight"),
+  }), /Chat-session consistency preflight failed with HTTP 404/u);
+  const fetchOk = successfulFetch([]);
+  await assert.rejects(preflightRemoteProjectJobSchema({ ...configuration,
+    fetchImpl: async (url, options) => url.pathname.endsWith("chat_session_consistency_preflight")
+      ? { ok: true, json: async () => "old-version" } : fetchOk(url, options),
+  }), /Chat-session consistency version is missing or unexpected/u);
+  const result = await preflightRemoteProjectJobSchema({ ...configuration, fetchImpl: successfulFetch([]) });
+  assert.equal(result.chatSessionVersion, "chat-session-consistency-v1");
 });

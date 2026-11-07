@@ -16,7 +16,7 @@ const { workUnitAsyncStorage } = jiti(
 const { workAsyncStorage } = jiti(
   "next/dist/server/app-render/work-async-storage.external.js",
 );
-const { requireProjectPermission } = jiti("./authorization.ts");
+const { requireProjectPermission, requireRequestPrincipal, authorizationErrorResponse } = jiti("./authorization.ts");
 const { PROJECT_PERMISSIONS } = jiti("../access-control.ts");
 const { AUTH_PRINCIPAL_HEADER, AUTH_SESSION_HEADER, AUTH_IS_ADMIN_HEADER } =
   jiti("../password-auth.ts");
@@ -42,6 +42,8 @@ async function withRequest(t, options, callback) {
   t.mock.method(globalThis, "fetch", async (input, init) => {
     const url = new URL(input);
     assert.equal(url.origin, env.DATA_API_URL);
+    const response = await options.respond?.(url, init);
+    if (response) return response;
     if (url.pathname === "/rpc/resolve_project_role") {
       assert.equal(init.method, "POST");
       assert.deepEqual(JSON.parse(init.body), {
@@ -81,6 +83,7 @@ async function withRequest(t, options, callback) {
     [AUTH_IS_ADMIN_HEADER]: "1",
   });
   if (options.anonymous) headers.delete(AUTH_PRINCIPAL_HEADER);
+  if (options.noSession) headers.delete(AUTH_SESSION_HEADER);
   return workAsyncStorage.run({ route: `/projects/${projectId}` }, () =>
     workUnitAsyncStorage.run({ type: "request", phase: "render", headers }, callback),
   );
@@ -133,3 +136,36 @@ test("non-admin restricted viewers can read but cannot generate, delete or downl
     }
   });
 });
+
+for (const pathname of ["app_sessions", "app_principals", "app_principal_roles", "rpc/resolve_project_role"]) {
+  for (const failure of ["status", "network", "invalid-shape"]) {
+    test(`${pathname} ${failure} is a safe backend503, not an identity denial`, async (t) => {
+      const logs = [];
+      t.mock.method(console, "error", (line) => logs.push(JSON.parse(line)));
+      await withRequest(t, { admin: true, respond(url) {
+        if (url.pathname !== `/${pathname}`) return;
+        if (failure === "network") throw new TypeError("synthetic private backend address");
+        if (failure === "status") return Response.json({ code: "TEST503", message: "private backend detail" }, { status: 503 });
+        return Response.json(pathname === "app_principal_roles" ? [{}] : {});
+      } }, async () => {
+        let error;
+        try { await requireProjectPermission(projectId, "job.run"); } catch (caught) { error = caught; }
+        const response = authorizationErrorResponse(error);
+        assert.equal(response?.status, 503);
+        const body = await response.json();
+        assert.match(body.reference, /^[a-f0-9-]{36}$/u);
+        assert.equal(logs.at(-1).reference, body.reference);
+        assert.equal(logs.at(-1).event, "auth_backend_failure");
+        assert.doesNotMatch(JSON.stringify([body, logs]), /private backend|synthetic private/u);
+      });
+    });
+  }
+}
+
+for (const options of [{ noSession: true }, { respond: (url) => url.pathname === "/app_sessions" ? Response.json(null) : undefined }, { respond: (url) => url.pathname === "/app_principals" ? Response.json(null) : undefined }]) {
+  test(`absent session or principal remains401 (${Object.keys(options)[0]})`, async (t) => {
+    await withRequest(t, options, async () => {
+      await assert.rejects(requireRequestPrincipal(), { status: 401 });
+    });
+  });
+}

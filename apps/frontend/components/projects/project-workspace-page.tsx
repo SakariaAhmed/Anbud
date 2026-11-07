@@ -12,6 +12,7 @@ import {
   useState,
   useTransition,
   type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   Brain,
@@ -77,6 +78,11 @@ import {
   solutionProposalWorkflowStatus,
 } from "@/components/projects/project-workflow-status";
 import { deriveProjectStatus } from "@/components/projects/project-workspace-shared";
+import {
+  clampSidebarWidth,
+  DEFAULT_SIDEBAR_WIDTH,
+  sidebarWidthForKey,
+} from "@/components/projects/project-sidebar-width";
 import { parseJobProgress } from "@/lib/project-job-progress";
 import {
   GENERATABLE_ARTIFACT_TYPES,
@@ -100,10 +106,7 @@ import type {
 export type { ProjectWorkspaceTab } from "@/components/projects/project-workspace-types";
 
 const ENHANCEMENT_WAIT_NOTICE = "Dokumentet er lest. Venter på den siste dokumentforbedringen før ny generering.";
-const PROJECT_WORKSPACE_UI_SCALE = 0.9;
-const DEFAULT_SIDEBAR_WIDTH = 260;
-const MIN_SIDEBAR_WIDTH = Math.round(270 * PROJECT_WORKSPACE_UI_SCALE);
-const MAX_SIDEBAR_WIDTH = Math.round(440 * PROJECT_WORKSPACE_UI_SCALE);
+
 
 function isAbortError(error: unknown) {
   return (
@@ -633,7 +636,7 @@ export function ProjectWorkspacePage({
       const parsedWidth = Number(storedWidth);
       if (Number.isFinite(parsedWidth)) {
         setSidebarWidth(
-          Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsedWidth)),
+          clampSidebarWidth(parsedWidth),
         );
       }
     } catch {
@@ -656,10 +659,7 @@ export function ProjectWorkspacePage({
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       if (!sidebarResizeRef.current || !sidebarOpen) return;
-      const nextWidth = Math.min(
-        MAX_SIDEBAR_WIDTH,
-        Math.max(MIN_SIDEBAR_WIDTH, event.clientX),
-      );
+      const nextWidth = clampSidebarWidth(event.clientX);
       setSidebarWidth(nextWidth);
     };
 
@@ -1118,6 +1118,29 @@ export function ProjectWorkspacePage({
     return uploadedDocument as ProjectDocument | null;
   }
 
+  // A lost response can follow a committed write. Re-read persisted state
+  // without replaying the mutation or replacing newer state with an old copy.
+  async function reconcileFailedProjectMutation(artifactType?: GeneratedArtifactType) {
+    try {
+      const freshProject = await fetchProjectState(project.id);
+      // Project refreshes carry counts/authority, while artifact bodies are
+      // loaded per tab. An empty shell collection must not erase an editor.
+      const freshArtifacts = artifactType
+        ? await fetchGeneratedArtifacts(project.id, { artifactType, forceRefresh: true }).catch(() => null)
+        : null;
+      setProject((current) => isProjectSnapshotOlder(current, freshProject)
+        ? current
+        : mergeProjectRefresh({
+            ...current,
+            generated_artifacts: freshArtifacts && artifactType
+              ? mergeGeneratedArtifactsForType(current.generated_artifacts, freshArtifacts, artifactType)
+              : current.generated_artifacts,
+          }, freshProject));
+    } catch {
+      // Keep the last confirmed state; the activity loop retries the read.
+    }
+  }
+
   async function onUpdateRequirementArtifact(
     artifact: GeneratedArtifact,
     value: {
@@ -1129,23 +1152,6 @@ export function ProjectWorkspacePage({
     setError("");
     setNotice("");
     setBusy(`update-artifact-${artifact.id}`);
-    const previousProject = project;
-    const optimisticArtifact: GeneratedArtifact = {
-      ...artifact,
-      title: value.title,
-      content_markdown: value.content_markdown,
-    };
-    setProject((current) =>
-      normalizeProjectState(
-        {
-          ...current,
-          generated_artifacts: current.generated_artifacts.map((item) =>
-            item.id === artifact.id ? optimisticArtifact : item,
-          ),
-        },
-        { preserveArtifactCount: true },
-      ),
-    );
     try {
       const payload = await updateGeneratedArtifact({
         projectId: project.id,
@@ -1161,13 +1167,7 @@ export function ProjectWorkspacePage({
             {
               ...current,
               generated_artifacts: prependGeneratedArtifact(
-                current.generated_artifacts.map((item) =>
-                  item.id === artifact.id
-                    ? previousProject.generated_artifacts.find(
-                        (previous) => previous.id === artifact.id,
-                      ) ?? item
-                    : item,
-                ),
+                current.generated_artifacts,
                 payload.artifact,
               ),
             },
@@ -1178,7 +1178,7 @@ export function ProjectWorkspacePage({
       );
       setNotice("Kravbesvarelsen er oppdatert.");
     } catch (err) {
-      setProject(previousProject);
+      await reconcileFailedProjectMutation(artifact.artifact_type);
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1190,26 +1190,11 @@ export function ProjectWorkspacePage({
     setError("");
     setNotice("");
     setBusy(`delete-artifact-${artifact.id}`);
-    const previousProject = project;
-    setProject((current) =>
-      normalizeProjectState(
-        {
-          ...current,
-          generated_artifacts: current.generated_artifacts.filter(
-            (item) => item.id !== artifact.id,
-          ),
-          artifact_count: Math.max(0, current.artifact_count - 1),
-        },
-        { preserveArtifactCount: true },
-      ),
-    );
-    let deleteCommitted = false;
     try {
       const payload = await deleteGeneratedArtifact({
         projectId: project.id,
         artifactId: artifact.id,
       });
-      deleteCommitted = true;
       let refreshedArtifacts: GeneratedArtifact[] | null = null;
       try {
         refreshedArtifacts = await fetchGeneratedArtifacts(project.id, {
@@ -1241,9 +1226,7 @@ export function ProjectWorkspacePage({
       );
       setNotice("Artefakten er slettet.");
     } catch (err) {
-      if (!deleteCommitted) {
-        setProject(previousProject);
-      }
+      await reconcileFailedProjectMutation(artifact.artifact_type);
       setError(err instanceof Error ? err.message : "Noe gikk galt.");
       throw err;
     } finally {
@@ -1271,31 +1254,14 @@ export function ProjectWorkspacePage({
   }
 
   async function onDeleteDocument(document: ProjectDocument) {
-    const previousProject = project;
     await runAction(`delete-${document.id}`, async () => {
-      setProject((current) =>
-        normalizeProjectState(
-          {
-            ...current,
-            documents: current.documents.filter(
-              (item) => item.id !== document.id,
-            ),
-          },
-          {
-            preserveArtifactCount: true,
-          },
-        ),
-      );
-      let payload: Awaited<ReturnType<typeof deleteProjectDocument>>;
-      try {
-        payload = await deleteProjectDocument({
-          projectId: project.id,
-          documentId: document.id,
-        });
-      } catch (err) {
-        setProject(previousProject);
-        throw err;
-      }
+      const payload = await deleteProjectDocument({
+        projectId: project.id,
+        documentId: document.id,
+      }).catch(async (error: unknown) => {
+        await reconcileFailedProjectMutation();
+        throw error;
+      });
       setProject((current) => {
         if (isProjectSnapshotOlder(current, payload.project)) return current;
         const next = applyProjectSnapshot(
@@ -1786,6 +1752,14 @@ export function ProjectWorkspacePage({
       ...secondaryNavGroups.flatMap((group) => group.items),
     ].find((item) => item.value === activeTab)?.label ?? "Prosjekt";
 
+  function onSidebarResizeKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (!sidebarOpen) return;
+    const width = sidebarWidthForKey(sidebarWidth, event.key);
+    if (width === null) return;
+    event.preventDefault();
+    setSidebarWidth(width);
+  }
+
   function onSidebarResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!sidebarOpen) return;
     event.preventDefault();
@@ -1836,6 +1810,7 @@ export function ProjectWorkspacePage({
       busyProgress={busyProgress}
       onSidebarOpenChange={setSidebarOpen}
       onSidebarResizeStart={onSidebarResizeStart}
+      onSidebarResizeKeyDown={onSidebarResizeKeyDown}
       onPreloadWorkspaceTab={preloadWorkspaceTab}
       onSetWorkspaceTab={setWorkspaceTab}
       onOpenChatPopout={openChatPopout}

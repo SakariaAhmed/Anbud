@@ -2,6 +2,7 @@ import { reviewOutputSourceEvidence, reviewRequirementRowOutputEvidence } from "
 import { editRequirementReviewRow, requirementReviewRows } from "@/lib/requirement-review";
 import { parseRequirementRegeneration, type RequirementRegenerationSelection } from "@/lib/requirement-regeneration";
 import "server-only";
+import { artifactGeneratorRevision } from "@/lib/server/artifact-generation-input";
 
 import { formatJobProgress } from "@/lib/project-job-progress";
 
@@ -103,11 +104,7 @@ export interface GenerateAndSaveArtifactResult {
 const ARTIFACT_FILE_LEDGER_FORMATS = new Set(["pdf", "docx", "xlsx", "xls"]);
 const ARTIFACT_INDEXING_CONCURRENCY = 3;
 const ARTIFACT_FILE_HYDRATION_CONCURRENCY = 3;
-const ARTIFACT_GENERATOR_REVISION =
-  process.env.ARTIFACT_GENERATOR_REVISION?.trim() ||
-  process.env.VERCEL_GIT_COMMIT_SHA?.trim() ||
-  process.env.GIT_COMMIT_SHA?.trim() ||
-  "artifact-source-fence-v1";
+const ARTIFACT_GENERATOR_REVISION = artifactGeneratorRevision();
 
 function sha256(value: string | Buffer) {
   return createHash("sha256").update(value).digest("hex");

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ProjectChatPopoutPage } from "@/components/projects/project-chat-popout-page";
 import { AUTH_PRINCIPAL_HEADER } from "@/lib/password-auth";
-import { requireProjectPermission } from "@/lib/server/authorization";
+import { AuthorizationError, requireProjectPermission } from "@/lib/server/authorization";
 import { getProjectShell, listProjects } from "@/lib/server/repositories/data-store";
 
 function parseSessionId(value: string | string[] | undefined) {
@@ -39,7 +39,8 @@ export default async function ProjectChatPage({
         initialSessionId={parseSessionId(query.session_id)}
       />
     );
-  } catch {
-    notFound();
+  } catch (error) {
+    if (error instanceof AuthorizationError) notFound();
+    throw error;
   }
 }

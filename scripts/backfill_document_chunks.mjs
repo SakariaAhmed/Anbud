@@ -1,395 +1,136 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+#!/usr/bin/env node
+// Shares the serving application's chunk builder, fingerprint and atomic write.
+// Configuration is explicit; this command never loads credential files.
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-const require = createRequire(import.meta.url);
-const OpenAI = require("../apps/frontend/node_modules/openai").default;
+const frontend = fileURLToPath(new URL("../apps/frontend/", import.meta.url));
+const PAGE_SIZE = 100;
+const SOURCE_FIELDS = "id,title,file_name,file_format,raw_text,structure_map,chunk_source_revision";
 
-const PREFIX = "enc:v1";
-const AUTH_TAG_LENGTH = 16;
-const SUPPORTED_AUTH_TAG_LENGTHS = new Set([12, 13, 14, 15, 16]);
-const MAX_CHUNK_CHARS = 4800;
-const CHUNK_OVERLAP_CHARS = 550;
-const EMBEDDING_BATCH_SIZE = 32;
-const INSERT_BATCH_SIZE = 80;
-
-function loadEnvFile(path) {
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
-    const index = trimmed.indexOf("=");
-    const key = trimmed.slice(0, index).trim();
-    const value = trimmed.slice(index + 1).trim().replace(/^['"]|['"]$/g, "");
-    if (key && process.env[key] == null) process.env[key] = value;
+export class BackfillError extends Error {
+  constructor(message, code = "CONFIGURATION", options) {
+    super(message, options);
+    this.name = "BackfillError";
+    this.code = code;
   }
 }
 
-loadEnvFile(".env");
-loadEnvFile("apps/frontend/.env.local");
-
-const dataApiUrl = process.env.DATA_API_URL;
-const serviceRoleKey = process.env.DATA_API_SERVICE_ROLE_KEY;
-const openAiKey = process.env.OPENAI_API_KEY;
-const embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
-const limitArg = process.argv.find((arg) => arg.startsWith("--limit="));
-const limit = limitArg ? Number(limitArg.split("=")[1]) : null;
-
-if (!dataApiUrl || !serviceRoleKey) {
-  throw new Error("DATA_API_URL and DATA_API_SERVICE_ROLE_KEY are required.");
-}
-if (!process.env.APP_ENCRYPTION_KEY) {
-  throw new Error("APP_ENCRYPTION_KEY is required.");
+export function reportBackfillFailure(error) {
+  const detail = error instanceof BackfillError
+    ? `[${error.code}] ${error.message}`
+    : "[UNEXPECTED_FAILURE] Inspect the command configuration and runtime.";
+  console.error(`Backfill failed ${detail} Previously committed source indexes remain atomic.`);
+  process.exitCode = 1;
 }
 
-const checkedDataApiUrl = new URL(dataApiUrl);
-const localDataApiHost =
-  checkedDataApiUrl.hostname === "127.0.0.1" ||
-  checkedDataApiUrl.hostname === "localhost";
-if (
-  (checkedDataApiUrl.protocol !== "https:" &&
-    !(checkedDataApiUrl.protocol === "http:" && localDataApiHost)) ||
-  checkedDataApiUrl.username ||
-  checkedDataApiUrl.password ||
-  checkedDataApiUrl.search ||
-  checkedDataApiUrl.hash
-) {
-  throw new Error("DATA_API_URL must be a credential-free HTTPS or local URL.");
-}
-const dataApiRoot = `${checkedDataApiUrl.origin}${checkedDataApiUrl.pathname}`.replace(/\/+$/u, "");
-const openai = openAiKey ? new OpenAI({ apiKey: openAiKey }) : null;
-
-async function dataApiRequest(resource, { method = "GET", query = {}, body } = {}) {
-  const url = new URL(`${dataApiRoot}/${resource}`);
-  for (const [name, value] of Object.entries(query)) {
-    if (value !== undefined && value !== null && value !== "") {
-      url.searchParams.set(name, String(value));
-    }
+export function parseBackfillOptions(arguments_, environment = process.env) {
+  const options = { apply: false, embeddings: false, limit: null };
+  for (const argument of arguments_) {
+    if (argument === "--apply") options.apply = true;
+    else if (argument === "--with-embeddings") options.embeddings = true;
+    else if (argument.startsWith("--limit=")) {
+      options.limit = Number(argument.slice("--limit=".length));
+      if (!Number.isSafeInteger(options.limit) || options.limit < 1) throw new BackfillError("--limit must be a positive integer per source type.");
+    } else if (argument.startsWith("--target=")) options.target = argument.slice("--target=".length);
+    else throw new BackfillError("Unknown backfill argument. Use --help.");
   }
-  const response = await fetch(url, {
-    method,
-    headers: {
-      apikey: serviceRoleKey,
-      authorization: `Bearer ${serviceRoleKey}`,
-      accept: "application/json",
-      "content-type": "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const responseText = response.status === 204 ? "" : await response.text();
-  let payload = null;
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch {
-      payload = responseText;
-    }
+  if (!environment.DATA_API_URL || !environment.DATA_API_SERVICE_ROLE_KEY || !environment.APP_ENCRYPTION_KEY) {
+    throw new BackfillError("Set DATA_API_URL, DATA_API_SERVICE_ROLE_KEY and APP_ENCRYPTION_KEY explicitly.");
   }
-  if (!response.ok) {
-    throw new Error(
-      (payload && typeof payload === "object" && payload.message) ||
-        `Data API request failed with HTTP ${response.status}.`,
-    );
+  let url;
+  try { url = new URL(environment.DATA_API_URL); }
+  catch { throw new BackfillError("DATA_API_URL must be a valid absolute URL."); }
+  const local = ["127.0.0.1", "localhost"].includes(url.hostname);
+  if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.search || url.hash) {
+    throw new BackfillError("DATA_API_URL must be a credential-free HTTPS or loopback URL.");
   }
-  return payload;
-}
-
-function deriveKey(secret) {
-  return createHash("sha256").update(secret).digest();
-}
-
-function getEncryptionKey() {
-  return deriveKey(process.env.APP_ENCRYPTION_KEY);
-}
-
-function encryptString(value) {
-  if (!value) return "";
-  if (value.startsWith(`${PREFIX}:`)) return value;
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", getEncryptionKey(), iv, {
-    authTagLength: AUTH_TAG_LENGTH,
-  });
-  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [PREFIX, iv.toString("base64"), tag.toString("base64"), encrypted.toString("base64")].join(":");
-}
-
-function decryptString(value) {
-  if (!value || !value.startsWith(`${PREFIX}:`)) return value || "";
-  const parts = value.split(":");
-  const [, , ivBase64, tagBase64, ...dataParts] = parts;
-  const encrypted = Buffer.from(dataParts.join(":"), "base64");
-  let lastError;
-  for (const payload of [
-    { iv: Buffer.from(ivBase64, "base64"), tag: Buffer.from(tagBase64, "base64") },
-    { iv: Buffer.from(tagBase64, "base64"), tag: Buffer.from(ivBase64, "base64") },
-  ]) {
-    try {
-      const authTagLength = SUPPORTED_AUTH_TAG_LENGTHS.has(payload.tag.length)
-        ? payload.tag.length
-        : AUTH_TAG_LENGTH;
-      const decipher = createDecipheriv("aes-256-gcm", getEncryptionKey(), payload.iv, {
-        authTagLength,
-      });
-      decipher.setAuthTag(payload.tag);
-      return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-    } catch (error) {
-      lastError = error;
-    }
+  if (options.apply && options.target !== url.origin) throw new BackfillError("--apply requires --target=<exact DATA_API_URL origin>.");
+  if (options.embeddings && (!options.apply || !environment.OPENAI_API_KEY)) {
+    throw new BackfillError("--with-embeddings requires --apply and an explicit OPENAI_API_KEY.");
   }
-  throw lastError || new Error("Could not decrypt payload.");
+  return options;
 }
 
-function decryptJson(value, fallback) {
-  if (!value || typeof value !== "object") return fallback;
-  if (!value.encrypted || typeof value.payload !== "string") return value;
-  try {
-    return JSON.parse(decryptString(value.payload));
-  } catch {
-    return fallback;
-  }
-}
-
-function normalizeText(value) {
-  return String(value || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\u0000/g, "")
-    .replace(/[ \t]+/g, " ")
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n")
-    .replace(/\n{4,}/g, "\n\n")
-    .trim();
-}
-
-function hashText(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function findSplitPoint(text, preferredEnd, minimumEnd) {
-  const window = text.slice(minimumEnd, Math.min(preferredEnd, text.length));
-  const paragraphBreak = window.lastIndexOf("\n\n");
-  if (paragraphBreak >= 0) return minimumEnd + paragraphBreak;
-  const lineBreak = window.lastIndexOf("\n");
-  if (lineBreak >= 0) return minimumEnd + lineBreak;
-  const sentenceBreak = Math.max(window.lastIndexOf(". "), window.lastIndexOf("? "), window.lastIndexOf("! "));
-  if (sentenceBreak >= 0) return minimumEnd + sentenceBreak + 1;
-  const wordBreak = window.lastIndexOf(" ");
-  return wordBreak >= 0 ? minimumEnd + wordBreak : Math.min(preferredEnd, text.length);
-}
-
-function splitText(text) {
-  const normalized = normalizeText(text);
-  if (!normalized) return [];
-  if (normalized.length <= MAX_CHUNK_CHARS) return [normalized];
-  const chunks = [];
-  let cursor = 0;
-  while (cursor < normalized.length) {
-    const preferredEnd = cursor + MAX_CHUNK_CHARS;
-    const minimumEnd = Math.min(cursor + Math.floor(MAX_CHUNK_CHARS * 0.72), normalized.length);
-    const end = preferredEnd >= normalized.length
-      ? normalized.length
-      : findSplitPoint(normalized, preferredEnd, minimumEnd);
-    const chunk = normalized.slice(cursor, end).trim();
-    if (chunk) chunks.push(chunk);
-    if (end >= normalized.length) break;
-    const nextCursor = Math.max(0, end - CHUNK_OVERLAP_CHARS);
-    cursor = nextCursor <= cursor ? end : nextCursor;
-  }
-  return chunks;
-}
-
-function detectKind(text, fileFormat) {
-  if (fileFormat === "xlsx" || fileFormat === "xls") return "spreadsheet_rows";
-  if (/\b(evalueringskriter|award criteria|tildelingskriter|evaluation criteria)\b/i.test(text)) return "evaluation_criteria";
-  if (/\b(risiko|risk|sårbarhet|mitigering|avvik)\b/i.test(text)) return "risk";
-  if (/\b(pris|kostnad|betaling|kontrakt|ssa-|sanksjon|dagmulkt|commercial|pricing)\b/i.test(text)) return "commercial_term";
-  if (/\b(arkitektur|architecture|integrasjon|api|plattform|sikkerhet|identity|monitorering|backup)\b/i.test(text)) return "architecture_signal";
-  if (/\b(req\.?|requirement|krav(?:tekst)?|shall|must|skal|må)\b/i.test(text)) return text.includes(" | ") ? "requirement_row" : "requirement";
-  if (/\b(table|tabell|row|rad|kolonne|column)\b/i.test(text) || text.includes(" | ")) return "table";
-  return "paragraph";
-}
-
-function pdfPageMarkers(value) {
-  return [...value.matchAll(/\[\[SIDE:(\d{1,5})(?:-(\d{1,5}))?\]\]/g)]
-    .map((match) => {
-      const startPage = Number(match[1]);
-      const endPage = Number(match[2] ?? match[1]);
-      return { startPage, endPage: Math.max(startPage, endPage) };
-    })
-    .filter((marker) => Number.isFinite(marker.startPage) && Number.isFinite(marker.endPage));
-}
-
-function pageRange(reference, text) {
-  const pageNumbers = [
-    ...`${reference}\n${text}`.matchAll(/\b(?:side|page)\s+(\d{1,5})\b/gi),
-  ].map((match) => Number(match[1])).filter(Number.isFinite);
-  for (const marker of pdfPageMarkers(`${reference}\n${text}`)) {
-    pageNumbers.push(marker.startPage, marker.endPage);
-  }
+export function loadBackfillRuntime() {
+  const require = createRequire(new URL("../apps/frontend/package.json", import.meta.url));
+  const { createJiti } = require("jiti");
+  const load = createJiti(import.meta.url, { alias: { "@": frontend, "server-only": "/dev/null" } });
   return {
-    page_start: pageNumbers.length ? Math.min(...pageNumbers) : null,
-    page_end: pageNumbers.length ? Math.max(...pageNumbers) : null,
+    ...load(path.join(frontend, "lib/server/crypto.ts")),
+    ...load(path.join(frontend, "lib/server/document-chunks.ts")),
+    ...load(path.join(frontend, "lib/server/document-chunk-structure.ts")),
+    dataApi: load(path.join(frontend, "lib/server/data-api.ts")).createServiceClient(),
   };
 }
 
-function buildChunks(document) {
-  const entries = Array.isArray(document.structure_map) && document.structure_map.length
-    ? document.structure_map
-    : [{ reference: document.title, text: document.raw_text }];
-  const chunks = [];
-  for (const entry of entries) {
-    for (const part of splitText(entry.text)) {
-      const range = pageRange(entry.reference, part);
-      chunks.push({
-        chunk_index: chunks.length,
-        kind: detectKind(part, document.file_format),
-        reference: entry.reference || document.title,
-        heading_path: [],
-        ...range,
-        text: part,
-        token_count: Math.max(1, Math.ceil(part.length / 4)),
-        content_hash: hashText(part),
-      });
+export async function backfillDocumentChunks(runtime, options = {}) {
+  const { dataApi } = runtime;
+  const totals = { dry_run: !options.apply, scanned_documents: 0, skipped_documents: 0, indexed_documents: 0 };
+  // Normal requests tolerate absent optional chunk storage; maintenance must
+  // fail before claiming it repaired anything.
+  const preflight = await dataApi.from("document_chunks").select("id", { head: true }).limit(1);
+  if (preflight.error) throw new BackfillError("Chunk storage is unavailable.", "STORAGE_PREFLIGHT", { cause: preflight.error });
+  for (const table of ["documents", "service_documents"]) {
+    let afterId = null;
+    let scanned = 0;
+    while (options.limit == null || scanned < options.limit) {
+      const pageSize = Math.min(PAGE_SIZE, options.limit == null ? PAGE_SIZE : options.limit - scanned);
+      let query = dataApi.from(table).select(`${SOURCE_FIELDS},${table === "documents" ? "project_id,role,supporting_subtype,processing_status" : "service_id"}`)
+        .order("id", { ascending: true }).limit(pageSize);
+      if (afterId) query = query.gt("id", afterId);
+      const { data, error } = await query;
+      if (error || !Array.isArray(data)) throw new BackfillError("Could not read backfill sources.", "SOURCE_READ", { cause: error });
+      if (!data.length) break;
+      for (const row of data) {
+        if (!row || typeof row.id !== "string" || (afterId && row.id <= afterId)) throw new BackfillError("Invalid backfill source order.", "SOURCE_ORDER");
+        afterId = row.id;
+        scanned += 1;
+        totals.scanned_documents += 1;
+        const revision = Number(row.chunk_source_revision);
+        if (!Number.isSafeInteger(revision) || revision < 0) throw new BackfillError("Invalid backfill source revision.", "SOURCE_REVISION");
+        if (table === "documents" && !["basic_ready", "enhanced_ready"].includes(row.processing_status)) {
+          totals.skipped_documents += 1;
+          continue;
+        }
+        if (!options.apply) continue;
+        const rawText = runtime.decryptString(row.raw_text ?? "");
+        const structureMap = runtime.normalizeDocumentChunkStructureMap(runtime.decryptJson(row.structure_map, []));
+        if (!rawText.trim() && !structureMap.length) {
+          totals.skipped_documents += 1;
+          continue;
+        }
+        const input = { documentId: row.id, title: row.title, fileName: row.file_name,
+          fileFormat: row.file_format, rawText, structureMap, sourceRevision: revision };
+        try {
+          if (table === "documents") {
+            await runtime.replaceProjectDocumentChunks({ ...input, projectId: row.project_id, role: row.role, supportingSubtype: row.supporting_subtype });
+          } else {
+            await runtime.replaceServiceDocumentChunks({ ...input, serviceId: row.service_id });
+          }
+        } catch (error) {
+          const stale = typeof error?.message === "string" && /^Document chunk (?:project|service) source changed before replacement$/u.test(error.message);
+          throw new BackfillError(stale ? "Source changed; inspect its current revision before retrying." : "Atomic chunk replacement failed; inspect the source and target before retrying.", stale ? "SOURCE_REVISION_CHANGED" : "CHUNK_REPLACEMENT", { cause: error });
+        }
+        totals.indexed_documents += 1;
+      }
     }
   }
-  return chunks;
+  return totals;
 }
 
-async function createEmbeddings(texts) {
-  if (!openai || !texts.length) return [];
-  const embeddings = [];
-  for (let index = 0; index < texts.length; index += EMBEDDING_BATCH_SIZE) {
-    const batch = texts.slice(index, index + EMBEDDING_BATCH_SIZE);
-    const response = await openai.embeddings.create({
-      model: embeddingModel,
-      input: batch,
-      encoding_format: "float",
-    });
-    for (const item of response.data) {
-      embeddings[index + item.index] = item.embedding;
-    }
+export async function runBackfillCommand(arguments_ = process.argv.slice(2)) {
+  if (arguments_.includes("--help")) {
+    console.log("Dry run by default. Set database/encryption variables explicitly. Use --apply --target=<DATA_API_URL origin> to atomically rebuild current ready sources. --limit=N limits each source type; --with-embeddings explicitly enables paid embedding requests. Without it only lexical chunks are generated. No credential files are loaded.");
+    return;
   }
-  return embeddings;
+  const options = parseBackfillOptions(arguments_);
+  if (!options.embeddings) process.env.OPENAI_API_KEY = "";
+  const totals = await backfillDocumentChunks(loadBackfillRuntime(), options);
+  console.log(JSON.stringify(totals));
 }
 
-async function insertBatches(rows) {
-  for (let index = 0; index < rows.length; index += INSERT_BATCH_SIZE) {
-    await dataApiRequest("document_chunks", {
-      method: "POST",
-      body: rows.slice(index, index + INSERT_BATCH_SIZE),
-    });
-  }
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  runBackfillCommand().catch(reportBackfillFailure);
 }
-
-async function backfillDocument(sourceType, document) {
-  const chunks = buildChunks(document);
-  const embeddings = await createEmbeddings(chunks.map((chunk) => chunk.text));
-  await dataApiRequest("document_chunks", {
-    method: "DELETE",
-    query: {
-      source_type: `eq.${sourceType}`,
-      source_id: `eq.${document.id}`,
-    },
-  });
-  const now = new Date().toISOString();
-  const rows = chunks.map((chunk, index) => ({
-    source_type: sourceType,
-    source_id: document.id,
-    project_id: sourceType === "project_document" ? document.project_id : null,
-    service_id: sourceType === "service_document" ? document.service_id : null,
-    document_title: document.title,
-    file_name: document.file_name,
-    file_format: document.file_format,
-    role: document.role ?? null,
-    supporting_subtype: document.supporting_subtype ?? null,
-    chunk_index: chunk.chunk_index,
-    kind: chunk.kind,
-    reference: chunk.reference,
-    heading_path: chunk.heading_path,
-    page_start: chunk.page_start,
-    page_end: chunk.page_end,
-    token_count: chunk.token_count,
-    text_encrypted: encryptString(chunk.text),
-    content_hash: chunk.content_hash,
-    metadata: {
-      file_name: document.file_name,
-      file_format: document.file_format,
-      role: document.role ?? null,
-      supporting_subtype: document.supporting_subtype ?? null,
-      content_hash: chunk.content_hash,
-    },
-    embedding: embeddings[index] ?? null,
-    embedding_model: embeddings[index] ? embeddingModel : null,
-    embedding_created_at: embeddings[index] ? now : null,
-  }));
-  if (rows.length) {
-    await insertBatches(rows);
-    await dataApiRequest("rpc/update_document_chunk_search_vectors", {
-      method: "POST",
-      body: {
-        source_type_filter: sourceType,
-        source_id_filter: document.id,
-        chunks: chunks.map((chunk) => ({
-          chunk_index: chunk.chunk_index,
-          search_text: [
-            document.title,
-            document.file_name,
-            chunk.kind,
-            chunk.reference,
-            chunk.text,
-          ].join("\n"),
-        })),
-      },
-    });
-  }
-  return chunks.length;
-}
-
-async function fetchRows(table, select) {
-  return (
-    (await dataApiRequest(table, {
-      query: {
-        select,
-        order: "created_at.asc",
-        limit: limit && Number.isFinite(limit) ? limit : undefined,
-      },
-    })) || []
-  );
-}
-
-const projectDocuments = await fetchRows(
-  "documents",
-  "id, project_id, role, supporting_subtype, title, file_name, file_format, raw_text, structure_map, created_at",
-);
-const serviceDocuments = await fetchRows(
-  "service_documents",
-  "id, service_id, title, file_name, file_format, raw_text, structure_map, created_at",
-);
-
-let indexed = 0;
-let chunks = 0;
-
-for (const row of projectDocuments) {
-  const count = await backfillDocument("project_document", {
-    ...row,
-    raw_text: decryptString(row.raw_text || ""),
-    structure_map: decryptJson(row.structure_map, []),
-  });
-  indexed += 1;
-  chunks += count;
-  console.log(`Indexed project document ${row.id}: ${count} chunks`);
-}
-
-for (const row of serviceDocuments) {
-  const count = await backfillDocument("service_document", {
-    ...row,
-    raw_text: decryptString(row.raw_text || ""),
-    structure_map: decryptJson(row.structure_map, []),
-  });
-  indexed += 1;
-  chunks += count;
-  console.log(`Indexed service document ${row.id}: ${count} chunks`);
-}
-
-console.log(JSON.stringify({ indexed_documents: indexed, indexed_chunks: chunks }, null, 2));

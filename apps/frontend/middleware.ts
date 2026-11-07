@@ -602,6 +602,12 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     );
   }
 
+  // A successfully resolved absent/revoked session may still have a stale
+  // browser cookie. Let logout clear it; lookup outages returned 503 above.
+  if (pathname === "/api/auth/logout" && request.method === "POST") {
+    return nextWithRequestHeaders(request, false, correlationId, pathname);
+  }
+
   if (pathname.startsWith("/api/")) {
     return unauthorizedJson(correlationId);
   }
