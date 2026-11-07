@@ -66,10 +66,14 @@ test("backfill respects per-source limits, readiness and exact source revisions"
 
 test("failed preflight or atomic replacement never reports successful repair", async () => {
   await assert.rejects(backfillDocumentChunks(runtimeFor({}, { preflightError: { message: "missing" } }), { apply: true }), /unavailable/);
-  const runtime = runtimeFor({ documents: [document(1), document(2)] });
-  runtime.replaceProjectDocumentChunks = async () => { throw new Error("PROJECT_SOURCE_REVISION_CHANGED"); };
-  await assert.rejects(backfillDocumentChunks(runtime, { apply: true }), { code: "SOURCE_REVISION_CHANGED" });
-  assert.equal(runtime.writes.length, 0);
+  for (const [table, method, kind] of [["documents", "replaceProjectDocumentChunks", "project"], ["service_documents", "replaceServiceDocumentChunks", "service"]]) {
+    const runtime = runtimeFor({ [table]: [document(1), document(2)] });
+    runtime[method] = async () => { throw { code: "40001", message: `Document chunk ${kind} source changed before replacement` }; };
+    await assert.rejects(backfillDocumentChunks(runtime, { apply: true }), { code: "SOURCE_REVISION_CHANGED" });
+    assert.equal(runtime.writes.length, 0);
+    runtime[method] = async () => { throw { code: "40001", message: "could not serialize access due to concurrent update" }; };
+    await assert.rejects(backfillDocumentChunks(runtime, { apply: true }), { code: "CHUNK_REPLACEMENT" });
+  }
 });
 
 test("both CLI entrypoints report safe validation/stage details without backend messages", async (t) => {

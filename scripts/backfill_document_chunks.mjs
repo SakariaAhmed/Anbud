@@ -110,7 +110,7 @@ export async function backfillDocumentChunks(runtime, options = {}) {
             await runtime.replaceServiceDocumentChunks({ ...input, serviceId: row.service_id });
           }
         } catch (error) {
-          const stale = typeof error?.message === "string" && /\b(?:PROJECT_|SERVICE_)?SOURCE_REVISION_CHANGED\b/u.test(error.message);
+          const stale = typeof error?.message === "string" && /^Document chunk (?:project|service) source changed before replacement$/u.test(error.message);
           throw new BackfillError(stale ? "Source changed; inspect its current revision before retrying." : "Atomic chunk replacement failed; inspect the source and target before retrying.", stale ? "SOURCE_REVISION_CHANGED" : "CHUNK_REPLACEMENT", { cause: error });
         }
         totals.indexed_documents += 1;
