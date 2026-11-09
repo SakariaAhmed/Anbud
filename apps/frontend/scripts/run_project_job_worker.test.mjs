@@ -4,8 +4,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "no
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import test from "node:test";
-import { fileURLToPath } from "node:url";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(frontendRoot, "../..");
@@ -97,7 +97,7 @@ async function freePort() {
 
 function startWorker(script, environment, options, port) {
   const directory = fakeServerDirectory(options);
-  const child = spawn(process.execPath, [script], {
+  const child = spawn(process.execPath, [...(options.nodeArgs ?? []), script], {
     cwd: directory,
     env: {
       PATH: process.env.PATH,
@@ -122,6 +122,59 @@ function startWorker(script, environment, options, port) {
       : null,
     cleanup: () => rmSync(directory, { recursive: true, force: true }),
   };
+}
+
+const internalDataApiEnvironment = {
+  DATA_API_URL: "https://anbud-postgrest.internal.example.norwayeast.azurecontainerapps.io",
+  DATA_API_SERVICE_ROLE_KEY: "service-role-key-for-tests",
+  DATA_API_ALLOWED_HOST_SUFFIX: ".internal.example.norwayeast.azurecontainerapps.io",
+};
+
+let dataApiStubDirectory = null;
+after(() => {
+  if (dataApiStubDirectory) rmSync(dataApiStubDirectory, { recursive: true, force: true });
+});
+
+/** Preloaded into the worker process only: answers its data API requests per
+ * table and logs each table it asked, leaving the health check to real fetch. */
+function dataApiStub() {
+  dataApiStubDirectory ??= mkdtempSync(path.join(tmpdir(), "anbud-worker-data-api-"));
+  const stub = path.join(dataApiStubDirectory, "stub.mjs");
+  if (!existsSync(stub)) {
+    writeFileSync(stub, `
+import fs from "node:fs";
+const realFetch = globalThis.fetch;
+const root = process.env.FAKE_DATA_API_ROOT;
+const answers = JSON.parse(process.env.FAKE_DATA_API_ANSWERS);
+globalThis.fetch = async (input, init) => {
+  const url = String(input);
+  if (!url.startsWith(root + "/")) return realFetch(input, init);
+  const table = new URL(url).pathname.split("/").pop();
+  fs.appendFileSync("data-api.log", table + "\\n");
+  const answer = answers[table];
+  return new Response(JSON.stringify(answer.body), { status: answer.status ?? 200 });
+};
+`);
+  }
+  return pathToFileURL(stub).href;
+}
+
+/** Worker env and options for a run whose data API gives these answers. */
+function withDataApi(answers) {
+  return [
+    {
+      ...deployedWorkerEnvironment(),
+      ...internalDataApiEnvironment,
+      FAKE_DATA_API_ROOT: internalDataApiEnvironment.DATA_API_URL,
+      FAKE_DATA_API_ANSWERS: JSON.stringify(answers),
+    },
+    { nodeArgs: ["--import", dataApiStub()] },
+  ];
+}
+
+function dataApiTables(worker) {
+  const log = path.join(worker.directory, "data-api.log");
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").sort() : [];
 }
 
 /** The bind failure the stand-in reported, once it is listening, failed, or the worker exited. */
@@ -264,6 +317,50 @@ test("stopping the worker replica also stops its server", { timeout: 30_000 }, a
     const { code } = await worker.exited;
     assert.equal(code, 143);
     await waitFor(() => !processAlive(serverPid));
+  } finally {
+    worker.cleanup();
+  }
+});
+
+test("the candidate exits without starting its server when the data API reports no work", { timeout: 30_000 }, async () => {
+  const worker = await runWorker(candidateScript, ...withDataApi({
+    project_jobs: { body: [] },
+    project_analysis_requests: { body: [] },
+  }));
+  try {
+    assert.equal((await worker.exited).code, 0, worker.output());
+    assert.equal(existsSync(path.join(worker.directory, "server.pid")), false, "the server never started");
+    assert.equal(worker.request(), null);
+    assert.deepEqual(dataApiTables(worker), ["project_analysis_requests", "project_jobs"]);
+    assert.deepEqual(JSON.parse(worker.output().trim()), { processed: 0, results: [], skipped: "no_pending_work" });
+  } finally {
+    worker.cleanup();
+  }
+});
+
+test("the candidate starts its server when a job is queued or running", { timeout: 30_000 }, async () => {
+  const worker = await runWorker(candidateScript, ...withDataApi({
+    project_jobs: { body: [{ id: "job" }] },
+    project_analysis_requests: { body: [] },
+  }));
+  try {
+    assert.equal((await worker.exited).code, 0, worker.output());
+    assert.equal(worker.request()?.body.limit, 10);
+  } finally {
+    worker.cleanup();
+  }
+});
+
+test("the candidate starts its server when the data API cannot answer", { timeout: 30_000 }, async () => {
+  const worker = await runWorker(candidateScript, ...withDataApi({
+    project_jobs: { body: [] },
+    project_analysis_requests: { status: 503, body: { message: "unavailable" } },
+  }));
+  try {
+    assert.equal((await worker.exited).code, 0, worker.output());
+    assert.equal(worker.request()?.url, "/api/project-jobs/worker");
+    assert.match(worker.output(), /"event":"project_job_worker_precheck_unknown","reason":"http_503"/u);
+    assert.doesNotMatch(worker.output(), /service-role-key-for-tests/u);
   } finally {
     worker.cleanup();
   }

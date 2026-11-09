@@ -1195,6 +1195,12 @@ export async function runQueuedProjectJob(
   if (outcome && options.drainNext) drainAfterRun(input.projectId, outcome);
 }
 
+/**
+ * The scheduled worker skips starting its server when none of this work
+ * exists: no running or queued job and no pending automatic analysis
+ * (scripts/project_job_worker_pending_work.mjs). Extend that check with any
+ * new source of work here.
+ */
 export async function runAvailableProjectJobs(options: {
   limit?: number;
   staleAfterMs?: number;

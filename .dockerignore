@@ -27,9 +27,10 @@
 !apps/frontend/types/**
 !apps/frontend/scripts/
 # Keep CI/QA scripts out of the image; Azure Container Apps jobs only need the
-# worker entrypoint below.
+# worker entrypoint and its modules below.
 apps/frontend/scripts/*
 !apps/frontend/scripts/run_project_job_worker.mjs
+!apps/frontend/scripts/project_job_worker_pending_work.mjs
 !apps/frontend/scripts/run_project_job_cutover_rpc.mjs
 !scripts/
 scripts/*

@@ -138,6 +138,16 @@ Also confirm administrator and Microsoft Entra login, open an existing project,
 upload and delete a test document, run a short AI workflow, and inspect recent
 worker executions.
 
+### Scheduled worker runs
+
+Each scheduled run first asks the internal data API whether any project job is
+queued or running, or any automatic analysis request is pending. If not, it logs
+`{"processed":0,"results":[],"skipped":"no_pending_work"}` and exits without
+starting the Next server, which is where most of an empty run's billed time went.
+If the data API cannot answer, it logs `project_job_worker_precheck_unknown`
+with a reason code and runs the full worker as before. Repeated
+`precheck_unknown` events mean every run pays for a full server start again.
+
 ## Data-plane templates
 
 - `resource-group.bicep`: production resource-group location and ownership tags.
