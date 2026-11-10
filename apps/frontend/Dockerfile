@@ -35,7 +35,13 @@ ENV PORT=3000
 ENV HOME=/home/node
 # The runtime only needs node itself. Drop package managers and Perl from the
 # final web image to reduce attack surface and avoid unfixed runtime CVEs.
-RUN rm -rf \
+# Refresh apt explicitly: the pinned base predates Debian's fix for
+# CVE-2026-109518.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends apt libapt-pkg6.0 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge '2.6.2' \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg6.0)" ge '2.6.2' \
+    && rm -rf \
       /opt/yarn-v* \
       /usr/local/bin/corepack \
       /usr/local/bin/npm \
@@ -126,10 +132,12 @@ RUN /opt/docling/bin/python -m pip uninstall --yes pip \
 # runtime. Remove Perl after build-time tooling has finished to keep the final
 # image free of the current unfixed Perl CVEs in Debian slim bases.
 # Norwegian and English OCR data are installed at build time for offline use.
-# Refresh PCRE2 and OpenSSL explicitly: the pinned base predates Debian's
-# security fixes.
+# Refresh apt, PCRE2 and OpenSSL explicitly: the pinned base predates Debian's
+# security fixes (apt: CVE-2026-109518).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpcre2-8-0 libssl3 openssl tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
+    && apt-get install -y --no-install-recommends apt libapt-pkg6.0 libpcre2-8-0 libssl3 openssl tesseract-ocr tesseract-ocr-nor tesseract-ocr-eng \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge '2.6.2' \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg6.0)" ge '2.6.2' \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge '10.42-1+deb12u1' \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3)" ge '3.0.22-1~deb12u2' \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' openssl)" ge '3.0.22-1~deb12u2' \
