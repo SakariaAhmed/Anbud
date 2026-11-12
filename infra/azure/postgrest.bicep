@@ -40,10 +40,10 @@ param jwtSecret string
 @maxValue(5)
 param databasePoolSize int = 5
 
-@description('Minimum active replicas. Zero minimizes idle cost but causes cold starts.')
+@description('Keep the regularly polled bridge warm and eligible for reduced idle billing. Zero only saves compute when traffic actually permits scale-to-zero.')
 @minValue(0)
 @maxValue(1)
-param minReplicas int = 0
+param minReplicas int = 1
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: environmentName

@@ -4,6 +4,8 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import http from "node:http";
 
+import { projectJobWorkerHasPendingWork } from "./project_job_worker_pending_work.mjs";
+
 // Measured from process start, which is the replica start in the scheduled job.
 const processStartedAt = Date.now() - Math.round(process.uptime() * 1000);
 const shutdownAllowanceMs = 60_000;
@@ -94,6 +96,17 @@ function stopServer(server) {
       server.kill("SIGKILL");
     }
   }, 5_000).unref();
+}
+
+// Starting the server takes most of an empty run's billed time. Skip it only
+// when the data API says there is no work; any doubt runs the worker as before.
+const pendingWork = await projectJobWorkerHasPendingWork({
+  onUnknown: (reason) => console.warn(JSON.stringify({ event: "project_job_worker_precheck_unknown", reason })),
+});
+if (pendingWork === false) {
+  // The worker route's response shape, so run logs read the same either way.
+  console.info(JSON.stringify({ processed: 0, results: [], skipped: "no_pending_work" }));
+  process.exit(0);
 }
 
 const serverArgs = existsSync("server.js")
